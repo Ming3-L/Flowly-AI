@@ -316,7 +316,6 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import {
   ArrowRight,
   ChatDotRound,
@@ -331,7 +330,6 @@ import {
   Tools,
 } from '@element-plus/icons-vue'
 
-const router = useRouter()
 const demoRef = ref<HTMLElement>()
 const currentYear = new Date().getFullYear()
 

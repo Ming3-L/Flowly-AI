@@ -340,10 +340,6 @@ function formatDate(dateStr: string | Date): string {
   })
 }
 
-function shortId(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 12)}…` : id
-}
-
 function historyStatusType(status: string): string {
   const map: Record<string, string> = {
     pending: 'info',

@@ -24,7 +24,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.language_models import BaseChatModel  # pyright: ignore[reportMissingImports]
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage  # pyright: ignore[reportMissingImports]
-from langgraph.constants import Send
+from langgraph.types import Send
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from tenacity import retry, stop_after_attempt, wait_exponential

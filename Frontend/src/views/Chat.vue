@@ -171,7 +171,7 @@ function renderMarkdown(text: string): string {
     .replace(/>/g, '&gt;')
 
   // Code blocks (```language\ncode\n```)
-  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _lang, code) => {
     return `<pre class="code-block"><code>${code.trim()}</code></pre>`
   })
 

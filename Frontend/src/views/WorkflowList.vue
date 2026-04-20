@@ -298,7 +298,7 @@ function handleRowClick(row: any) {
 
 async function handleDuplicate(row: any) {
   try {
-    const res = await api.post('/workflows/', {
+    await api.post('/workflows/', {
       name: `${row.name} (副本)`,
       description: row.description,
       definition: row.definition,
