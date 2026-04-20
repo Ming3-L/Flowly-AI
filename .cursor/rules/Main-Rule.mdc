@@ -1,0 +1,106 @@
+---
+description: Flowly AI主规则 - 项目开发规范和Skills调度入口
+alwaysApply: true
+---
+
+# Flowly AI 开发规范
+
+本规则文件是项目的主规则入口，定义开发规范和Skills调度方式。
+
+## 核心原则
+
+1. **设计先行** - 任何新功能必须先设计后实现
+2. **测试保证** - 代码变更必须验证
+3. **安全优先** - 安全问题优先处理
+4. **文档同步** - 代码变更必须更新文档
+
+## Skills调度入口
+
+当用户请求涉及以下场景时，**立即读取**对应Skill文件：
+
+### 规则速查
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  用户意图          →  读取Skill文件                          │
+├─────────────────────────────────────────────────────────────┤
+│  设计/创意/头脑风暴   →  .cursor/skills/superpowers/skills/brainstorming/SKILL.md
+│  制定计划           →  .cursor/skills/superpowers/skills/writing-plans/SKILL.md
+│  执行计划           →  .cursor/skills/superpowers/skills/executing-plans/SKILL.md
+│  重构代码           →  .cursor/skills/code-refactoring/SKILL.md
+│  调试/修复bug       →  .cursor/skills/systematic-debugging/SKILL.md
+│  代码审查           →  .cursor/skills/superpowers/skills/code-reviewer/SKILL.md
+│  安全审计           →  .cursor/skills/security-audit/SKILL.md
+│  前端开发           →  .cursor/skills/frontend-design/SKILL.md
+│  UI设计系统         →  .cursor/skills/ui-ux-pro-max/SKILL.md
+│  无障碍/WCAG        →  .cursor/skills/web-interface-guidelines/SKILL.md
+│  测试               →  .cursor/skills/webapp-testing/SKILL.md
+│  架构设计           →  .cursor/skills/software-architecture/SKILL.md
+│  复杂任务规划       →  .cursor/skills/planning-with-files/SKILL.md
+│  文档处理(Word)     →  .cursor/skills/docx-processing/SKILL.md
+│  文档处理(PDF)      →  .cursor/skills/pdf-processing/SKILL.md
+│  变更日志           →  .cursor/skills/changelog-maintenance/SKILL.md
+│  浏览器自动化       →  .cursor/skills/agent-browser/SKILL.md
+│  网络搜索/研究       →  .cursor/skills/tavily-search/SKILL.md
+│  深度研究/报告       →  .cursor/skills/gpt-researcher/SKILL.md
+│  框架文档查询        →  .cursor/skills/context7-docs/SKILL.md
+│  营销策略           →  .cursor/skills/marketing-skills/SKILL.md
+│  创建新Skill        →  .cursor/skills/skill-creator/SKILL.md
+│  终端/Tmux          →  .cursor/skills/tmux-terminal/SKILL.md
+│  Git Worktree       →  .cursor/skills/superpowers/skills/using-git-worktrees/SKILL.md
+│  完成分支/PR        →  .cursor/skills/superpowers/skills/finishing-a-development-branch/SKILL.md
+│  接收代码审查反馈    →  .cursor/skills/superpowers/skills/receiving-code-review/SKILL.md
+│  并行任务处理        →  .cursor/skills/superpowers/skills/dispatching-parallel-agents/SKILL.md
+│  子代理开发          →  .cursor/skills/superpowers/skills/subagent-driven-development/SKILL.md
+└─────────────────────────────────────────────────────────────┘
+```
+
+## 自动匹配流程
+
+1. **分析用户请求** - 提取关键词和意图
+2. **匹配Skill** - 使用上方速查表匹配
+3. **读取执行** - 立即读取并遵循Skill指导
+4. **组合处理** - 复杂任务按需组合多个Skills
+
+## 开发工作流
+
+### 新功能开发
+```
+brainstorming → writing-plans → executing-plans/subagent-driven-development
+→ code-reviewer → finishing-a-development-branch
+```
+
+### Bug修复
+```
+systematic-debugging → code-refactoring (如需要)
+→ webapp-testing → changelog-maintenance
+```
+
+### 安全审查
+```
+security-audit → code-refactoring (修复问题)
+→ webapp-testing → documentation
+```
+
+## 项目结构参考
+
+```
+Flowly-AI/
+├── Backend/          # 后端代码
+│   └── ai_engine/    # AI引擎
+├── Frontend/         # 前端代码 (Vue/TypeScript)
+└── .cursor/          # Cursor配置
+    ├── rules/        # 规则文件
+    └── skills/       # Skills配置
+```
+
+## 代码规范
+
+- Python: PEP 8
+- TypeScript/Vue: Vue 3 Composition API
+- Git提交: Conventional Commits
+- 测试覆盖: 关键路径必须测试
+
+## 文档更新
+
+每次代码变更后，根据 `README-Update-Rule.md` 更新相应文档。

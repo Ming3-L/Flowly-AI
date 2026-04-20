@@ -1,0 +1,159 @@
+# Flowly AI — Production Docker Compose
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Services:
+#   db       — MySQL 8.0 (persistent volume)
+#   redis    — Redis 7 (persistent volume)
+#   backend  — Django ASGI app via Daphne
+#   frontend — Vue SPA served by Nginx
+#
+# Usage:
+#   cp Backend/.env.example Backend/.env
+#   # Edit Backend/.env with your production values
+#   docker compose up -d
+#
+#   # Apply migrations (first run or after code changes)
+#   docker compose exec backend python manage.py migrate
+#   docker compose exec backend python manage.py createsuperuser
+
+services:
+
+  # ── Database ────────────────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-flowly_db}
+      MYSQL_USER: ${MYSQL_USER:-flowly}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-flowly_password}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Cache / Message Broker ─────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Django Backend ─────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    restart: always
+    environment:
+      # Override .env values in production via this block or a .env file
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required in production}
+      DEBUG: "False"
+      DATABASE_URL: mysql://${MYSQL_USER:-flowly}:${MYSQL_PASSWORD:-flowly_password}@db:3306/${MYSQL_DATABASE:-flowly_db}
+      REDIS_URL: redis://redis:6379/0
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-localhost,127.0.0.1}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+    volumes:
+      # Mount local .env for local development override
+      - ./Backend/.env:/app/.env:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Celery Worker ─────────────────────────────────────────────────────────
+  celery_worker:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    restart: always
+    command: celery -A flowly_backend worker --loglevel=info --concurrency=4
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-flowly}:${MYSQL_PASSWORD:-flowly_password}@db:3306/${MYSQL_DATABASE:-flowly_db}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ./Backend/.env:/app/.env:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2
+
+  # ── Celery Beat (Periodic Task Scheduler) ─────────────────────────────────
+  celery_beat:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    restart: always
+    command: celery -A flowly_backend beat --loglevel=info
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    volumes:
+      - ./Backend/.env:/app/.env:ro
+    depends_on:
+      - redis
+      - celery_worker
+
+  # ── Flower (Celery Monitoring) ──────────────────────────────────────────────
+  flower:
+    image: mher/flower:latest
+    restart: always
+    command: celery -A flowly_backend flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CELERY_FLOWER_PORT: "5555"
+    depends_on:
+      - redis
+      - celery_worker
+
+  # ── Vue Frontend (Nginx) ───────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    # No environment needed — Nginx proxies to backend at runtime
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+

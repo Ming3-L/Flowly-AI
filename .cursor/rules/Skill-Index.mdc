@@ -1,0 +1,232 @@
+---
+name: skill-index
+description: Skills实时索引 - 根据关键词和场景快速匹配可用的Skill
+alwaysApply: false
+---
+
+# Skill Index - 实时匹配索引
+
+## 快速查询表
+
+### A-C
+| 关键词/场景 | Skill路径 | 描述 |
+|------------|----------|------|
+| abstract | software-architecture | 软件架构设计 |
+| accessibility, a11y | web-interface-guidelines | 无障碍指南 |
+| agent, browser, 自动化 | agent-browser | 浏览器自动化 |
+| a/b test | marketing-skills | 营销策略 |
+| api design | software-architecture | API设计 |
+| architecture | software-architecture | 系统架构 |
+| async, 异步 | systematic-debugging | 调试方法 |
+| audit, 安全 | security-audit | 安全审计 |
+| authenticate, 认证 | security-audit | 认证安全 |
+
+### B-D
+| 关键词/场景 | Skill路径 | 描述 |
+|------------|----------|------|
+| backend, 后端 | software-architecture | 架构设计 |
+| brainstorm, 设计, 创意 | brainstorming | 头脑风暴 |
+| bug, 错误, 崩溃 | systematic-debugging | 系统调试 |
+| cdn | software-architecture | 缓存架构 |
+| changelog | changelog-maintenance | 变更日志 |
+| check, verify | webapp-testing | 测试验证 |
+| ci/cd | webapp-testing | 持续集成 |
+| clean code | code-refactoring | 代码重构 |
+| code review, 审查 | code-reviewer | 代码审查 |
+| component, 组件 | frontend-design | 前端设计 |
+| convert, 转换 | docx-processing, pdf-processing | 文档转换 |
+
+### D-F
+| 关键词/场景 | Skill路径 | 描述 |
+|------------|----------|------|
+| dashboard | frontend-design, ui-ux-pro-max | 仪表盘设计 |
+| database, 数据库 | software-architecture | 数据库设计 |
+| debug, 调试 | systematic-debugging | 调试技能 |
+| design, 设计 | brainstorming, frontend-design | 设计相关 |
+| deploy, 部署 | security-audit | 安全部署 |
+| docs, 文档 | changelog-maintenance | 文档维护 |
+| docx, word | docx-processing | Word处理 |
+| duplicate | code-refactoring | 重构去重 |
+
+### E-H
+| 关键词/场景 | Skill路径 | 描述 |
+|------------|----------|------|
+| e2e | webapp-testing | 端到端测试 |
+| error, 异常 | systematic-debugging | 错误处理 |
+| extract | pdf-processing | PDF提取 |
+| fastapi | context7-docs | FastAPI文档 |
+| feature | brainstorming | 功能设计 |
+| flow, 流程 | software-architecture | 流程设计 |
+| font, 字体 | ui-ux-pro-max | 字体排版 |
+| form | frontend-design | 表单设计 |
+| frontend | frontend-design | 前端开发 |
+| fullstack | software-architecture | 全栈架构 |
+
+### G-L
+| 关键词/场景 | Skill路径 | 描述 |
+|------------|----------|------|
+| git | using-git-worktrees | Git工作流 |
+| github | finishing-a-development-branch | GitHub集成 |
+| gradient | ui-ux-pro-max | 渐变效果 |
+| graphql | software-architecture | GraphQL设计 |
+| growth | marketing-skills | 增长策略 |
+| hooks | create-hook | Cursor Hooks |
+| integration test | webapp-testing | 集成测试 |
+| landing | frontend-design, ui-ux-pro-max | 落地页 |
+| layout | frontend-design | 布局设计 |
+| legacy | code-refactoring | 遗留代码 |
+
+### M-P
+| 关键词/场景 | Skill路径 | 描述 |
+|------------|----------|------|
+| merge, 合并 | finishing-a-development-branch | 分支合并 |
+| microservice | software-architecture | 微服务 |
+| mobile | frontend-design | 移动端 |
+| mock | webapp-testing | 模拟测试 |
+| monday | systematic-debugging | 周一调试 |
+| mvc | software-architecture | MVC架构 |
+| mysql, postgres | software-architecture | 数据库 |
+| next.js | context7-docs, frontend-design | Next.js |
+| node | context7-docs | Node.js |
+| oop | software-architecture | 面向对象 |
+| optimize | code-refactoring | 代码优化 |
+| pagespeed | webapp-testing | 性能测试 |
+| password | security-audit | 密码安全 |
+| pdf | pdf-processing | PDF处理 |
+| performance | webapp-testing, code-refactoring | 性能优化 |
+| plan, 计划 | writing-plans, planning-with-files | 规划 |
+| pr, pull request | finishing-a-development-branch | PR管理 |
+| pricing | ui-ux-pro-max | 定价设计 |
+
+### Q-S
+| 关键词/场景 | Skill路径 | 描述 |
+|------------|----------|------|
+| quality | code-reviewer | 代码质量 |
+| query | software-architecture | 查询优化 |
+| race condition | systematic-debugging | 竞态条件 |
+| react | context7-docs, frontend-design | React |
+| react native | frontend-design | React Native |
+| redis | software-architecture | 缓存设计 |
+| refactor, 重构 | code-refactoring | 重构 |
+| remote | tmux-terminal | 远程工作 |
+| research | gpt-researcher, tavily-search | 研究 |
+| responsive | frontend-design | 响应式 |
+| rest api | software-architecture | REST API |
+| review | code-reviewer, receiving-code-review | 代码审查 |
+| role | security-audit | 角色权限 |
+| router | software-architecture | 路由设计 |
+| rule | create-rule | 创建规则 |
+| sanitize | security-audit | 输入校验 |
+| scalability | software-architecture | 可扩展性 |
+| schema | software-architecture | 数据模型 |
+| screen reader | web-interface-guidelines | 屏幕阅读 |
+| script | skill-creator | 脚本创建 |
+| search | tavily-search | 搜索研究 |
+| security | security-audit | 安全 |
+| seo | marketing-skills | SEO优化 |
+| session | security-audit | 会话管理 |
+| shard | software-architecture | 分片设计 |
+| shell | tmux-terminal | 终端管理 |
+| skill | skill-creator | 创建Skill |
+| snapshot | agent-browser | 页面快照 |
+| split | tmux-terminal | 分屏 |
+| sql | software-architecture | SQL设计 |
+| ssh | tmux-terminal | SSH远程 |
+| state | software-architecture | 状态管理 |
+| style | frontend-design | 样式设计 |
+| submit | webapp-testing | 表单提交 |
+
+### T-Z
+| 关键词/场景 | Skill路径 | 描述 |
+|------------|----------|------|
+| tailwind | context7-docs, frontend-design | Tailwind |
+| task | subagent-driven-development | 子代理任务 |
+| template | docx-processing | 模板生成 |
+| terminal | tmux-terminal | 终端管理 |
+| test | webapp-testing | 测试 |
+| thread | tmux-terminal | 线程管理 |
+| tmux | tmux-terminal | Tmux管理 |
+| todo | brainstorming | 待办事项 |
+| tool | agent-browser | 浏览器工具 |
+| transform | code-refactoring | 代码转换 |
+| ttd | webapp-testing | 测试驱动 |
+| typescript | context7-docs | TypeScript |
+| typography | ui-ux-pro-max | 字体排版 |
+| ui | frontend-design | 用户界面 |
+| ux | web-interface-guidelines | 用户体验 |
+| validate | security-audit | 数据校验 |
+| version | changelog-maintenance | 版本管理 |
+| view | frontend-design | 视图设计 |
+| vue | context7-docs, frontend-design | Vue |
+| vulnerability | security-audit | 漏洞扫描 |
+| web | frontend-design, webapp-testing | Web开发 |
+| widget | frontend-design | 组件设计 |
+| worktree | using-git-worktrees | Git工作树 |
+| xss | security-audit | XSS防护 |
+
+## 场景模式匹配
+
+### 调试场景
+```
+错误 → systematic-debugging
+崩溃 → systematic-debugging
+异常 → systematic-debugging
+不工作 → systematic-debugging
+修复 → systematic-debugging
+```
+
+### 设计场景
+```
+设计 → brainstorming
+创建 → brainstorming
+规划 → writing-plans
+架构 → software-architecture
+界面 → frontend-design
+样式 → ui-ux-pro-max
+```
+
+### 重构场景
+```
+重构 → code-refactoring
+优化 → code-refactoring
+清理 → code-refactoring
+简化 → code-refactoring
+```
+
+### 安全场景
+```
+安全 → security-audit
+认证 → security-audit
+权限 → security-audit
+加密 → security-audit
+漏洞 → security-audit
+```
+
+### 测试场景
+```
+测试 → webapp-testing
+验证 → webapp-testing
+单元测试 → webapp-testing
+E2E → webapp-testing
+```
+
+## 调用指令
+
+当匹配到Skill时，执行：
+
+```
+Read: `.cursor/skills/{matched-path}/SKILL.md`
+[按照Skill内容执行任务]
+```
+
+## 组合规则
+
+当任务跨越多个领域时，按顺序调用：
+
+1. 设计与规划: brainstorming → writing-plans
+2. 架构决策: software-architecture
+3. 代码实现: (相关技能如code-refactoring)
+4. 安全检查: security-audit
+5. 测试验证: webapp-testing
+6. 文档更新: changelog-maintenance
+7. 分支完成: finishing-a-development-branch

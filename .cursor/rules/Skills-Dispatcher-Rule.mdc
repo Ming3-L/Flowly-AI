@@ -1,0 +1,132 @@
+---
+description: Flowly AI项目Skills调度规则 - 根据用户请求自动识别并调用对应Skill
+alwaysApply: true
+---
+
+# Skills自动调度规则
+
+当用户发起请求时，根据以下关键词和场景自动识别并调用对应Skill。
+
+## 技能映射表
+
+### 1. 开发流程类
+
+| 触发场景 | 调用Skill |
+|---------|----------|
+| 用户要求设计新功能/组件/系统 | `superpowers/skills/brainstorming` |
+| 用户提供设计后要求制定实施计划 | `superpowers/skills/writing-plans` |
+| 用户要求执行已有计划 | `superpowers/skills/executing-plans` |
+| 用户要求用子代理执行任务 | `superpowers/skills/subagent-driven-development` |
+| 完成实现后要求合并/PR | `superpowers/skills/finishing-a-development-branch` |
+| 用户要求创建隔离工作区 | `superpowers/skills/using-git-worktrees` |
+| 用户要求进行代码审查 | `superpowers/skills/code-reviewer` |
+| 用户收到代码审查反馈 | `superpowers/skills/receiving-code-review` |
+| 用户有多个独立任务要并行执行 | `superpowers/skills/dispatching-parallel-agents` |
+
+### 2. 代码质量类
+
+| 触发场景 | 调用Skill |
+|---------|----------|
+| 用户要求重构/优化代码 | `code-refactoring` |
+| 用户要求审查代码安全问题 | `security-audit` |
+| 用户遇到bug/错误/崩溃 | `systematic-debugging` |
+| 用户要求进行安全审计 | `security-audit` |
+
+### 3. 文档处理类
+
+| 触发场景 | 调用Skill |
+|---------|----------|
+| 用户要求更新CHANGELOG | `changelog-maintenance` |
+| 用户要求处理Word文档 | `docx-processing` |
+| 用户要求处理PDF文件 | `pdf-processing` |
+
+### 4. 前端开发类
+
+| 触发场景 | 调用Skill |
+|---------|----------|
+| 用户要求设计/创建前端界面 | `frontend-design` |
+| 用户要求生成设计系统 | `ui-ux-pro-max` |
+| 用户要求确保无障碍/WCAG合规 | `web-interface-guidelines` |
+| 用户要求编写测试 | `webapp-testing` |
+
+### 5. 架构规划类
+
+| 触发场景 | 调用Skill |
+|---------|----------|
+| 用户要求设计系统架构 | `software-architecture` |
+| 用户要求设计数据库/API | `software-architecture` |
+| 用户有复杂任务需要规划 | `planning-with-files` |
+
+### 6. 搜索研究类
+
+| 触发场景 | 调用Skill |
+|---------|----------|
+| 用户询问React/Next.js/Prisma等文档 | `context7-docs` |
+| 用户要求进行网络搜索/研究 | `tavily-search` |
+| 用户要求自动化浏览器操作 | `agent-browser` |
+| 用户要求进行深度研究/报告 | `gpt-researcher` |
+
+### 7. 其他工具类
+
+| 触发场景 | 调用Skill |
+|---------|----------|
+| 用户要求制定营销策略 | `marketing-skills` |
+| 用户要求创建新Skill | `skill-creator` |
+| 用户提到tmux/终端会话 | `tmux-terminal` |
+
+## 自动调度流程
+
+1. **识别意图**: 分析用户请求中的关键词和场景
+2. **匹配Skill**: 根据上方映射表选择对应Skill
+3. **读取Skill**: 立即读取对应SKILL.md文件内容
+4. **执行指导**: 按照Skill中的指导执行任务
+5. **组合调用**: 复杂任务可组合多个Skills
+
+## 优先级规则
+
+当请求涉及多个领域时，按以下优先级处理：
+
+1. **安全优先**: 涉及安全问题时，先调用 `security-audit`
+2. **设计优先**: 新功能开发先调用 `brainstorming` 设计
+3. **测试其次**: 代码变更后建议调用 `webapp-testing`
+4. **文档同步**: 完成后调用 `changelog-maintenance` 更新文档
+
+## 快速匹配示例
+
+```
+用户: "帮我重构这个函数"
+→ 调用: code-refactoring
+
+用户: "我需要设计一个新的用户系统"
+→ 调用: brainstorming → software-architecture
+
+用户: "这段代码报错了"
+→ 调用: systematic-debugging
+
+用户: "创建新的API接口"
+→ 调用: software-architecture → brainstorming
+
+用户: "帮我写个测试"
+→ 调用: webapp-testing
+
+用户: "这个项目的架构怎么样"
+→ 调用: software-architecture
+
+用户: "研究一下竞争对手"
+→ 调用: gpt-researcher / tavily-search
+
+用户: "更新版本日志"
+→ 调用: changelog-maintenance
+```
+
+## 调用格式
+
+当识别到需要调用Skill时，执行：
+
+```
+# 立即读取Skill内容
+Read: `.cursor/skills/{skill-path}/SKILL.md`
+
+# 按照Skill内容执行
+[遵循Skill中的工作流程和指导]
+```

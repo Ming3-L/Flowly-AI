@@ -1,0 +1,51 @@
+# Dependencies
+node_modules
+Frontend/node_modules
+Frontend/dist
+
+# Python virtual environments and cache
+Backend/venv
+Backend/__pycache__
+Backend/**/__pycache__
+Backend/*.pyc
+Backend/*.pyo
+Backend/db.sqlite3
+Backend/staticfiles
+Backend/media
+
+# Environment secrets
+Backend/.env
+Backend/.env.local
+Backend/.env.docker
+
+# Test artifacts
+.pytest_cache
+tests/.pytest_cache
+tests/__pycache__
+tests/.coverage
+tests/coverage.xml
+test-results
+
+# Environment & logs
+.env
+.env.local
+.env.*.local
+*.log
+*.sqlite3
+*.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Misc dev artifacts
+scripts
+1.text
+未命名.html
