@@ -334,6 +334,15 @@ def workflow_run(
                 status="error",
                 execution_id=None,
             )
+    else:
+        # Create a default "free chat" workflow if none exists
+        workflow, _ = Workflow.objects.get_or_create(
+            name="general_assistant",
+            defaults={
+                "description": "Default free-form AI chat workflow",
+                "definition": {"nodes": [{"id": "chat", "type": "chat", "name": "AI Chat"}]},
+            },
+        )
 
     # Create or retrieve a Thread — associate with the authenticated user
     thread_uuid = uuid.UUID(payload.thread_id) if payload.thread_id else uuid.uuid4()

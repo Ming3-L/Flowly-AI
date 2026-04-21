@@ -20,7 +20,7 @@
       <el-form-item label="工作流" prop="workflowId">
         <el-select
           v-model="form.workflowId"
-          placeholder="选择工作流"
+          placeholder="选择工作流（留空使用自由对话）"
           filterable
           clearable
           :loading="store.isLoading"
@@ -74,7 +74,7 @@
           <el-button
             type="primary"
             :loading="store.isRunning"
-            :disabled="!form.workflowId || !form.query.trim()"
+            :disabled="!form.query.trim()"
             size="large"
             @click="handleSubmit"
           >
@@ -126,9 +126,6 @@ const form = reactive({
 // ── Validation Rules ───────────────────────────────────────────────────────────
 
 const rules: FormRules = {
-  workflowId: [
-    { required: true, message: '请选择一个工作流', trigger: 'change' },
-  ],
   query: [
     { required: true, message: '请输入查询内容', trigger: 'blur' },
     {
@@ -142,8 +139,8 @@ const rules: FormRules = {
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-function onWorkflowChange(id: number) {
-  const wf = store.workflows.find((w) => w.id === id) ?? null
+function onWorkflowChange(id: number | null) {
+  const wf = id != null ? (store.workflows.find((w) => w.id === id) ?? null) : null
   store.currentWorkflow = wf
 }
 
@@ -163,7 +160,7 @@ async function handleSubmit() {
     }
 
     await store.startWorkflow({
-      workflow_id: form.workflowId!,
+      workflow_id: form.workflowId,
       query: form.query.trim(),
       context,
     })

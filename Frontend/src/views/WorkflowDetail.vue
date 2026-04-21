@@ -3,7 +3,8 @@
     <!-- Header -->
     <div class="detail-header">
       <div class="header-left">
-        <el-button text @click="$router.push('/workflows')" :icon="ArrowLeft">
+        <el-button text @click="$router.push('/workflows')">
+          <el-icon><ArrowLeft /></el-icon>
           返回列表
         </el-button>
         <el-divider direction="vertical" />
@@ -308,7 +309,7 @@ async function handleToggleStatus() {
   togglingStatus.value = true
   try {
     const newStatus = !workflow.value?.is_active
-    await api.patch(`/workflows/${workflowId.value}`, { is_active: newStatus })
+    await api.put(`/workflows/${workflowId.value}`, { is_active: newStatus })
     workflow.value.is_active = newStatus
     ElMessage.success(newStatus ? '工作流已启用' : '工作流已停用')
   } catch {

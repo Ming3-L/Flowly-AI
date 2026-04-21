@@ -36,7 +36,7 @@ export interface WorkflowInput {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface RunWorkflowRequest {
-  workflow_id: number
+  workflow_id: number | null
   query: string
   context?: Record<string, any>
 }
@@ -182,7 +182,7 @@ export interface SSEParallelEndEvent {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface ChatMessage {
-  id: string
+  id?: string
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
   timestamp: Date

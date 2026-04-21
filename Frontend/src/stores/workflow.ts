@@ -115,8 +115,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
   async function fetchWorkflows() {
     isLoading.value = true
     try {
-      const res = await api.get<Workflow[]>('/workflows/')
-      workflows.value = res.data
+      const res = await api.get('/workflows/')
+      workflows.value = res.data.items ?? []
     } catch {
       workflows.value = []
     } finally {

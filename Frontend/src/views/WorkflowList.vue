@@ -39,17 +39,6 @@
         <el-option label="启用" :value="true" />
         <el-option label="停用" :value="false" />
       </el-select>
-      <el-select
-        v-model="sortBy"
-        placeholder="排序"
-        style="width: 160px"
-        @change="fetchWorkflows"
-      >
-        <el-option label="最近更新" value="updated_at" />
-        <el-option label="最近创建" value="created_at" />
-        <el-option label="名称 A-Z" value="name" />
-        <el-option label="执行次数" value="execution_count" />
-      </el-select>
     </div>
 
     <!-- Table -->
@@ -211,7 +200,6 @@ const workflows = ref<any[]>([])
 const isLoading = ref(false)
 const search = ref('')
 const filterActive = ref<boolean | null>(null)
-const sortBy = ref('updated_at')
 const currentPage = ref(1)
 const pageSize = 15
 const total = ref(0)
@@ -249,7 +237,6 @@ async function fetchWorkflows() {
     const params: Record<string, any> = {
       search: search.value || undefined,
       is_active: filterActive.value,
-      ordering: sortBy.value,
     }
     const res = await api.get('/workflows/', { params })
     workflows.value = res.data.items ?? res.data ?? []
