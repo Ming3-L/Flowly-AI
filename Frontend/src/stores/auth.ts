@@ -28,7 +28,9 @@ export const useAuthStore = defineStore('auth', () => {
     password: string
     password_confirm: string
   }) {
-    const res = await api.post('/auth/register', payload)
+    const res = await api.post('/auth/register', payload, {
+      skipGlobalErrorHandler: true,
+    })
     return res.data
   }
 

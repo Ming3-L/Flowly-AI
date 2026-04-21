@@ -4,8 +4,13 @@ Authentication API — register, login, refresh, logout, current user.
 All endpoints under /api/auth/ via the ai_engine NinjaAPI mount.
 """
 
+import logging
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password
+from django.db import IntegrityError, transaction
+from django.db.utils import OperationalError
 from django.http import HttpRequest
 from ninja import Router, Schema  # pyright: ignore[reportMissingImports]
 from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
@@ -18,6 +23,7 @@ from .models import UserProfile
 
 User = get_user_model()
 router = Router(tags=["账户"])
+logger = logging.getLogger(__name__)
 
 
 # ── Schemas ─────────────────────────────────────────────────────────────────
@@ -55,7 +61,15 @@ class UserProfileSchema(Schema):
 
 # ── Register ────────────────────────────────────────────────────────────────
 
-@router.post("/register", response={201: UserProfileSchema, 400: AuthErrorSchema})
+@router.post(
+    "/register",
+    response={
+        201: UserProfileSchema,
+        400: AuthErrorSchema,
+        503: AuthErrorSchema,
+        500: AuthErrorSchema,
+    },
+)
 def register(request, payload: RegisterSchema):
     """
     POST /api/auth/register
@@ -78,12 +92,33 @@ def register(request, payload: RegisterSchema):
             detail="邮箱已被注册",
         )
 
-    user = User.objects.create_user(
-        username=payload.username,
-        email=payload.email,
-        password=payload.password,
-    )
-    UserProfile.objects.create(user=user)
+    try:
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=payload.username,
+                email=payload.email,
+                password=payload.password,
+            )
+            UserProfile.objects.create(user=user)
+    except IntegrityError:
+        # 并发或唯一约束冲突时 exists() 检查挡不住
+        return 400, AuthErrorSchema(
+            message="注册失败",
+            detail="用户名或邮箱已被占用",
+        )
+    except OperationalError:
+        logger.exception("register: database unavailable")
+        return 503, AuthErrorSchema(
+            message="注册失败",
+            detail="无法连接数据库，请确认 MySQL 已启动且 DATABASE_URL 配置正确",
+        )
+    except Exception as exc:
+        logger.exception("register: unexpected error")
+        detail = str(exc) if settings.DEBUG else "服务器繁忙，请稍后重试"
+        return 500, AuthErrorSchema(
+            message="注册失败",
+            detail=detail,
+        )
 
     return 201, UserProfileSchema(
         id=user.id,
