@@ -2,7 +2,7 @@
   <el-card class="workflow-runner" shadow="never">
     <template #header>
       <div class="runner-header">
-        <span>工作流执行</span>
+        <span>{{ ui.t('wf.runner.header') }}</span>
         <el-tag v-if="store.currentWorkflow" size="small">
           {{ store.currentWorkflow.name }}
         </el-tag>
@@ -17,10 +17,10 @@
       @submit.prevent="handleSubmit"
     >
       <!-- Workflow Selector -->
-      <el-form-item label="工作流" prop="workflowId">
+      <el-form-item :label="ui.t('wf.runner.workflowLabel')" prop="workflowId">
         <el-select
           v-model="form.workflowId"
-          placeholder="选择工作流（留空使用自由对话）"
+          :placeholder="ui.t('wf.runner.workflowPlaceholder')"
           filterable
           clearable
           :loading="store.isLoading"
@@ -36,19 +36,19 @@
           >
             <div class="workflow-option">
               <span class="workflow-name">{{ wf.name }}</span>
-              <span class="workflow-desc">{{ wf.description || '—' }}</span>
+              <span class="workflow-desc">{{ wf.description || ui.t('wf.common.descNone') }}</span>
             </div>
           </el-option>
         </el-select>
       </el-form-item>
 
       <!-- Prompt Input -->
-      <el-form-item label="查询" prop="query">
+      <el-form-item :label="ui.t('wf.runner.queryLabel')" prop="query">
         <el-input
           v-model="form.query"
           type="textarea"
           :rows="4"
-          placeholder="描述任务或提出问题…"
+          :placeholder="ui.t('wf.runner.queryPlaceholder')"
           maxlength="2000"
           show-word-limit
           resize="vertical"
@@ -58,12 +58,24 @@
       </el-form-item>
 
       <!-- Context (optional) -->
-      <el-form-item label="上下文（可选）" prop="context">
+      <el-form-item :label="ui.t('wf.runner.contextLabel')" prop="context">
         <el-input
           v-model="form.contextText"
           type="textarea"
           :rows="2"
-          placeholder='以 JSON 格式提供额外上下文，如 {"key": "value"}'
+          :placeholder="ui.t('wf.runner.contextPlaceholder')"
+          :disabled="store.isRunning"
+        />
+      </el-form-item>
+
+      <!-- 费用与画布对齐：可选，对应后端 CostRecord.client_node_id -->
+      <el-form-item :label="ui.t('wf.runner.clientNodeLabel')" prop="clientNodeId">
+        <el-input
+          v-model="form.clientNodeId"
+          :placeholder="ui.t('wf.runner.clientNodePlaceholder')"
+          maxlength="128"
+          show-word-limit
+          clearable
           :disabled="store.isRunning"
         />
       </el-form-item>
@@ -74,12 +86,12 @@
           <el-button
             type="primary"
             :loading="store.isRunning"
-            :disabled="!form.query.trim()"
+            :disabled="!form.workflowId || !form.query.trim()"
             size="large"
             @click="handleSubmit"
           >
             <el-icon v-if="!store.isRunning"><VideoPlay /></el-icon>
-            {{ store.isRunning ? '运行中…' : '运行工作流' }}
+            {{ store.isRunning ? ui.t('wf.runner.submitRunning') : ui.t('wf.runner.submit') }}
           </el-button>
 
           <el-button
@@ -88,7 +100,7 @@
             @click="handleReset"
           >
             <el-icon><RefreshLeft /></el-icon>
-            重置
+            {{ ui.t('wf.runner.reset') }}
           </el-button>
         </div>
       </el-form-item>
@@ -107,12 +119,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import { VideoPlay, RefreshLeft } from '@element-plus/icons-vue'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useUiLabelsStore } from '@/stores/uiLabels'
 import type { FormInstance, FormRules } from 'element-plus'
 
 const store = useWorkflowStore()
+const ui = useUiLabelsStore()
 const formRef = ref<FormInstance>()
 
 // ── Form State ────────────────────────────────────────────────────────────────
@@ -121,26 +135,30 @@ const form = reactive({
   workflowId: null as number | null,
   query: '',
   contextText: '',
+  clientNodeId: '',
 })
 
 // ── Validation Rules ───────────────────────────────────────────────────────────
 
-const rules: FormRules = {
+const rules = computed<FormRules>(() => ({
+  workflowId: [
+    { required: true, message: ui.t('wf.runner.validation.workflowRequired'), trigger: 'change' },
+  ],
   query: [
-    { required: true, message: '请输入查询内容', trigger: 'blur' },
+    { required: true, message: ui.t('wf.runner.validation.queryRequired'), trigger: 'blur' },
     {
       min: 2,
       max: 2000,
-      message: '查询内容长度为 2-2000 个字符',
+      message: ui.t('wf.runner.validation.queryLength'),
       trigger: 'blur',
     },
   ],
-}
+}))
 
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
-function onWorkflowChange(id: number | null) {
-  const wf = id != null ? (store.workflows.find((w) => w.id === id) ?? null) : null
+function onWorkflowChange(id: number) {
+  const wf = store.workflows.find((w) => w.id === id) ?? null
   store.currentWorkflow = wf
 }
 
@@ -159,11 +177,31 @@ async function handleSubmit() {
       }
     }
 
-    await store.startWorkflow({
-      workflow_id: form.workflowId,
-      query: form.query.trim(),
-      context,
-    })
+    const wf = store.workflows.find((w) => w.id === form.workflowId) ?? null
+    const def = wf?.definition as Record<string, any> | undefined
+    const nodes = def?.nodes
+    const isCanvas = Array.isArray(nodes) && nodes.length > 0
+
+    if (isCanvas) {
+      await store.startCanvasWorkflow({
+        workflow_id: form.workflowId!,
+        query: form.query.trim(),
+        context,
+        ...(form.clientNodeId.trim()
+          ? { client_node_id: form.clientNodeId.trim() }
+          : {}),
+      })
+    } else {
+      await store.startWorkflow({
+        workflow_id: form.workflowId!,
+        query: form.query.trim(),
+        context,
+        model_name: 'doubao',
+        ...(form.clientNodeId.trim()
+          ? { client_node_id: form.clientNodeId.trim() }
+          : {}),
+      })
+    }
   } catch {
     // Validation errors shown inline by Element Plus
   }
@@ -173,6 +211,7 @@ function handleReset() {
   store.resetExecutionState()
   formRef.value?.resetFields()
   form.contextText = ''
+  form.clientNodeId = ''
 }
 </script>
 

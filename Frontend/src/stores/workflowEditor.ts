@@ -86,7 +86,8 @@ export const useWorkflowEditorStore = defineStore('workflowEditor', () => {
   function updateNodeConfig(id: string, config: Partial<EditorNodeConfig>) {
     const node = nodes.value.find((n) => n.id === id)
     if (!node) return
-    node.config = { ...node.config, ...config }
+    // 属性面板传入的是当前节点完整 config 快照，整替以便删除弃用字段（如去掉 provider/model）
+    node.config = { ...(config as EditorNodeConfig) }
     hasUnsavedChanges.value = true
   }
 

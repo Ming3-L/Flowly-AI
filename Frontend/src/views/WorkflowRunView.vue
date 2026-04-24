@@ -6,7 +6,7 @@
         <div class="header-content">
             <el-button text @click="$router.back()">
             <el-icon><ArrowLeft /></el-icon>
-            返回
+            {{ ui.t('wf.run.back') }}
           </el-button>
           <h1>{{ pageTitle }}</h1>
         </div>
@@ -35,22 +35,24 @@ import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useUiLabelsStore } from '@/stores/uiLabels'
 import WorkflowRunner from '@/components/WorkflowRunner.vue'
 import WorkflowMonitor from '@/components/WorkflowMonitor.vue'
 
 const route = useRoute()
 const store = useWorkflowStore()
+const ui = useUiLabelsStore()
 
 // ── Title ───────────────────────────────────────────────────────────────────
 
 const pageTitle = computed(() => {
   if (store.currentWorkflow) {
-    return `运行: ${store.currentWorkflow.name}`
+    return `${ui.t('wf.run.titleRunPrefix')}${store.currentWorkflow.name}`
   }
   if (route.params.id) {
-    return '工作流执行'
+    return ui.t('wf.run.titleExec')
   }
-  return '执行工作流'
+  return ui.t('wf.run.titleRun')
 })
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────

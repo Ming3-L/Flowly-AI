@@ -4,8 +4,8 @@
       <!-- Navigation Bar (hidden on landing + auth pages) -->
       <nav v-if="!isLandingPage && !isAuthPage" class="app-nav">
         <div class="nav-brand">
-          <img class="brand-logo" src="/logo.png" alt="Flowly" />
-          <span class="brand-name">Flowly</span>
+          <img class="brand-logo" src="/logo.png" :alt="ui.t('app.brand.name')" />
+          <span class="brand-name">{{ ui.t('app.brand.name') }}</span>
         </div>
 
         <el-menu
@@ -15,10 +15,11 @@
           class="nav-menu"
           :ellipsis="false"
         >
-          <el-menu-item index="/dashboard">首页</el-menu-item>
-          <el-menu-item index="/chat">AI 对话</el-menu-item>
-          <el-menu-item index="/workflows">工作流</el-menu-item>
-          <el-menu-item index="/observability">监控</el-menu-item>
+          <el-menu-item index="/dashboard">{{ ui.t('app.nav.home') }}</el-menu-item>
+          <el-menu-item index="/chat">{{ ui.t('app.nav.chat') }}</el-menu-item>
+          <el-menu-item index="/auto-reply">{{ ui.t('app.nav.autoReply', 'AI 自动回复') }}</el-menu-item>
+          <el-menu-item index="/workflows">{{ ui.t('app.nav.workflows') }}</el-menu-item>
+          <el-menu-item index="/observability">{{ ui.t('app.nav.observability') }}</el-menu-item>
         </el-menu>
 
         <div class="nav-actions">
@@ -28,17 +29,31 @@
               <el-button type="default" size="small" class="user-btn">
                 <el-icon><User /></el-icon>
                 {{ auth.user?.username }}
+                <el-tag
+                  v-if="auth.user?.is_superuser"
+                  size="small"
+                  type="danger"
+                  effect="plain"
+                  class="role-tag"
+                >超管</el-tag>
+                <el-tag
+                  v-else-if="auth.user?.is_staff"
+                  size="small"
+                  type="warning"
+                  effect="plain"
+                  class="role-tag"
+                >管理员</el-tag>
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="settings">
                     <el-icon><Setting /></el-icon>
-                    设置
+                    {{ ui.t('app.user.settings') }}
                   </el-dropdown-item>
                   <el-dropdown-item divided command="logout">
                     <el-icon><SwitchButton /></el-icon>
-                    退出登录
+                    {{ ui.t('app.user.logout') }}
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -47,9 +62,9 @@
 
           <!-- Guest: show login/register buttons -->
           <template v-else>
-            <el-button size="small" @click="$router.push('/login')">登录</el-button>
+            <el-button size="small" @click="$router.push('/login')">{{ ui.t('app.auth.login') }}</el-button>
             <el-button size="small" @click="$router.push('/register')">
-              注册
+              {{ ui.t('app.auth.register') }}
             </el-button>
           </template>
 
@@ -59,7 +74,7 @@
             @click="$router.push('/run')"
           >
             <el-icon><VideoPlay /></el-icon>
-            新建运行
+            {{ ui.t('app.nav.newRun') }}
           </el-button>
         </div>
       </nav>
@@ -84,10 +99,12 @@ import {
 import { ElMessage } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { useAuthStore } from '@/stores/auth'
+import { useUiLabelsStore } from '@/stores/uiLabels'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const ui = useUiLabelsStore()
 
 const locale = ref(zhCn)
 
@@ -98,7 +115,7 @@ const isAuthPage = computed(() => ['/login', '/register'].includes(route.path))
 async function handleUserCommand(command: string) {
   if (command === 'logout') {
     await auth.logout()
-    ElMessage.success('已退出登录')
+    ElMessage.success(ui.t('app.message.logoutSuccess'))
     router.push('/')
   } else if (command === 'settings') {
     router.push('/settings')
@@ -204,6 +221,11 @@ body {
   gap: 8px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.role-tag {
+  margin-left: 4px;
+  transform: scale(0.92);
 }
 
 .user-btn {

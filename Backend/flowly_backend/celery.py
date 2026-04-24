@@ -62,6 +62,8 @@ app.conf.beat_schedule = {
 app.conf.task_routes = {
     "ai_engine.tasks.run_workflow_task": {"queue": "workflows"},
     "ai_engine.tasks.process_document_task": {"queue": "documents"},
+    # 可与 workflows 共用队列，避免未单独起 auto_reply worker 时任务积压；生产可改为 "auto_reply"。
+    "ai_engine.tasks.run_auto_reply_job_task": {"queue": "workflows"},
     "ai_engine.tasks.cleanup_failed_executions": {"queue": "maintenance"},
     "ai_engine.tasks.retry_stale_executions": {"queue": "maintenance"},
     "ai_engine.tasks.warm_workflow_cache": {"queue": "maintenance"},

@@ -31,6 +31,7 @@
       :initial-definition="workflowDefinition"
       :on-save="onSave"
     />
+    <WorkflowGuideFab :workflow-id="workflowId" />
   </div>
 </template>
 
@@ -40,6 +41,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft } from '@element-plus/icons-vue'
 import WorkflowEditor from '@/components/WorkflowEditor.vue'
+import WorkflowGuideFab from '@/components/workflow/WorkflowGuideFab.vue'
 import { useWorkflowEditorStore } from '@/stores/workflowEditor'
 import api from '@/utils/api'
 
@@ -92,7 +94,7 @@ async function onSave(data: { name: string; description: string; definition: any
       ElMessage.success('工作流已创建')
 
       // Update URL to reflect new ID
-      router.replace({ name: 'WorkflowEditor', params: { id: workflowId.value } })
+      router.replace({ name: 'WorkflowEditor', params: { id: String(workflowId.value) } })
     }
   } finally {
     saving.value = false

@@ -6,10 +6,12 @@ The frontend connects via WebSocket to receive real-time node transitions,
 token updates, tool calls, and completion signals.
 """
 
-import asyncio
 import json
+import logging
 
 from channels.generic.websocket import AsyncWebsocketConsumer
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowStreamConsumer(AsyncWebsocketConsumer):
@@ -24,22 +26,36 @@ class WorkflowStreamConsumer(AsyncWebsocketConsumer):
     """
 
     async def connect(self):
-        self.thread_id = self.scope["url_route"]["kwargs"]["thread_id"]
+        raw = self.scope["url_route"]["kwargs"]["thread_id"]
+        self.thread_id = str(raw).strip().lower()
         self.group_name = f"workflow_{self.thread_id}"
 
-        # Join the channel group for this thread
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
+        try:
+            await self.channel_layer.group_add(self.group_name, self.channel_name)
+            await self.accept()
+        except Exception:
+            logger.exception(
+                "Workflow WS connect failed (group_add/accept).thread_id=%s channel=%s",
+                self.thread_id,
+                getattr(self, "channel_name", None),
+            )
+            # 未 accept 即返回，由 Channels 拒绝握手；便于在终端看到 Redis/配置错误栈
+            return
 
-        # Send a connected confirmation
-        await self.send(text_data=json.dumps({
-            "event_type": "connected",
-            "thread_id": self.thread_id,
-        }))
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "event_type": "connected",
+                    "thread_id": self.thread_id,
+                }
+            )
+        )
 
     async def disconnect(self, close_code):
-        # Leave the channel group
-        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        try:
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        except Exception:
+            logger.debug("group_discard skipped (connect may have failed)", exc_info=True)
 
     async def receive(self, text_data=None, bytes_data=None):
         """

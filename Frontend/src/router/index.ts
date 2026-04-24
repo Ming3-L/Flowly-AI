@@ -15,7 +15,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/login',
-    name: 'Auth',
+    name: 'Login',
     component: () => import('@/views/AuthPage.vue'),
     meta: { guestOnly: true },
   },
@@ -29,6 +29,12 @@ const routes: RouteRecordRaw[] = [
     path: '/chat',
     name: 'Chat',
     component: () => import('@/views/Chat.vue'),
+  },
+  {
+    path: '/auto-reply',
+    name: 'AutoReply',
+    component: () => import('@/views/AutoReplyView.vue'),
+    meta: { requiresAuth: true },
   },
   {
     path: '/settings',

@@ -42,7 +42,6 @@ from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage  # pyright: ignore[reportMissingImports]
 from langchain_core.tools import tool  # pyright: ignore[reportMissingImports]
-from langchain_openai import ChatOpenAI  # pyright: ignore[reportMissingImports]
 from langgraph.graph import END, StateGraph
 from langgraph.types import Command
 
@@ -122,12 +121,9 @@ def create_calendar_event(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _llm():
-    return ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        api_key=settings.OPENAI_API_KEY,
-        base_url=settings.OPENAI_BASE_URL,
-        temperature=0.7,
-    )
+    from ai_engine.workflow import get_chat_model
+
+    return get_chat_model("openai", temperature=0.7, streaming=False)
 
 
 def entry_node(state: ApprovalState) -> ApprovalState:

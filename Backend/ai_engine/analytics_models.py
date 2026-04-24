@@ -53,7 +53,31 @@ class CostRecord(models.Model):
         max_digits=10, decimal_places=6, default=0
     )
 
-    node_name = models.CharField(max_length=100, blank=True, default="")
+    node_name = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        help_text="LangGraph 逻辑节点名；与 client_node_id 可同时使用。",
+    )
+
+    client_node_id = models.CharField(
+        "画布节点 ID",
+        max_length=128,
+        blank=True,
+        default="",
+        help_text="与 ``WorkflowGraphNode.client_node_id`` 对齐，用于按画布节点聚合费用。",
+    )
+
+    conversation_session = models.ForeignKey(
+        "ai_engine.ConversationSession",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cost_records",
+        verbose_name="对话会话",
+        help_text="自动回复等场景按会话计费时填写；可与 execution 并存。",
+    )
+
     call_type = models.CharField(max_length=50, default="completion")
     latency_ms = models.IntegerField(default=0)
 
@@ -66,6 +90,8 @@ class CostRecord(models.Model):
             models.Index(fields=["user", "created_at"]),
             models.Index(fields=["model", "created_at"]),
             models.Index(fields=["created_at"]),
+            models.Index(fields=["conversation_session", "created_at"]),
+            models.Index(fields=["workflow", "client_node_id", "created_at"]),
         ]
 
     def __str__(self):

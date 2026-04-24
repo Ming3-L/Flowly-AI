@@ -34,12 +34,16 @@ uvicorn[standard]>=0.27.0
 # Environment Variables
 python-dotenv>=1.0.0
 
+# Volcengine Ark SDK (images.generate, content_generation.tasks, etc.)
+volcengine-python-sdk[ark]>=1.0.0
+
 # Additional Utilities
+cryptography>=42.0.0
 pydantic>=2.0.0
 python-multipart>=0.0.9
 redis>=5.0.0
 
-# ── Optional: Django AI Assistant ────────────────────────────────────────────
+# --- Optional: Django AI Assistant ---
 # Provides pre-built Thread/Message models and built-in API views.
 # Install with: pip install django-ai-assistant[openai]
 # NOTE: This package ships its own Thread and Message models. If you enable it,
@@ -47,14 +51,15 @@ redis>=5.0.0
 #   python manage.py migrate django_ai_assistant
 # django-ai-assistant[openai]>=0.4.0
 
-# ── Phase 8: RAG — Vector Retrieval ─────────────────────────────────────────
+# --- Phase 8: RAG - Vector Retrieval ---
 chromadb>=0.4.0
 langchain-chroma>=0.1.0
 langchain-openai>=0.2.0
 PyMuPDF>=1.23.0            # PDF text extraction
 python-docx>=1.0.0          # Word document extraction
+Pillow>=10.0.0              # Image format conversion for execution artifacts
 beautifulsoup4>=4.12.0      # HTML parsing
 lxml>=4.9.0                  # XML/HTML parser for BeautifulSoup
 
-# ── Phase 9: Celery — Async Task Queue ───────────────────────────────────────
+# --- Phase 9: Celery - Async Task Queue ---
 celery>=5.3.0

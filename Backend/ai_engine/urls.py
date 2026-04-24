@@ -12,6 +12,11 @@ from .executions import exec_router
 from .rag_api import router as rag_router
 from .task_api import router as task_router
 from .analytics_api import router as analytics_router
+from .custom_node_types import custom_node_type_router
+from .prompt_tools_api import ai_router, prompt_tools_router
+from .chat_sessions_api import chat_sessions_router
+from .auto_reply_api import auto_reply_router
+from .ui_labels_api import router as ui_labels_router
 from accounts.views import router as accounts_router
 from accounts.api import router as profile_router
 
@@ -30,6 +35,9 @@ api.add_router("/workflows", workflow_crud_router)
 # /api/executions/* — history, stats
 api.add_router("/executions", exec_router)
 
+# /api/ui-labels/* — 前端界面文案（公开读取，后台 Admin 维护）
+api.add_router("/ui-labels", ui_labels_router)
+
 # /api/auth/* — JWT auth, register, profile
 api.add_router("/auth", accounts_router)
 api.add_router("/auth", profile_router)
@@ -43,5 +51,20 @@ api.add_router("/tasks", task_router)
 # /api/analytics/* — Usage, cost, and performance analytics (Phase 10)
 api.add_router("/analytics", analytics_router)
 
-# /api/ai/* — legacy execute/status endpoints
+# /api/custom-node-types/* — 用户自定义画布节点类型（ut_<id>）
+api.add_router("/custom-node-types", custom_node_type_router)
+
+# /api/ai/* — legacy execute/status endpoints + model catalog
 api.add_router("/ai", legacy_router)
+
+# /api/ai/models
+api.add_router("/ai", ai_router)
+
+# /api/prompt-tools/*
+api.add_router("/prompt-tools", prompt_tools_router)
+
+# /api/chat/* — 独立 AI 对话会话（列表 / 新建 / 删除 / 消息）
+api.add_router("/chat", chat_sessions_router)
+
+# /api/auto-reply/* — AI 自动回复规则与异步任务
+api.add_router("/auto-reply", auto_reply_router)

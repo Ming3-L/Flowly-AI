@@ -39,6 +39,26 @@ export interface RunWorkflowRequest {
   workflow_id: number | null
   query: string
   context?: Record<string, any>
+  /** 与 Vue Flow 节点 id 一致，用于 CostRecord / token 与画布对齐 */
+  client_node_id?: string
+  model_name?: string
+  parallel_branches?: string[]
+}
+
+/** POST /workflows/canvas-node/run */
+export interface RunCanvasNodeRequest {
+  workflow_id: number
+  client_node_id: string
+  node_type: string
+  config?: Record<string, any>
+  inputs?: Record<string, any>
+}
+
+export interface RunCanvasNodeResponse {
+  execution_id: number
+  status: string
+  output: Record<string, any>
+  error: string | null
 }
 
 export interface RunWorkflowResponse {
@@ -51,7 +71,32 @@ export interface WorkflowStateResponse {
   thread_id: string
   status: WorkflowStatus
   messages: ChatMessage[]
-  metadata: Record<string, any>
+  metadata: Record<string, any> & {
+    node_steps?: WorkflowExecutionStepDTO[]
+    execution_live?: ExecutionLiveSnapshot | null
+  }
+}
+
+/** GET /workflows/:id/state 返回的已持久化步骤（与 WS 事件字段对齐） */
+export interface WorkflowExecutionStepDTO {
+  node_key: string
+  display_title: string
+  node_kind: string
+  activity: string
+  model_route: string
+  status: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+/** Redis 中的当前执行快照 */
+export interface ExecutionLiveSnapshot {
+  node: string
+  title?: string
+  activity?: string
+  status: string
+  model_route?: string
+  node_type?: string
 }
 
 export interface ResumeWorkflowRequest {
@@ -194,6 +239,12 @@ export interface WorkflowNodeState {
   status: 'idle' | 'running' | 'completed' | 'failed'
   started_at?: Date
   finished_at?: Date
+  /** 画布节点 label 或 LangGraph 节点展示名 */
+  title?: string
+  /** 当前在做什么（后端生成的中文说明） */
+  activity?: string
+  node_type?: string
+  model_route?: string
 }
 
 export interface ExecutionHistoryItem {

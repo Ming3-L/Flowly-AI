@@ -13,11 +13,14 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/utils/api'
+import { buildWorkflowWebSocketUrl } from '@/utils/workflowWs'
 import type {
   Workflow,
   WorkflowStatus,
   RunWorkflowRequest,
   RunWorkflowResponse,
+  RunCanvasNodeRequest,
+  RunCanvasNodeResponse,
   WorkflowStateResponse,
   ResumeWorkflowRequest,
   ResumeWorkflowResponse,
@@ -37,8 +40,7 @@ function makeId() {
 }
 
 function buildWSUrl(threadId: string): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws/workflow/${threadId}/`
+  return buildWorkflowWebSocketUrl(threadId)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,7 +107,13 @@ export const useWorkflowStore = defineStore('workflow', () => {
   )
 
   /** Ordered list of node states for the timeline display. */
-  const nodeTimeline = computed(() => Array.from(nodeStates.value.values()))
+  const nodeTimeline = computed(() =>
+    Array.from(nodeStates.value.values()).sort((a, b) => {
+      const ta = a.started_at instanceof Date ? a.started_at.getTime() : 0
+      const tb = b.started_at instanceof Date ? b.started_at.getTime() : 0
+      return ta - tb
+    })
+  )
 
   // ── Actions ───────────────────────────────────────────────────────────────
 
@@ -116,7 +124,10 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isLoading.value = true
     try {
       const res = await api.get('/workflows/')
-      workflows.value = res.data.items ?? []
+      const data = res.data as any
+      // Backend returns { total, items }, but some views expect plain array.
+      const items = Array.isArray(data) ? data : (data?.items ?? [])
+      workflows.value = Array.isArray(items) ? items : []
     } catch {
       workflows.value = []
     } finally {
@@ -148,7 +159,16 @@ export const useWorkflowStore = defineStore('workflow', () => {
     errorMessage.value = null
 
     try {
-      const res = await api.post<RunWorkflowResponse>('/workflows/run', payload)
+      const body: Record<string, unknown> = {
+        workflow_id: payload.workflow_id,
+        query: payload.query,
+      }
+      if (payload.context !== undefined) body.context = payload.context
+      if (payload.client_node_id) body.client_node_id = payload.client_node_id
+      if (payload.model_name) body.model_name = payload.model_name
+      if (payload.parallel_branches?.length) body.parallel_branches = payload.parallel_branches
+
+      const res = await api.post<RunWorkflowResponse>('/workflows/run', body)
       const { thread_id, status, execution_id } = res.data
 
       threadId.value = thread_id
@@ -181,6 +201,91 @@ export const useWorkflowStore = defineStore('workflow', () => {
   }
 
   /**
+   * 串联执行画布工作流（POST /workflows/canvas/run），并通过 WS 接收节点事件。
+   */
+  async function startCanvasWorkflow(payload: {
+    workflow_id: number
+    query: string
+    context?: Record<string, unknown>
+    entry_node_id?: string
+    initial_inputs?: Record<string, any>
+    thread_id?: string
+    client_node_id?: string
+  }) {
+    _cleanupWebSocket()
+    resetExecutionState()
+
+    isRunning.value = true
+    errorMessage.value = null
+
+    try {
+      const res = await api.post<RunWorkflowResponse>('/workflows/canvas/run', {
+        workflow_id: payload.workflow_id,
+        thread_id: payload.thread_id ?? '',
+        entry_node_id: payload.entry_node_id ?? '',
+        initial_inputs: payload.initial_inputs ?? {},
+        query: payload.query,
+        context: payload.context ?? {},
+      })
+
+      const { thread_id, status, execution_id } = res.data
+      threadId.value = thread_id
+      executionId.value = execution_id
+      workflowStatus.value = status
+
+      currentWorkflow.value =
+        workflows.value.find((w) => w.id === payload.workflow_id) ?? null
+
+      messages.value.push({
+        id: makeId(),
+        role: 'user',
+        content: payload.query,
+        timestamp: new Date(),
+      })
+
+      _connectWebSocket(thread_id)
+
+      history.value.unshift({
+        execution_id: execution_id ?? 0,
+        thread_id,
+        started_at: new Date(),
+        status,
+        query: payload.query,
+      })
+    } catch (err: any) {
+      errorMessage.value =
+        err?.response?.data?.detail ??
+        err?.response?.data?.message ??
+        err.message ??
+        'Failed to start canvas workflow'
+      isRunning.value = false
+    }
+  }
+
+  /**
+   * 同步执行单个画布节点（计费带 client_node_id，不经 WebSocket）。
+   */
+  async function runCanvasNode(
+    payload: RunCanvasNodeRequest
+  ): Promise<RunCanvasNodeResponse | null> {
+    errorMessage.value = null
+    try {
+      const res = await api.post<RunCanvasNodeResponse>('/workflows/canvas-node/run', {
+        workflow_id: payload.workflow_id,
+        client_node_id: payload.client_node_id,
+        node_type: payload.node_type,
+        config: payload.config ?? {},
+        inputs: payload.inputs ?? {},
+      })
+      return res.data
+    } catch (err: any) {
+      errorMessage.value =
+        err?.response?.data?.detail ?? err?.message ?? '画布节点调试请求失败'
+      return null
+    }
+  }
+
+  /**
    * Resume a paused (pending_approval) workflow.
    */
   async function resumeWorkflow(payload: ResumeWorkflowRequest) {
@@ -203,6 +308,48 @@ export const useWorkflowStore = defineStore('workflow', () => {
   /**
    * Connect to the WebSocket for the given thread.
    */
+  function _mapStepStatus(s: string): WorkflowNodeState['status'] {
+    if (s === 'completed') return 'completed'
+    if (s === 'failed') return 'failed'
+    if (s === 'running') return 'running'
+    return 'idle'
+  }
+
+  async function _hydrateNodeStatesFromServer(id: string) {
+    const st = await fetchThreadState(id)
+    const meta = st?.metadata as Record<string, any> | undefined
+    const steps = meta?.node_steps as Array<Record<string, any>> | undefined
+    if (steps?.length) {
+      for (const s of steps) {
+        const key = String(s.node_key ?? '')
+        if (!key) continue
+        nodeStates.value.set(key, {
+          node: key,
+          title: s.display_title,
+          activity: s.activity,
+          node_type: s.node_kind,
+          model_route: s.model_route,
+          status: _mapStepStatus(String(s.status ?? '')),
+          started_at: s.started_at ? new Date(s.started_at) : undefined,
+          finished_at: s.finished_at ? new Date(s.finished_at) : undefined,
+        })
+      }
+    }
+    const live = meta?.execution_live as Record<string, any> | undefined
+    if (live?.node && isRunning.value) {
+      const key = String(live.node)
+      nodeStates.value.set(key, {
+        node: key,
+        title: live.title,
+        activity: live.activity,
+        model_route: live.model_route,
+        node_type: live.node_type,
+        status: 'running',
+        started_at: new Date(),
+      })
+    }
+  }
+
   function _connectWebSocket(id: string) {
     _wsShouldReconnect = true
     const url = buildWSUrl(id)
@@ -212,6 +359,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     _ws.onopen = () => {
       console.debug(`[WS] Connected to thread ${id}`)
       _wsShouldReconnect = true
+      void _hydrateNodeStatesFromServer(id)
     }
 
     _ws.onmessage = (event) => {
@@ -250,11 +398,21 @@ export const useWorkflowStore = defineStore('workflow', () => {
         break
 
       case 'node_start':
-        _onNodeStart(event.node)
+        _onNodeStart({
+          node: event.node,
+          title: event.title ?? event.display_title,
+          activity: event.activity,
+          node_type: event.node_type,
+          model_route: event.model_route,
+        })
         break
 
       case 'node_end':
-        _onNodeEnd(event.node, event.status)
+        _onNodeEnd(event.node, event.status, {
+          activity: event.activity,
+          title: event.title ?? event.display_title,
+          model_route: event.model_route,
+        })
         break
 
       case 'token':
@@ -296,23 +454,42 @@ export const useWorkflowStore = defineStore('workflow', () => {
 
   // ── Event Handlers ────────────────────────────────────────────────────────
 
-  function _onNodeStart(node: string) {
+  function _onNodeStart(payload: {
+    node: string
+    title?: string
+    activity?: string
+    node_type?: string
+    model_route?: string
+  }) {
+    const { node, title, activity, node_type, model_route } = payload
     activeNode.value = node
     workflowStatus.value = 'running'
     nodeStates.value.set(node, {
       node,
       status: 'running',
       started_at: new Date(),
+      title,
+      activity,
+      node_type,
+      model_route,
     })
   }
 
-  function _onNodeEnd(node: string, status: string) {
+  function _onNodeEnd(
+    node: string,
+    status: string,
+    extra?: { activity?: string; title?: string; model_route?: string }
+  ) {
     const existing = nodeStates.value.get(node)
     nodeStates.value.set(node, {
       node,
       status: status === 'completed' ? 'completed' : 'failed',
       started_at: existing?.started_at,
       finished_at: new Date(),
+      title: extra?.title ?? existing?.title,
+      activity: extra?.activity ?? existing?.activity,
+      node_type: existing?.node_type,
+      model_route: extra?.model_route ?? existing?.model_route,
     })
     if (activeNode.value === node) {
       if (streamingContent.value) {
@@ -346,8 +523,15 @@ export const useWorkflowStore = defineStore('workflow', () => {
     isRunning.value = false
     activeNode.value = null
 
+    // 画布跑完时 ``result.response`` 通常等于最后一个节点已在 ``node_end`` 里刷入的对话内容，避免重复一条。
     if (status === 'completed' && result?.response) {
-      _appendMessage('assistant', result.response, 'format_response')
+      const resp = String(result.response).trim()
+      const last = messages.value.length ? messages.value[messages.value.length - 1] : null
+      const dup =
+        last?.role === 'assistant' && String(last.content).trim() === resp
+      if (resp && !dup) {
+        _appendMessage('assistant', result.response, 'format_response')
+      }
     }
 
     const entry = history.value.find((h) => h.thread_id === threadId.value)
@@ -470,6 +654,8 @@ export const useWorkflowStore = defineStore('workflow', () => {
     fetchWorkflows,
     fetchThreadState,
     startWorkflow,
+    startCanvasWorkflow,
+    runCanvasNode,
     resumeWorkflow,
     resetExecutionState,
   }

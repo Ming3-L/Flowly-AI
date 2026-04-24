@@ -20,7 +20,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Annotated, Any, Literal, TypedDict
+from functools import partial
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 from langchain_core.language_models import BaseChatModel  # pyright: ignore[reportMissingImports]
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage  # pyright: ignore[reportMissingImports]
@@ -87,6 +88,14 @@ class WorkflowState(TypedDict):
     rag_context: str | None
     retrieved_documents: list[dict[str, Any]]
 
+    # ─── Runtime injection (API / checkpointer, not persisted in editor JSON) ─
+    _thread_id: NotRequired[str]
+    _execution_id: NotRequired[int]
+    _client_node_id: NotRequired[str]
+    model_key: NotRequired[str]
+    _runtime_user_id: NotRequired[int]
+    _force_general_assistant: NotRequired[bool]
+
 
 # Use TypedDict for the full state type annotation
 
@@ -108,7 +117,7 @@ async def rag_retrieval_node(state: WorkflowState) -> WorkflowState:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
     await emit.node_start("rag_retrieval")
 
@@ -183,12 +192,15 @@ async def rag_retrieval_node(state: WorkflowState) -> WorkflowState:
 class WorkflowEventEmitter:
     """
     Sends structured events to the Django Channels group for the given thread.
+
+    可选 ``execution_id``：写入 ``WorkflowExecutionStep`` 并更新 Redis 执行快照。
     """
 
-    def __init__(self, channel_layer, thread_id: str):
+    def __init__(self, channel_layer, thread_id: str, execution_id: int | None = None):
         self.channel_layer = channel_layer
         self.thread_id = thread_id
         self.group_name = f"workflow_{thread_id}"
+        self.execution_id = execution_id
 
     async def _send(self, event_type: str, data: dict[str, Any]):
         await self.channel_layer.group_send(
@@ -200,11 +212,73 @@ class WorkflowEventEmitter:
             },
         )
 
-    async def node_start(self, node: str):
-        await self._send("node_start", {"node": node, "status": "running"})
+    async def node_start(self, node: str, **meta: Any):
+        from ai_engine.workflow_execution_tracking import (
+            activity_for_langgraph_node,
+            persist_step_start,
+            redis_set_execution_live,
+        )
 
-    async def node_end(self, node: str, status: str = "completed"):
-        await self._send("node_end", {"node": node, "status": status})
+        title = str(meta.get("title") or meta.get("display_title") or node)
+        node_kind = str(meta.get("node_type") or meta.get("node_kind") or "")
+        model_route = str(meta.get("model_route") or "")
+        activity = str(meta.get("activity") or "").strip() or activity_for_langgraph_node(
+            node, model_route or None
+        )
+        payload: dict[str, Any] = {
+            "node": node,
+            "status": "running",
+            "title": title,
+            "display_title": title,
+            "activity": activity,
+            "node_type": node_kind,
+            "model_route": model_route,
+        }
+        await self._send("node_start", payload)
+        if self.execution_id:
+            await persist_step_start(
+                self.execution_id,
+                node_key=node,
+                display_title=title,
+                node_kind=node_kind,
+                activity=activity,
+                model_route=model_route,
+            )
+            redis_set_execution_live(
+                self.execution_id,
+                {
+                    "node": node,
+                    "title": title,
+                    "activity": activity,
+                    "status": "running",
+                    "model_route": model_route,
+                    "node_type": node_kind,
+                },
+            )
+
+    async def node_end(self, node: str, status: str = "completed", **meta: Any):
+        from ai_engine.workflow_execution_tracking import (
+            persist_step_end,
+            redis_set_execution_live,
+        )
+
+        data: dict[str, Any] = {"node": node, "status": status}
+        for k in ("activity", "title", "display_title", "model_route", "node_type"):
+            if meta.get(k) is not None:
+                data[k] = meta[k]
+        await self._send("node_end", data)
+        if self.execution_id:
+            await persist_step_end(self.execution_id, node_key=node, end_status=status)
+            redis_set_execution_live(
+                self.execution_id,
+                {
+                    "node": node,
+                    "title": str(meta.get("title") or node),
+                    "activity": str(meta.get("activity") or ""),
+                    "status": status,
+                    "model_route": str(meta.get("model_route") or ""),
+                },
+            )
 
     async def token(self, content: str, node: str):
         await self._send("token", {"content": content, "node": node})
@@ -219,14 +293,22 @@ class WorkflowEventEmitter:
         await self._send("tool_result", {"content": content, "node": node})
 
     async def workflow_end(self, status: str, result: dict[str, Any] | None = None):
+        from ai_engine.workflow_execution_tracking import redis_clear_execution_live
+
         await self._send("workflow_end", {
             "status": status,
             "thread_id": self.thread_id,
             "result": result or {},
         })
+        if self.execution_id:
+            redis_clear_execution_live(self.execution_id)
 
     async def workflow_error(self, error: str):
+        from ai_engine.workflow_execution_tracking import redis_clear_execution_live
+
         await self._send("workflow_error", {"error": error})
+        if self.execution_id:
+            redis_clear_execution_live(self.execution_id)
 
     async def pending_approval(self, question: str, reasoning: str, node: str):
         await self._send(
@@ -260,50 +342,93 @@ def get_chat_model(
     Build a configured chat model by name.
 
     Supported:
+      - "doubao" / "ark" : 火山方舟 OpenAI 兼容 Chat（``DOUBAO_API_KEY`` / ``ARK_API_KEY`` 等）
       - "vectorengine" : ChatOpenAI with Vector Engine API (OpenAI-compatible proxy for Codex)
-      - "openai"      : ChatOpenAI (default, uses OPENAI_* settings)
+      - "openai"      : ChatOpenAI（若已配置豆包密钥且未关闭 ``FLOWLY_USE_DOUBAO_DEFAULT``，则走方舟）
       - "claude"      : ChatAnthropic (uses ANTHROPIC_API_KEY)
       - "ollama"      : ChatOllama (uses OLLAMA_BASE_URL, OLLAMA_MODEL)
 
     Additional kwargs (e.g. temperature, streaming) override the defaults.
+
+    密钥与端点统一来自 ``get_ai_provider_settings()``（环境变量 + project_secrets_local）。
     """
-    from django.conf import settings
+    from ai_engine.integrations import get_ai_provider_settings
     from langchain_anthropic import ChatAnthropic  # pyright: ignore[reportMissingImports]
     from langchain_ollama import ChatOllama  # pyright: ignore[reportMissingImports]
     from langchain_openai import ChatOpenAI  # pyright: ignore[reportMissingImports]
 
-    # Vector Engine (OpenAI-compatible proxy for Codex)
-    if model_name == "vectorengine":
-        return ChatOpenAI(
-            model=override_kwargs.get("model", settings.VECTORENGINE_MODEL or "codex"),
-            api_key=override_kwargs.get("api_key", settings.VECTORENGINE_API_KEY),
-            base_url=override_kwargs.get("base_url", settings.VECTORENGINE_BASE_URL or "https://api.vectorengine.cn/v1"),
-            temperature=override_kwargs.get("temperature", 0.7),
-            streaming=override_kwargs.get("streaming", True),
-        )
+    s = get_ai_provider_settings()
+    route = (model_name or "openai").strip().lower()
+    if route in ("ark", "byte", "volcengine"):
+        route = "doubao"
+    if route == "openai" and s.language.doubao_ark_api_key:
+        flag = os.environ.get("FLOWLY_USE_DOUBAO_DEFAULT", "1").strip().lower()
+        if flag not in ("0", "false", "no", "off"):
+            route = "doubao"
 
-    if model_name == "claude":
-        return ChatAnthropic(
-            model_name=override_kwargs.get("model", settings.ANTHROPIC_MODEL or "claude-3-5-sonnet-20241022"),
-            anthropic_api_key=settings.ANTHROPIC_API_KEY,
+    if route == "doubao":
+        api_key = override_kwargs.get("api_key", s.language.doubao_ark_api_key)
+        if not api_key:
+            raise ValueError(
+                "豆包/方舟未配置：请设置环境变量 DOUBAO_API_KEY 或 ARK_API_KEY（勿提交到仓库）。"
+            )
+        base_url = override_kwargs.get("base_url", s.language.doubao_ark_base_url)
+        raw_model = str(override_kwargs.get("model") or "").strip()
+        configured = (s.language.doubao_ark_model or "").strip()
+        # 显式 model（接入点 ep- 或方舟模型名如 Doubao-Smart-Router）优先于环境默认
+        if raw_model:
+            model_id = raw_model
+        elif configured:
+            model_id = configured
+        else:
+            raise ValueError(
+                "豆包/方舟需要推理接入点：请设置 DOUBAO_ARK_MODEL（一般为 ep- 开头的 endpoint id），"
+                "或在画布/预设中指定 model。"
+            )
+        return ChatOpenAI(
+            model=model_id,
+            api_key=api_key,
+            base_url=base_url,
             temperature=override_kwargs.get("temperature", 0.7),
             max_tokens=override_kwargs.get("max_tokens", 1024),
             streaming=override_kwargs.get("streaming", True),
         )
 
-    if model_name == "ollama":
+    # Vector Engine (OpenAI-compatible proxy for Codex)
+    if route == "vectorengine":
+        return ChatOpenAI(
+            model=override_kwargs.get("model", s.language.vectorengine_model or "codex"),
+            api_key=override_kwargs.get("api_key", s.language.vectorengine_api_key),
+            base_url=override_kwargs.get(
+                "base_url",
+                s.language.vectorengine_base_url or "https://api.vectorengine.cn/v1",
+            ),
+            temperature=override_kwargs.get("temperature", 0.7),
+            streaming=override_kwargs.get("streaming", True),
+        )
+
+    if route == "claude":
+        return ChatAnthropic(
+            model_name=override_kwargs.get("model", s.language.anthropic_model or "claude-3-5-sonnet-20241022"),
+            anthropic_api_key=override_kwargs.get("api_key", s.language.anthropic_api_key),
+            temperature=override_kwargs.get("temperature", 0.7),
+            max_tokens=override_kwargs.get("max_tokens", 1024),
+            streaming=override_kwargs.get("streaming", True),
+        )
+
+    if route == "ollama":
         return ChatOllama(
-            base_url=override_kwargs.get("base_url", settings.OLLAMA_BASE_URL or "http://localhost:11434"),
-            model=override_kwargs.get("model", settings.OLLAMA_MODEL or "llama3"),
+            base_url=override_kwargs.get("base_url", s.language.ollama_base_url or "http://localhost:11434"),
+            model=override_kwargs.get("model", s.language.ollama_model or "llama3"),
             temperature=override_kwargs.get("temperature", 0.7),
             streaming=override_kwargs.get("streaming", True),
         )
 
     # Default: OpenAI-compatible
     return ChatOpenAI(
-        model=override_kwargs.get("model", settings.OPENAI_MODEL),
-        api_key=override_kwargs.get("api_key", settings.OPENAI_API_KEY),
-        base_url=override_kwargs.get("base_url", settings.OPENAI_BASE_URL),
+        model=override_kwargs.get("model", s.language.openai_model),
+        api_key=override_kwargs.get("api_key", s.language.openai_api_key),
+        base_url=override_kwargs.get("base_url", s.language.openai_base_url),
         temperature=override_kwargs.get("temperature", 0.7),
         streaming=override_kwargs.get("streaming", True),
     )
@@ -311,19 +436,44 @@ def get_chat_model(
 
 def get_traced_model(model: BaseChatModel, model_name: str) -> BaseChatModel:
     """Wrap model with LangSmith @traceable if tracing is configured."""
-    from django.conf import settings
+    import os
 
-    if not (settings.LANGSMITH_TRACING and settings.LANGSMITH_API_KEY):
+    tracing = os.getenv("LANGSMITH_TRACING", "").lower() in ("true", "1", "yes")
+    api_key = os.getenv("LANGSMITH_API_KEY", "")
+    if not (tracing and api_key):
         return model
 
     try:
         from langsmith import traceable
+
+        project = os.getenv("LANGSMITH_PROJECT", "flowly-ai")
         return traceable(
-            project_name=settings.LANGSMITH_PROJECT,
+            project_name=project,
             run_name=f"chat_model_{model_name}",
         )(model)
     except ImportError:
         return model
+
+
+async def _async_record_llm_cost(
+    state: dict[str, Any],
+    response: Any,
+    *,
+    logical_node_name: str,
+    model_fallback: str,
+) -> None:
+    """在线程池中写 CostRecord，避免在 async 节点里直接阻塞 Django ORM。"""
+    from ai_engine.cost_tracker import record_llm_cost_for_workflow_state
+
+    await asyncio.to_thread(
+        partial(
+            record_llm_cost_for_workflow_state,
+            state,
+            response,
+            logical_node_name=logical_node_name,
+            model_fallback=model_fallback,
+        )
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -697,13 +847,28 @@ async def router_node(state: WorkflowState) -> WorkflowState:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
-    await emit.node_start("router")
+    router_model = (state.get("model_name") or "doubao").strip()
+    await emit.node_start("router", model_route=router_model)
+
+    if state.get("_force_general_assistant"):
+        await emit.node_end("router")
+        return {
+            **state,
+            "route": "general",
+            "branches": [],
+            "intent": "general_assistant",
+            "needs_approval": False,
+            "approval_question": None,
+            "approval_reasoning": "",
+            "model_name": router_model,
+            "current_node": "router",
+        }
 
     try:
-        llm = get_chat_model("openai")
-        llm = get_traced_model(llm, "openai")
+        llm = get_chat_model(router_model)
+        llm = get_traced_model(llm, router_model)
 
         analysis_prompt = f"""Analyze this user query and return a JSON decision:
 
@@ -718,7 +883,7 @@ Respond ONLY with a JSON object:
   "requires_approval": true | false,
   "approval_question": "question string if requires_approval is true, else null",
   "reasoning": "brief reasoning",
-  "model_name": "openai" | "claude" | "ollama",
+  "model_name": "openai" | "doubao" | "claude" | "ollama",
   "confidence": 0.0-1.0
 }}
 
@@ -733,6 +898,13 @@ Respond ONLY with valid JSON, no additional text."""
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(content=analysis_prompt),
         ])
+        mf = getattr(llm, "model_name", None) or "gpt-4o"
+        await _async_record_llm_cost(
+            dict(state),
+            response,
+            logical_node_name="router",
+            model_fallback=str(mf),
+        )
 
         try:
             decision = json.loads(response.content)
@@ -744,7 +916,7 @@ Respond ONLY with valid JSON, no additional text."""
                 "requires_approval": False,
                 "approval_question": None,
                 "reasoning": response.content if hasattr(response, "content") else str(response),
-                "model_name": "openai",
+                "model_name": "doubao",
                 "confidence": 0.5,
             }
 
@@ -754,7 +926,7 @@ Respond ONLY with valid JSON, no additional text."""
         requires_approval = decision.get("requires_approval", False)
         approval_question = decision.get("approval_question")
         reasoning = decision.get("reasoning", "")
-        model_name = decision.get("model_name", "openai")
+        model_name = decision.get("model_name", "doubao")
 
         await emit.token(reasoning, "router")
         await emit.node_end("router")
@@ -794,7 +966,7 @@ async def approval_gate(state: WorkflowState) -> WorkflowState:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
     await emit.node_start("approval_gate")
 
@@ -848,9 +1020,9 @@ async def _parallel_branch_wrapper(branch: str, state: dict) -> dict:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
-    model_name = state.get("model_name", "openai")
+    model_name = state.get("model_name", "doubao")
 
     # Build model with retry
     def _build_and_call():
@@ -897,6 +1069,13 @@ Focus ONLY on this branch's task."""
             if hasattr(response, "content") and response.content:
                 result_content = response.content
             messages.append(response)
+            mf = getattr(llm, "model_name", None) or "gpt-4o"
+            await _async_record_llm_cost(
+                state,
+                response,
+                logical_node_name=f"parallel:{branch}",
+                model_fallback=str(mf),
+            )
 
             tool_calls = getattr(response, "tool_calls", []) or []
             if not tool_calls:
@@ -926,10 +1105,10 @@ async def send_email_alice_branch(state: dict) -> dict:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
     await emit.parallel_branch_start("send_email_alice")
 
-    model_name = state.get("model_name", "openai")
+    model_name = state.get("model_name", "doubao")
     llm = get_chat_model(model_name)
     llm = get_traced_model(llm, model_name)
 
@@ -946,6 +1125,13 @@ Write only the email body (professional tone)."""
             HumanMessage(content=content),
         ])
         email_body = response.content if hasattr(response, "content") else str(response)
+        mf = getattr(llm, "model_name", None) or "gpt-4o"
+        await _async_record_llm_cost(
+            state,
+            response,
+            logical_node_name="parallel:send_email_alice",
+            model_fallback=str(mf),
+        )
     except Exception as exc:
         email_body = f"[Error drafting email for Alice: {exc}]"
 
@@ -964,10 +1150,10 @@ async def send_email_bob_branch(state: dict) -> dict:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
     await emit.parallel_branch_start("send_email_bob")
 
-    model_name = state.get("model_name", "openai")
+    model_name = state.get("model_name", "doubao")
     llm = get_chat_model(model_name)
     llm = get_traced_model(llm, model_name)
 
@@ -984,6 +1170,13 @@ Write only the email body (professional tone)."""
             HumanMessage(content=content),
         ])
         email_body = response.content if hasattr(response, "content") else str(response)
+        mf = getattr(llm, "model_name", None) or "gpt-4o"
+        await _async_record_llm_cost(
+            state,
+            response,
+            logical_node_name="parallel:send_email_bob",
+            model_fallback=str(mf),
+        )
     except Exception as exc:
         email_body = f"[Error drafting email for Bob: {exc}]"
 
@@ -1002,7 +1195,7 @@ async def generate_report_branch(state: dict) -> dict:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
     await emit.parallel_branch_start("generate_report")
 
     model_name = state.get("model_name", "claude")  # Use Claude for long-form content
@@ -1022,6 +1215,13 @@ Include sections, data analysis where applicable, and clear conclusions."""
             HumanMessage(content=content),
         ])
         report = response.content if hasattr(response, "content") else str(response)
+        mf = getattr(llm, "model_name", None) or "gpt-4o"
+        await _async_record_llm_cost(
+            state,
+            response,
+            logical_node_name="parallel:generate_report",
+            model_fallback=str(mf),
+        )
     except Exception as exc:
         report = f"[Error generating report: {exc}]"
 
@@ -1040,10 +1240,10 @@ async def generate_email_branch(state: dict) -> dict:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
     await emit.parallel_branch_start("generate_email")
 
-    model_name = state.get("model_name", "openai")
+    model_name = state.get("model_name", "doubao")
     llm = get_chat_model(model_name)
     llm = get_traced_model(llm, model_name)
 
@@ -1059,6 +1259,13 @@ Write the email body in a clear, professional tone."""
             HumanMessage(content=content),
         ])
         email_body = response.content if hasattr(response, "content") else str(response)
+        mf = getattr(llm, "model_name", None) or "gpt-4o"
+        await _async_record_llm_cost(
+            state,
+            response,
+            logical_node_name="parallel:generate_email",
+            model_fallback=str(mf),
+        )
     except Exception as exc:
         email_body = f"[Error generating email: {exc}]"
 
@@ -1077,7 +1284,7 @@ async def web_search_branch(state: dict) -> dict:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
     await emit.parallel_branch_start("web_search")
 
     tools = get_tools()
@@ -1119,7 +1326,7 @@ async def db_query_branch(state: dict) -> dict:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
     await emit.parallel_branch_start("db_query")
 
     try:
@@ -1154,10 +1361,10 @@ def _default_parallel_branch(branch: str):
 
         thread_id = str(state.get("_thread_id", "unknown"))
         channel_layer = get_channel_layer()
-        emit = WorkflowEventEmitter(channel_layer, thread_id)
+        emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
         await emit.parallel_branch_start(branch)
 
-        model_name = state.get("model_name", "openai")
+        model_name = state.get("model_name", "doubao")
         llm = get_chat_model(model_name)
         llm = get_traced_model(llm, model_name)
         tools = get_tools()
@@ -1175,6 +1382,13 @@ Return a clear, well-structured response for this task."""
                 HumanMessage(content=content),
             ])
             result = response.content if hasattr(response, "content") else str(response)
+            mf = getattr(llm, "model_name", None) or "gpt-4o"
+            await _async_record_llm_cost(
+                state,
+                response,
+                logical_node_name=f"parallel:{branch}",
+                model_fallback=str(mf),
+            )
         except Exception as exc:
             result = f"[Branch '{branch}' failed: {exc}]"
 
@@ -1204,7 +1418,7 @@ async def parallel_executor(state: WorkflowState) -> list[dict]:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
     await emit.node_start("parallel_executor")
     branches = state.get("branches", [])
@@ -1216,7 +1430,7 @@ async def parallel_executor(state: WorkflowState) -> list[dict]:
     await emit.parallel_start(branches)
 
     # Build shared state snapshot for each branch
-    shared_keys = ["_thread_id", "_execution_id", "query", "context", "model_name"]
+    shared_keys = ["_thread_id", "_execution_id", "_client_node_id", "query", "context", "model_name"]
     shared_state = {k: state[k] for k in shared_keys if k in state}
 
     # Launch all branches concurrently using Send
@@ -1251,7 +1465,7 @@ async def consolidate_node(state: WorkflowState) -> WorkflowState:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
     await emit.node_start("consolidate")
 
@@ -1298,12 +1512,12 @@ async def tool_executor(state: WorkflowState) -> WorkflowState:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
     await emit.node_start("tool_executor")
 
     try:
-        model_name = state.get("model_name", "openai")
+        model_name = state.get("model_name", "doubao")
         llm = get_chat_model(model_name)
         llm = get_traced_model(llm, model_name)
         tools = get_tools()
@@ -1340,6 +1554,13 @@ async def tool_executor(state: WorkflowState) -> WorkflowState:
                 await emit.token(response.content, "tool_executor")
 
             messages.append(response)
+            mf = getattr(llm, "model_name", None) or "gpt-4o"
+            await _async_record_llm_cost(
+                dict(state),
+                response,
+                logical_node_name="tool_executor",
+                model_fallback=str(mf),
+            )
             tool_calls = getattr(response, "tool_calls", []) or []
 
             if not tool_calls:
@@ -1386,21 +1607,58 @@ async def general_assistant(state: WorkflowState) -> WorkflowState:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
     await emit.node_start("general_assistant")
 
     try:
-        model_name = state.get("model_name", "openai")
-        llm = get_chat_model(model_name)
-        llm = get_traced_model(llm, model_name)
+        from ai_engine.ai_model_catalog import get_user_preset_llm_overrides, resolve_route_and_model_id
+
+        ctx = state.get("context") or {}
+        mk = str(state.get("model_key") or "").strip()
+        uid = state.get("_runtime_user_id")
+        if uid is not None and not isinstance(uid, int):
+            try:
+                uid = int(uid)
+            except (TypeError, ValueError):
+                uid = None
+
+        if mk:
+            route, model_id, cat_key = resolve_route_and_model_id({"modelKey": mk}, user_id=uid)
+            overrides = get_user_preset_llm_overrides(cat_key, uid)
+            llm = get_chat_model(route, model=model_id, **overrides)
+            trace_route = route
+        else:
+            model_name = state.get("model_name", "doubao")
+            llm = get_chat_model(model_name)
+            trace_route = str(model_name)
+
+        llm = get_traced_model(llm, trace_route)
+
+        summary = str(ctx.get("_chat_rolling_summary") or "").strip()
+        prior = str(ctx.get("_chat_prior_transcript") or "").strip()
+        q = (state.get("query") or "").strip()
+        human_parts: list[str] = []
+        if summary:
+            human_parts.append("【对话要点摘要】\n" + summary)
+        if prior:
+            human_parts.append("【近期对话摘录】\n" + prior)
+        human_parts.append("【当前用户问题】\n" + q)
+        human_block = "\n\n".join(human_parts)
 
         response = await llm.ainvoke([
             SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=state["query"]),
+            HumanMessage(content=human_block),
         ])
 
         content = response.content if hasattr(response, "content") else str(response)
+        mf = getattr(llm, "model_name", None) or "gpt-4o"
+        await _async_record_llm_cost(
+            dict(state),
+            response,
+            logical_node_name="general_assistant",
+            model_fallback=str(mf),
+        )
         await emit.token(content, "general_assistant")
         await emit.node_end("general_assistant", "completed")
 
@@ -1426,7 +1684,7 @@ async def finalize_node(state: WorkflowState) -> WorkflowState:
 
     thread_id = str(state.get("_thread_id", "unknown"))
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
 
     await emit.node_start("finalize")
 

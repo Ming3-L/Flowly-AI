@@ -254,10 +254,35 @@ async function handleCreate() {
 
   creating.value = true
   try {
+    const startNodeId = `node_start_${Date.now().toString(36)}`
     const res = await api.post('/workflows/', {
       name: createForm.value.name,
       description: createForm.value.description,
-      definition: { version: '1.0', nodes: [], edges: [] },
+      // 后端保存时会做严格校验：nodes 必须非空，因此创建时默认放一个起始节点
+      definition: {
+        version: '1.0',
+        nodes: [
+          {
+            id: startNodeId,
+            type: 'chat',
+            label: '对话 1',
+            x: 120,
+            y: 120,
+            width: 200,
+            height: 80,
+            ports: [],
+            config: {
+              systemPrompt: 'You are a helpful assistant.',
+              provider: 'openai',
+              model: 'gpt-4o',
+              temperature: 0.7,
+              max_tokens: 1024,
+            },
+            style: { color: '#000000' },
+          },
+        ],
+        edges: [],
+      },
     })
     const wfId = res.data.id
     showCreateDialog.value = false

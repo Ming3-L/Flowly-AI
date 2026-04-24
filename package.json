@@ -4,5 +4,29 @@
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.49.0"
+  },
+  "description": "> 基于 Django + LangGraph + Vue 3 的 AI 工作流引擎，支持可视化编排、实时流式响应、向量检索与异步任务处理。",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuxiaopao/Flowly-AI.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yuxiaopao/Flowly-AI/issues"
+  },
+  "homepage": "https://github.com/yuxiaopao/Flowly-AI#readme",
+  "dependencies": {
+    "express": "^5.2.1"
   }
 }

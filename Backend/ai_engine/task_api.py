@@ -64,6 +64,7 @@ def run_workflow_async(
     context: dict[str, Any] | None = None,
     model_name: str = "openai",
     parallel_branches: list[str] | None = None,
+    client_node_id: str = "",
 ) -> AsyncRunResponseSchema:
     """
     Submit a workflow for async execution via Celery.
@@ -101,7 +102,13 @@ def run_workflow_async(
         workflow=workflow,
         thread=thread,
         status="pending",
-        input_data={"query": query, "context": context or {}},
+        input_data={
+            "query": query,
+            "context": context or {},
+            "client_node_id": client_node_id or "",
+            "model_name": model_name,
+            "parallel_branches": list(parallel_branches or []),
+        },
     )
 
     # Dispatch to Celery worker

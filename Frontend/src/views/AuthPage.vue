@@ -3,60 +3,26 @@
     <!-- 3D Canvas Background -->
     <BgCubeCanvas />
 
-    <!-- Horizontal Card -->
-    <div class="auth-card">
-      <!-- Left: Brand / Feature Panel -->
-      <aside class="auth-brand">
-        <!-- Logo -->
+    <!-- 左右分离：左侧品牌+小人卡片，右侧表单卡片 -->
+    <div class="auth-layout">
+      <aside class="auth-brand-card">
         <div class="brand-logo">
           <img src="/logow.png" alt="Flowly" />
           <span>Flowly</span>
         </div>
 
-        <!-- Headline -->
-        <div class="brand-headline">
-          <h1>用自然语言<br>构建智能工作流</h1>
-          <p>将 AI 对话、工具调用、条件分支融合为可视化流程，无需一行代码。</p>
+        <div class="brand-showcase">
+          <div class="brand-characters-panel" aria-hidden="true"></div>
+          <AuthAnimatedCharacters
+            class="brand-characters-layer"
+            :is-typing="charTyping"
+            :show-password="charShowPassword"
+            :password-length="charPasswordLength"
+          />
         </div>
-
-        <!-- Feature List -->
-        <div class="brand-features">
-          <div class="brand-feature">
-            <div class="feature-icon">
-              <el-icon><ChatDotRound /></el-icon>
-            </div>
-            <div class="feature-text">
-              <strong>AI 对话编排</strong>
-              <span>连接 GPT-4、Claude 等多模型，可视化构建多轮对话</span>
-            </div>
-          </div>
-          <div class="brand-feature">
-            <div class="feature-icon">
-              <el-icon><DataLine /></el-icon>
-            </div>
-            <div class="feature-text">
-              <strong>实时执行监控</strong>
-              <span>追踪每一步状态，查看 token 消耗与延迟指标</span>
-            </div>
-          </div>
-          <div class="brand-feature">
-            <div class="feature-icon">
-              <el-icon><Connection /></el-icon>
-            </div>
-            <div class="feature-text">
-              <strong>工具与 API 集成</strong>
-              <span>无缝调用外部工具，构建端到端自动化链路</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Decorative orb -->
-        <div class="brand-orb orb-1"></div>
-        <div class="brand-orb orb-2"></div>
       </aside>
 
-      <!-- Right: Form Panel -->
-      <section class="auth-form-panel">
+      <section class="auth-form-card">
         <!-- Back to Home -->
         <button class="back-btn" @click="router.push('/')">
           <el-icon><ArrowLeft /></el-icon>
@@ -102,6 +68,8 @@
                 placeholder="请输入用户名"
                 size="large"
                 :prefix-icon="User"
+                @focus="onAuthFieldFocus"
+                @blur="onAuthFieldBlur"
                 @keyup.enter="handleLogin"
               />
             </el-form-item>
@@ -109,13 +77,20 @@
             <el-form-item label="密码" prop="password">
               <el-input
                 v-model="loginForm.password"
-                type="password"
+                :type="loginPwdVisible ? 'text' : 'password'"
                 placeholder="请输入密码"
                 size="large"
                 :prefix-icon="Lock"
-                show-password
+                @focus="onAuthFieldFocus"
+                @blur="onAuthFieldBlur"
                 @keyup.enter="handleLogin"
-              />
+              >
+                <template #suffix>
+                  <span class="pwd-toggle" @click.stop="loginPwdVisible = !loginPwdVisible">
+                    <el-icon><View v-if="!loginPwdVisible" /><Hide v-else /></el-icon>
+                  </span>
+                </template>
+              </el-input>
             </el-form-item>
 
             <el-form-item>
@@ -152,6 +127,8 @@
                 placeholder="用于登录，至少 3 个字符"
                 size="large"
                 :prefix-icon="User"
+                @focus="onAuthFieldFocus"
+                @blur="onAuthFieldBlur"
               />
             </el-form-item>
 
@@ -162,29 +139,66 @@
                 placeholder="your@email.com"
                 size="large"
                 :prefix-icon="Message"
+                @focus="onAuthFieldFocus"
+                @blur="onAuthFieldBlur"
               />
             </el-form-item>
 
             <el-form-item label="密码" prop="password">
               <el-input
                 v-model="registerForm.password"
-                type="password"
+                :type="registerPwdVisible ? 'text' : 'password'"
                 placeholder="至少 8 个字符"
                 size="large"
                 :prefix-icon="Lock"
-                show-password
-              />
+                @focus="onAuthFieldFocus"
+                @blur="onAuthFieldBlur"
+              >
+                <template #suffix>
+                  <span class="pwd-toggle" @click.stop="registerPwdVisible = !registerPwdVisible">
+                    <el-icon><View v-if="!registerPwdVisible" /><Hide v-else /></el-icon>
+                  </span>
+                </template>
+              </el-input>
             </el-form-item>
 
             <el-form-item label="确认密码" prop="password_confirm">
               <el-input
                 v-model="registerForm.password_confirm"
-                type="password"
+                :type="registerConfirmPwdVisible ? 'text' : 'password'"
                 placeholder="再次输入密码"
                 size="large"
                 :prefix-icon="Lock"
-                show-password
+                @focus="onAuthFieldFocus"
+                @blur="onAuthFieldBlur"
                 @keyup.enter="handleRegister"
+              >
+                <template #suffix>
+                  <span
+                    class="pwd-toggle"
+                    @click.stop="registerConfirmPwdVisible = !registerConfirmPwdVisible"
+                  >
+                    <el-icon><View v-if="!registerConfirmPwdVisible" /><Hide v-else /></el-icon>
+                  </span>
+                </template>
+              </el-input>
+            </el-form-item>
+
+            <el-form-item>
+              <el-checkbox v-model="registerForm.register_as_staff">注册为管理员（需邀请码）</el-checkbox>
+            </el-form-item>
+
+            <el-form-item
+              v-show="registerForm.register_as_staff"
+              label="管理员邀请码"
+              prop="admin_invite_code"
+            >
+              <el-input
+                v-model="registerForm.admin_invite_code"
+                type="password"
+                placeholder="由部署方配置 FLOWLY_ADMIN_REGISTER_INVITE 等环境变量后提供"
+                size="large"
+                show-password
               />
             </el-form-item>
 
@@ -207,14 +221,33 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { User, Lock, Message, ArrowLeft } from '@element-plus/icons-vue'
-import { ChatDotRound, DataLine, Connection } from '@element-plus/icons-vue'
+import { User, Lock, Message, ArrowLeft, View, Hide } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import type { FormInstance, FormRules } from 'element-plus'
 import BgCubeCanvas from '@/components/BgCubeCanvas.vue'
+import AuthAnimatedCharacters from '@/components/auth-characters/AuthAnimatedCharacters.vue'
+
+const charTyping = ref(false)
+const loginPwdVisible = ref(false)
+const registerPwdVisible = ref(false)
+const registerConfirmPwdVisible = ref(false)
+
+let authBlurTimer: number | null = null
+function onAuthFieldFocus() {
+  if (authBlurTimer) {
+    clearTimeout(authBlurTimer)
+    authBlurTimer = null
+  }
+  charTyping.value = true
+}
+function onAuthFieldBlur() {
+  authBlurTimer = window.setTimeout(() => {
+    charTyping.value = false
+  }, 100)
+}
 
 const router = useRouter()
 const route = useRoute()
@@ -261,6 +294,8 @@ const registerForm = reactive({
   email: '',
   password: '',
   password_confirm: '',
+  register_as_staff: false,
+  admin_invite_code: '',
 })
 
 const validatePasswordConfirm = (_rule: unknown, value: string, callback: (err?: Error) => void) => {
@@ -290,13 +325,37 @@ const registerRules: FormRules = {
   ],
 }
 
+const charPasswordLength = computed(() =>
+  activeTab.value === 'login' ? loginForm.password.length : registerForm.password.length,
+)
+
+/** 与 index.html 中小人逻辑一致：用于「明文/密文」与偷看动效 */
+const charShowPassword = computed(() =>
+  activeTab.value === 'login'
+    ? loginPwdVisible.value
+    : registerPwdVisible.value || registerConfirmPwdVisible.value,
+)
+
+onMounted(() => {
+  if (route.name === 'AuthRegister') {
+    activeTab.value = 'register'
+  }
+})
+
 async function handleRegister() {
   const valid = await registerFormRef.value?.validate().catch(() => false)
   if (!valid) return
 
   registerLoading.value = true
   try {
-    await auth.register({ ...registerForm })
+    await auth.register({
+      username: registerForm.username,
+      email: registerForm.email,
+      password: registerForm.password,
+      password_confirm: registerForm.password_confirm,
+      register_as_staff: registerForm.register_as_staff,
+      admin_invite_code: registerForm.admin_invite_code,
+    })
     ElMessage.success('注册成功，请登录')
     switchTab('login')
     loginForm.username = registerForm.username
@@ -325,41 +384,47 @@ async function handleRegister() {
 // 背景由 BgCubeCanvas 组件接管
 // 如需叠加图片背景，可在 .auth-page 添加 background-image
 
-// ── Horizontal Card ────────────────────────────────────────────────────────
-.auth-card {
+// ── 双卡片布局（与单张横条白底分离） ───────────────────────────────────────
+.auth-layout {
   position: relative;
   z-index: 1;
   display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 28px;
   width: 100%;
-  max-width: 900px;
-  background: rgba(255, 255, 255, 0.97);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border-radius: 20px;
-  overflow: hidden;
-  box-shadow:
-    0 8px 40px rgba(0, 0, 0, 0.3),
-    0 2px 8px rgba(0, 0, 0, 0.15);
+  max-width: 980px;
 }
 
-// ── Brand Panel ────────────────────────────────────────────────────────────
-.auth-brand {
-  flex: 1;
+.auth-brand-card {
+  flex: 1 1 380px;
+  max-width: 460px;
+  min-width: 280px;
+  min-height: 480px;
   position: relative;
-  background: #000000;
-  padding: 40px 36px;
+  padding: 36px 32px 40px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.45),
+    0 2px 12px rgba(0, 0, 0, 0.25);
   overflow: hidden;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .brand-logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 40px;
+  margin-bottom: 28px;
+  position: relative;
+  z-index: 2;
 
   img {
     width: 30px;
@@ -372,104 +437,72 @@ async function handleRegister() {
     font-weight: 800;
     color: #ffffff;
     letter-spacing: -0.4px;
+    text-shadow: 0 1px 12px rgba(0, 0, 0, 0.35);
   }
 }
 
-.brand-headline {
-  margin-bottom: 36px;
-
-  h1 {
-    font-size: 32px;
-    font-weight: 800;
-    color: #ffffff;
-    line-height: 1.2;
-    letter-spacing: -0.6px;
-    margin: 0 0 12px;
-  }
-
-  p {
-    font-size: 14px;
-    line-height: 1.7;
-    color: rgba(255, 255, 255, 0.5);
-    margin: 0;
-  }
-}
-
-.brand-features {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.brand-feature {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.feature-icon {
-  width: 36px;
-  height: 36px;
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+.brand-showcase {
+  position: relative;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  font-size: 18px;
-  color: rgba(255, 255, 255, 0.7);
+  min-height: 260px;
+  margin-top: 8px;
 }
 
-.feature-text {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-
-  strong {
-    font-size: 14px;
-    font-weight: 600;
-    color: #ffffff;
-  }
-
-  span {
-    font-size: 12px;
-    line-height: 1.5;
-    color: rgba(255, 255, 255, 0.45);
-  }
-}
-
-// Decorative orbs
-.brand-orb {
+.brand-characters-panel {
   position: absolute;
-  border-radius: 50%;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%;
+  max-width: 340px;
+  height: 90%;
+  min-height: 220px;
+  max-height: 300px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
   pointer-events: none;
 }
 
-.orb-1 {
-  width: 300px;
-  height: 300px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.05) 0%, transparent 70%);
-  top: -80px;
-  right: -60px;
+.brand-characters-layer {
+  position: relative;
+  z-index: 1;
+  width: 100%;
 }
 
-.orb-2 {
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(circle, rgba(100, 100, 255, 0.07) 0%, transparent 70%);
-  bottom: -60px;
-  left: 20px;
-}
-
-// ── Form Panel ─────────────────────────────────────────────────────────────
-.auth-form-panel {
-  width: 380px;
-  flex-shrink: 0;
+// ── 右侧表单独立白卡片 ─────────────────────────────────────────────────────
+.auth-form-card {
+  width: 400px;
+  flex: 0 1 400px;
   padding: 60px 36px 40px;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   position: relative;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.28),
+    0 2px 12px rgba(0, 0, 0, 0.12);
+}
+
+.pwd-toggle {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  color: #909399;
+  padding: 0 4px;
+  margin-right: -4px;
+
+  &:hover {
+    color: #303133;
+  }
 }
 
 // ── Back Button ────────────────────────────────────────────────────────────
@@ -602,23 +635,23 @@ async function handleRegister() {
     padding: 20px;
   }
 
-  .auth-card {
+  .auth-layout {
     flex-direction: column;
     max-width: 480px;
   }
 
-  .auth-brand {
-    padding: 28px 24px;
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-
-    .brand-headline h1 {
-      font-size: 26px;
-    }
+  .auth-brand-card {
+    min-height: auto;
+    padding: 28px 24px 32px;
   }
 
-  .auth-form-panel {
+  .brand-showcase {
+    min-height: 200px;
+  }
+
+  .auth-form-card {
     width: 100%;
+    flex: 1 1 auto;
     padding: 28px 24px;
   }
 }

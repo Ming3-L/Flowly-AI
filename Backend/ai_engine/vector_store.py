@@ -47,13 +47,21 @@ class VectorStoreManager:
 
     @property
     def embeddings(self) -> OpenAIEmbeddings:
-        """Lazily create the OpenAI embeddings client."""
+        """Lazily create the OpenAI-compatible embeddings client（密钥与 base 与豆包/方舟对齐）。"""
         if self._embeddings is None:
-            from django.conf import settings
+            from ai_engine.integrations import get_ai_provider_settings
 
+            s = get_ai_provider_settings()
+            api_key = s.language.doubao_ark_api_key or s.language.openai_api_key
+            base_url = (
+                s.language.doubao_ark_base_url
+                if s.language.doubao_ark_api_key
+                else s.language.openai_base_url
+            )
             self._embeddings = OpenAIEmbeddings(
                 model=self.embedding_model,
-                api_key=getattr(settings, "OPENAI_API_KEY", None) or os.getenv("OPENAI_API_KEY"),
+                api_key=api_key or None,
+                base_url=base_url or None,
             )
         return self._embeddings
 

@@ -12,6 +12,8 @@ export interface UserProfile {
   openai_base_url: string
   is_active: boolean
   date_joined: string
+  is_staff?: boolean
+  is_superuser?: boolean
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -27,6 +29,8 @@ export const useAuthStore = defineStore('auth', () => {
     email: string
     password: string
     password_confirm: string
+    register_as_staff?: boolean
+    admin_invite_code?: string
   }) {
     const res = await api.post('/auth/register', payload, {
       skipGlobalErrorHandler: true,

@@ -10,12 +10,123 @@ from __future__ import annotations
 import logging
 from datetime import date
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from django.utils import timezone
 
 
 logger = logging.getLogger(__name__)
+
+
+def extract_token_usage_from_lc_message(message: Any) -> tuple[int, int]:
+    """
+    从 LangChain Chat 返回的 AIMessage 上尽量解析 token 用量。
+
+    兼容 ``usage_metadata``（较新）与 ``response_metadata.token_usage``（OpenAI）。
+    """
+    usage_md = getattr(message, "usage_metadata", None) or {}
+    if isinstance(usage_md, dict):
+        inp = int(
+            usage_md.get("input_tokens")
+            or usage_md.get("prompt_tokens")
+            or 0
+        )
+        out = int(
+            usage_md.get("output_tokens")
+            or usage_md.get("completion_tokens")
+            or 0
+        )
+        if inp or out:
+            return inp, out
+    meta = getattr(message, "response_metadata", None) or {}
+    if not isinstance(meta, dict):
+        return 0, 0
+    tu = meta.get("token_usage") or meta.get("usage") or {}
+    if not isinstance(tu, dict):
+        return 0, 0
+    inp = int(tu.get("prompt_tokens", tu.get("input_tokens", 0)) or 0)
+    out = int(tu.get("completion_tokens", tu.get("output_tokens", 0)) or 0)
+    return inp, out
+
+
+def extract_model_id_from_lc_message(message: Any, fallback: str) -> str:
+    """从响应元数据取模型 id，用于计价表匹配。"""
+    meta = getattr(message, "response_metadata", None) or {}
+    if isinstance(meta, dict):
+        name = meta.get("model_name") or meta.get("model")
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    return fallback
+
+
+def record_llm_cost_for_workflow_state(
+    state: Mapping[str, Any],
+    message: Any,
+    *,
+    logical_node_name: str,
+    model_fallback: str,
+) -> None:
+    """
+    在存在 ``_execution_id`` 时写入 ``CostRecord``，并带上 ``_client_node_id``（画布节点）。
+
+    无 execution 或无法解析 token 时直接返回（不写脏数据）。
+    """
+    execution_id = state.get("_execution_id")
+    if not execution_id:
+        return
+    inp, outp = extract_token_usage_from_lc_message(message)
+    if inp == 0 and outp == 0:
+        logger.debug(
+            "Skipping CostRecord: no token usage on message (check provider/SDK "
+            "usage_metadata or response_metadata.token_usage). execution_id=%s node=%s",
+            execution_id,
+            logical_node_name,
+        )
+        return
+    from ai_engine.models import WorkflowExecution
+
+    ex = (
+        WorkflowExecution.objects.filter(pk=int(execution_id))
+        .select_related("thread", "workflow")
+        .first()
+    )
+    if not ex:
+        return
+    model_id = extract_model_id_from_lc_message(message, model_fallback)
+    uid = ex.thread.user_id if ex.thread else None
+    client = str(state.get("_client_node_id") or "")
+    try:
+        get_cost_tracker().track(
+            model=model_id,
+            input_tokens=inp,
+            output_tokens=outp,
+            execution_id=ex.pk,
+            workflow_id=ex.workflow_id,
+            user_id=uid,
+            node_name=logical_node_name,
+            client_node_id=client,
+        )
+    except Exception:
+        logger.exception("CostRecord.track failed for execution_id=%s node=%s", execution_id, logical_node_name)
+
+
+def record_llm_cost_from_canvas_context(
+    execution_id: int | None,
+    message: Any,
+    *,
+    logical_node_name: str,
+    model_fallback: str,
+    client_node_id: str,
+) -> None:
+    """供画布单步执行：等价于带伪 state 的 ``record_llm_cost_for_workflow_state``。"""
+    if not execution_id:
+        return
+    record_llm_cost_for_workflow_state(
+        {"_execution_id": execution_id, "_client_node_id": client_node_id},
+        message,
+        logical_node_name=logical_node_name,
+        model_fallback=model_fallback,
+    )
 
 
 # ─── Pricing Table (per 1K tokens) ───────────────────────────────────────────
@@ -113,10 +224,15 @@ class CostTracker:
         user_id: int | None = None,
         node_name: str = "",
         call_type: str = "completion",
+        client_node_id: str = "",
+        conversation_session_id: int | None = None,
     ) -> Any:
         """
         Record a LLM call's token usage and cost to the database.
         Returns the created CostRecord instance.
+
+        ``client_node_id`` 与画布 ``WorkflowGraphNode.client_node_id`` 对齐；
+        ``conversation_session_id`` 供未来按会话聚合（自动回复等）。
         """
         input_cost, output_cost, total_cost = self.calculate_cost(
             model, input_tokens, output_tokens
@@ -137,6 +253,8 @@ class CostTracker:
             user_id=user_id,
             node_name=node_name,
             call_type=call_type,
+            client_node_id=client_node_id,
+            conversation_session_id=conversation_session_id,
         )
 
     def _create_record(self, **kwargs) -> Any:
@@ -154,6 +272,8 @@ class CostTracker:
             return "anthropic"
         if "ollama" in m or "llama" in m or "mistral" in m:
             return "ollama"
+        if "codex" in m or "vectorengine" in m:
+            return "vectorengine"
         return "openai"
 
     def get_workflow_costs(

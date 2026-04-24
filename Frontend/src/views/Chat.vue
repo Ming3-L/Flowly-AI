@@ -49,7 +49,7 @@
           <p>输入消息与 AI 开始交流，支持多轮对话和工具调用</p>
         </div>
 
-        <div v-for="(msg, idx) in messages" :key="idx" class="message-wrapper" :class="msg.role">
+        <div v-for="(msg, idx) in messages" :key="msg.id ?? idx" class="message-wrapper" :class="msg.role">
           <div class="message-avatar">
             <el-icon v-if="msg.role === 'user'" class="avatar-icon"><UserFilled /></el-icon>
             <el-icon v-else class="avatar-icon"><MagicStick /></el-icon>
@@ -98,7 +98,7 @@
           />
           <div class="input-actions">
             <span class="model-hint">
-              模型: {{ auth.user?.ai_model || 'gpt-4o' }}
+              模型: {{ auth.user?.ai_model || 'ark-doubao-smart-router' }}
             </span>
             <div class="input-btns">
               <el-button
@@ -137,24 +137,25 @@ import {
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/utils/api'
+import { buildWorkflowWebSocketUrl } from '@/utils/workflowWs'
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   created_at?: string
+  id?: number
 }
 
 interface Session {
-  id: string
+  id: number
   title: string
   messages: ChatMessage[]
-  lastQuery?: string
 }
 
 const auth = useAuthStore()
 const messages = ref<ChatMessage[]>([])
 const sessions = ref<Session[]>([])
-const currentSessionId = ref<string | null>(null)
+const currentSessionId = ref<number | null>(null)
 const inputText = ref('')
 const streaming = ref(false)
 const streamingContent = ref('')
@@ -204,41 +205,100 @@ function formatTime(iso?: string) {
   return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
-function startNewChat() {
-  const id = crypto.randomUUID()
-  sessions.value.unshift({ id, title: '', messages: [] })
+async function fetchSessionList() {
+  try {
+    const { data } = await api.get<{ sessions: { id: number; topic: string; message_count: number }[] }>(
+      '/chat/sessions'
+    )
+    sessions.value = (data.sessions || []).map((s) => ({
+      id: s.id,
+      title: s.topic || '新对话',
+      messages: [],
+    }))
+  } catch {
+    sessions.value = []
+  }
+}
+
+async function fetchMessagesForSession(sessionId: number) {
+  const { data } = await api.get<{ messages: { id: number; role: string; content: string; created_at: string }[] }>(
+    `/chat/sessions/${sessionId}/messages`
+  )
+  return (data.messages || []).map((m) => ({
+    id: m.id,
+    role: m.role as ChatMessage['role'],
+    content: m.content || '',
+    created_at: m.created_at,
+  }))
+}
+
+async function startNewChat() {
+  try {
+    const { data } = await api.post<{ id: number; topic: string }>('/chat/sessions', { topic: '' })
+    const row = data as { id: number; topic: string }
+    sessions.value.unshift({ id: row.id, title: row.topic || '新对话', messages: [] })
+    currentSessionId.value = row.id
+    messages.value = []
+    currentThreadId = null
+    scrollToBottom()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '创建会话失败')
+  }
+}
+
+async function loadSession(id: number) {
+  const session = sessions.value.find((s) => s.id === id)
+  if (!session) return
   currentSessionId.value = id
-  messages.value = []
+  try {
+    messages.value = await fetchMessagesForSession(id)
+    session.messages = [...messages.value]
+  } catch {
+    messages.value = []
+  }
   currentThreadId = null
   scrollToBottom()
 }
 
-function loadSession(id: string) {
-  const session = sessions.value.find((s) => s.id === id)
-  if (!session) return
-  currentSessionId.value = id
-  messages.value = [...session.messages]
-  currentThreadId = session.id !== currentSessionId.value ? session.id : currentThreadId
-  scrollToBottom()
-}
-
-function deleteSession(id: string) {
+async function deleteSession(id: number) {
+  try {
+    await api.delete(`/chat/sessions/${id}`)
+  } catch {
+    /* 仍从列表移除，避免卡住 */
+  }
   sessions.value = sessions.value.filter((s) => s.id !== id)
   if (currentSessionId.value === id) {
-    startNewChat()
+    currentSessionId.value = null
+    messages.value = []
+    if (sessions.value.length) await loadSession(sessions.value[0].id)
+    else await startNewChat()
   }
 }
 
-function clearCurrentChat() {
-  messages.value = []
-  const session = sessions.value.find((s) => s.id === currentSessionId.value)
-  if (session) session.messages = []
-  scrollToBottom()
+async function clearCurrentChat() {
+  const sid = currentSessionId.value
+  if (sid == null) return
+  try {
+    await api.post(`/chat/sessions/${sid}/clear`)
+    messages.value = []
+    const session = sessions.value.find((s) => s.id === sid)
+    if (session) session.messages = []
+    scrollToBottom()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '清空失败')
+  }
 }
 
-function saveSession() {
-  const session = sessions.value.find((s) => s.id === currentSessionId.value)
-  if (session) session.messages = [...messages.value]
+function syncSidebarTitleFromMessages() {
+  const sid = currentSessionId.value
+  if (sid == null) return
+  const session = sessions.value.find((s) => s.id === sid)
+  if (!session) return
+  session.messages = [...messages.value]
+  const firstUser = messages.value.find((m) => m.role === 'user')
+  if (firstUser?.content && (!session.title || session.title === '新对话')) {
+    session.title = firstUser.content.slice(0, 30)
+  }
 }
 
 function retryLast() {
@@ -254,43 +314,50 @@ function retryLast() {
   sendMessage()
 }
 
+async function ensureChatSession(): Promise<number | null> {
+  if (currentSessionId.value != null) return currentSessionId.value
+  try {
+    const { data } = await api.post<{ id: number; topic: string }>('/chat/sessions', { topic: '' })
+    const row = data as { id: number; topic: string }
+    sessions.value.unshift({ id: row.id, title: row.topic || '新对话', messages: [] })
+    currentSessionId.value = row.id
+    return row.id
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.detail || '创建会话失败')
+    return null
+  }
+}
+
 async function sendMessage() {
   const text = inputText.value.trim()
   if (!text || streaming.value) return
+
+  const sid = await ensureChatSession()
+  if (sid == null) return
 
   const userMsg: ChatMessage = { role: 'user', content: text, created_at: new Date().toISOString() }
   messages.value.push(userMsg)
   inputText.value = ''
   scrollToBottom()
+  syncSidebarTitleFromMessages()
 
-  const session = sessions.value.find((s) => s.id === currentSessionId.value)
-  if (session) {
-    session.messages = [...messages.value]
-    if (!session.title && text) {
-      session.title = text.slice(0, 30)
-    }
-    session.lastQuery = text
-  }
-
-  await streamResponse(text)
+  await streamResponse(text, sid)
 }
 
-async function streamResponse(query: string) {
+/** 个人资料里若仍填 gpt-4o 等旧值，对话统一走豆包目录键 */
+function effectiveChatModelKey(): string {
+  const raw = (auth.user?.ai_model || '').trim()
+  if (!raw) return 'ark-doubao-smart-router'
+  if (/^gpt-/i.test(raw)) return 'ark-doubao-smart-router'
+  return raw
+}
+
+async function streamResponse(query: string, sessionId: number) {
   streaming.value = true
   streamingContent.value = ''
 
-  const threadId = currentThreadId || crypto.randomUUID()
+  const threadId = crypto.randomUUID()
   currentThreadId = threadId
-
-  if (!sessions.value.find((s) => s.id === currentSessionId.value)) {
-    const session: Session = {
-      id: currentSessionId.value!,
-      title: query.slice(0, 30),
-      messages: [...messages.value],
-      lastQuery: query,
-    }
-    sessions.value.unshift(session)
-  }
 
   try {
     await api.post('/workflows/run', {
@@ -298,10 +365,12 @@ async function streamResponse(query: string) {
       context: {},
       workflow_id: null,
       thread_id: threadId,
+      model_name: 'doubao',
+      conversation_session_id: sessionId,
+      model_key: effectiveChatModelKey(),
     })
 
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws/workflow/${threadId}/`
+    const wsUrl = buildWorkflowWebSocketUrl(threadId)
     ws = new WebSocket(wsUrl)
 
     let assistantContent = ''
@@ -309,7 +378,7 @@ async function streamResponse(query: string) {
 
     ws.onopen = () => { console.debug('[WS] Connected to thread', threadId) }
 
-    ws.onmessage = (event) => {
+    ws.onmessage = async (event) => {
       try {
         const data = JSON.parse(event.data)
         if (data.event_type === 'connected') return
@@ -335,18 +404,29 @@ async function streamResponse(query: string) {
           streaming.value = false
           streamingContent.value = ''
 
-          // Flush accumulated content
-          if (assistantContent) {
-            const lastMsg = messages.value[messages.value.length - 1]
-            if (lastMsg?.role === 'user') {
-              messages.value.push({ role: 'assistant', content: assistantContent, created_at: new Date().toISOString() })
-            } else if (lastMsg?.role === 'assistant') {
-              lastMsg.content = assistantContent
+          try {
+            messages.value = await fetchMessagesForSession(sessionId)
+            syncSidebarTitleFromMessages()
+          } catch {
+            if (assistantContent) {
+              const lastMsg = messages.value[messages.value.length - 1]
+              if (lastMsg?.role === 'user') {
+                messages.value.push({
+                  role: 'assistant',
+                  content: assistantContent,
+                  created_at: new Date().toISOString(),
+                })
+              } else if (lastMsg?.role === 'assistant') {
+                lastMsg.content = assistantContent
+              }
+            } else if (data.result?.response) {
+              messages.value.push({
+                role: 'assistant',
+                content: data.result.response,
+                created_at: new Date().toISOString(),
+              })
             }
-          } else if (data.result?.response) {
-            messages.value.push({ role: 'assistant', content: data.result.response, created_at: new Date().toISOString() })
           }
-          saveSession()
           scrollToBottom()
           return
         }
@@ -357,8 +437,15 @@ async function streamResponse(query: string) {
           resolved = true
           streaming.value = false
           streamingContent.value = ''
-          messages.value.push({ role: 'assistant', content: `错误: ${data.error}`, created_at: new Date().toISOString() })
-          saveSession()
+          try {
+            messages.value = await fetchMessagesForSession(sessionId)
+          } catch {
+            messages.value.push({
+              role: 'assistant',
+              content: `错误: ${data.error}`,
+              created_at: new Date().toISOString(),
+            })
+          }
           scrollToBottom()
           return
         }
@@ -400,27 +487,22 @@ async function streamResponse(query: string) {
     ElMessage.error(err?.response?.data?.detail || '发送失败，请检查后端连接')
     streaming.value = false
     streamingContent.value = ''
+    if (messages.value.length && messages.value[messages.value.length - 1]?.role === 'user') {
+      messages.value.pop()
+    }
   }
-
-  onUnmounted(() => {
-    ws?.close()
-    ws = null
-  })
 }
 
-onMounted(() => {
-  if (!currentSessionId.value) startNewChat()
-  try {
-    const saved = localStorage.getItem('flowly_chat_sessions')
-    if (saved) sessions.value = JSON.parse(saved)
-  } catch { /* ignore */ }
+onMounted(async () => {
+  await fetchSessionList()
+  if (sessions.value.length) await loadSession(sessions.value[0].id)
+  else await startNewChat()
 })
 
-watch(sessions, (val) => {
-  try {
-    localStorage.setItem('flowly_chat_sessions', JSON.stringify(val.slice(0, 50)))
-  } catch { /* ignore */ }
-}, { deep: true })
+onUnmounted(() => {
+  ws?.close()
+  ws = null
+})
 </script>
 
 <style scoped lang="scss">

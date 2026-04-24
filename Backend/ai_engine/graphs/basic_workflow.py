@@ -8,7 +8,6 @@ and a tool node based on the LLM's output.
 from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage, AIMessage  # pyright: ignore[reportMissingImports]
-from langchain_openai import ChatOpenAI  # pyright: ignore[reportMissingImports]
 from langgraph.graph import END, StateGraph
 
 
@@ -238,12 +237,9 @@ def should_continue_or_end(state: WorkflowState) -> Literal["format_response", "
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_llm():
-    return ChatOpenAI(
-        model=settings.OPENAI_MODEL,
-        api_key=settings.OPENAI_API_KEY,
-        base_url=settings.OPENAI_BASE_URL,
-        temperature=0.7,
-    )
+    from ai_engine.workflow import get_chat_model
+
+    return get_chat_model("openai", temperature=0.7, streaming=False)
 
 
 def build_basic_workflow() -> StateGraph:

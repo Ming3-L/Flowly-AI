@@ -1,6 +1,16 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+declare module 'axios' {
+  // Project-level extensions used by interceptors/callers.
+  export interface AxiosRequestConfig {
+    /** Skip global toast error handling for this request. */
+    skipGlobalErrorHandler?: boolean
+    /** Internal retry flag for refresh flow. */
+    _retry?: boolean
+  }
+}
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 
 const api = axios.create({
@@ -94,17 +104,14 @@ api.interceptors.response.use(
       }
     }
 
-    // Show error notification for non-auth errors
-    if (error.response?.status !== 401) {
+    // Show error notification for non-auth errors (unless caller opts out)
+    if (error.response?.status !== 401 && !originalRequest?.skipGlobalErrorHandler) {
       const detail =
         error.response?.data?.detail ??
         error.response?.data?.message ??
         error.message ??
         'Request failed'
-      // Don't show duplicate toast for auth errors (already handled above)
-      if (error.response?.status !== 401) {
-        ElMessage.error(detail)
-      }
+      ElMessage.error(detail)
     }
 
     return Promise.reject(error)

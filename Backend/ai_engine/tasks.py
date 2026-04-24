@@ -39,7 +39,7 @@ def run_workflow_task(
     thread_id: str,
     user_query: str,
     context: Optional[dict[str, Any]] = None,
-    model_name: str = "openai",
+    model_name: str = "doubao",
     parallel_branches: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
@@ -84,6 +84,21 @@ def run_workflow_task(
         )
 
         # ── Run the workflow ────────────────────────────────────────────────
+        raw_in = execution.input_data or {}
+        client_node_id = str(raw_in.get("client_node_id") or "")
+        model_eff = raw_in.get("model_name")
+        if isinstance(model_eff, str) and model_eff.strip():
+            model_name = model_eff.strip()
+        branches_raw = raw_in.get("parallel_branches")
+        if isinstance(branches_raw, list):
+            parallel_branches = branches_raw
+        force_g = bool(raw_in.get("force_general_assistant"))
+        model_key_celery = str(raw_in.get("model_key") or "")
+        ru = raw_in.get("runtime_user_id_for_catalog")
+        runtime_uid: int | None = None
+        if ru is not None and str(ru).strip().isdigit():
+            runtime_uid = int(str(ru).strip())
+
         async def _run():
             # Import here to avoid circular imports and to get fresh event loop
             from ai_engine.api import _run_workflow_async
@@ -95,6 +110,10 @@ def run_workflow_task(
                 context=context or {},
                 model_name=model_name,
                 parallel_branches=parallel_branches,
+                client_node_id=client_node_id,
+                force_general_assistant=force_g,
+                model_key=model_key_celery,
+                runtime_user_id=runtime_uid,
             )
 
         loop = asyncio.new_event_loop()
@@ -210,6 +229,17 @@ def process_document_task(self, document_id: int) -> dict[str, Any]:
     except Exception as exc:
         logger.exception(f"Document processing failed for {document_id}: {exc}")
         raise self.retry(exc=exc)
+
+
+# ─── AI 自动回复（默认走 workflows 队列，与现有 Celery worker 兼容；失败已在 DB 标记）──
+
+@shared_task(name="ai_engine.tasks.run_auto_reply_job_task")
+def run_auto_reply_job_task(job_id: int) -> dict[str, Any]:
+    """执行一条 AutoReplyJob（数据库读写 + LLM 调用）。"""
+    from ai_engine.auto_reply.runner import run_auto_reply_job_sync
+
+    run_auto_reply_job_sync(int(job_id))
+    return {"status": "ok", "job_id": job_id}
 
 
 # ─── Maintenance Tasks ────────────────────────────────────────────────────────

@@ -57,6 +57,8 @@ class UserProfileSchema(Schema):
     openai_base_url: str
     is_active: bool
     date_joined: str
+    is_staff: bool = False
+    is_superuser: bool = False
 
 
 # ── Register ────────────────────────────────────────────────────────────────
@@ -92,13 +94,45 @@ def register(request, payload: RegisterSchema):
             detail="邮箱已被注册",
         )
 
+    is_staff = False
+    is_superuser = False
+    if payload.register_as_staff:
+        invite = (payload.admin_invite_code or "").strip()
+        super_code = getattr(settings, "FLOWLY_SUPERUSER_REGISTER_INVITE", "") or ""
+        admin_code = getattr(settings, "FLOWLY_ADMIN_REGISTER_INVITE", "") or ""
+        if not invite:
+            return 400, AuthErrorSchema(
+                message="注册失败",
+                detail="注册管理员账号需要填写邀请码",
+            )
+        if not super_code and not admin_code:
+            return 400, AuthErrorSchema(
+                message="注册失败",
+                detail="服务器未开放管理员自助注册（未配置邀请码）",
+            )
+        if super_code and invite == super_code:
+            is_staff = True
+            is_superuser = True
+        elif admin_code and invite == admin_code:
+            is_staff = True
+            is_superuser = False
+        else:
+            return 400, AuthErrorSchema(
+                message="注册失败",
+                detail="管理员邀请码无效",
+            )
+
     try:
         with transaction.atomic():
             user = User.objects.create_user(
                 username=payload.username,
                 email=payload.email,
                 password=payload.password,
+                is_staff=is_staff,
             )
+            if is_superuser:
+                user.is_superuser = True
+                user.save(update_fields=["is_superuser"])
             UserProfile.objects.create(user=user)
     except IntegrityError:
         # 并发或唯一约束冲突时 exists() 检查挡不住
@@ -120,15 +154,18 @@ def register(request, payload: RegisterSchema):
             detail=detail,
         )
 
+    user.refresh_from_db()
     return 201, UserProfileSchema(
         id=user.id,
         username=user.username,
         email=user.email,
-        ai_model="gpt-4o",
+        ai_model="ark-doubao-smart-router",
         language="zh",
         openai_base_url="",
         is_active=user.is_active,
         date_joined=user.date_joined.isoformat(),
+        is_staff=bool(user.is_staff),
+        is_superuser=bool(user.is_superuser),
     )
 
 
@@ -229,9 +266,11 @@ def get_me(request: HttpRequest):
         id=user.id,
         username=user.username,
         email=user.email,
-        ai_model=profile.ai_model if profile else "gpt-4o",
+        ai_model=profile.ai_model if profile else "ark-doubao-smart-router",
         language=profile.language if profile else "zh",
         openai_base_url=profile.openai_base_url if profile else "",
         is_active=user.is_active,
         date_joined=user.date_joined.isoformat(),
+        is_staff=bool(getattr(user, "is_staff", False)),
+        is_superuser=bool(getattr(user, "is_superuser", False)),
     )

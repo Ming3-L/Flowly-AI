@@ -14,9 +14,9 @@ class UserProfile(models.Model):
     # AI 模型偏好
     ai_model = models.CharField(
         max_length=64,
-        default='gpt-4o',
-        verbose_name='AI 模型',
-        help_text='使用的 AI 模型名称，如 gpt-4o / gpt-4o-mini',
+        default="ark-doubao-smart-router",
+        verbose_name="AI 模型",
+        help_text="模型目录键，如 ark-doubao-smart-router（对话/画布与 ai_model_catalog 一致）",
     )
     # 自定义 API Key（优先于环境变量中的全局 Key）
     openai_api_key = models.CharField(

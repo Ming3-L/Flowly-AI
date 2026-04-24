@@ -14,6 +14,8 @@ Flowly AI 是一个企业级 AI 工作流平台，核心能力包括：
 - **RAG 向量检索** — 支持 PDF/Word 文档解析与语义搜索
 - **异步任务队列** — Celery + Redis 实现后台任务调度
 - **可观测性面板** — 执行追踪、成本分析、性能监控
+- **工作流图 MySQL 持久化** — 保存工作流时在事务内从 `Workflow.definition` 同步到 `WorkflowGraphNode` / `WorkflowGraphEdge`（失败整单回滚）；密钥以 `get_ai_provider_settings()` 为单一来源
+- **用户自定义节点类型** — `POST /api/custom-node-types` 创建模板，画布节点 `type` 使用返回的 `type_key`（`ut_<id>`）；计费维度支持 `CostRecord.client_node_id` 与可选 `conversation_session`
 
 ---
 
@@ -57,7 +59,11 @@ Flowly-AI/
 │   │   ├── auth.py               # JWT 认证工具
 │   │   ├── consumers.py           # Django Channels WebSocket 消费者
 │   │   ├── graphs/                # LangGraph 子图定义
-│   │   ├── migrations/            # 数据库迁移
+│   │   ├── conversation/          # AI 对话 / 自动回复编排（预留实现）
+│   │   ├── integrations/        # 外部服务配置：环境变量 + project_secrets_local.py
+│   │   ├── workflow_graph/      # 工作流节点与边在 MySQL 中的规范化存储
+│   │   ├── workflow_nodes/      # 文本/音频/图片/视频/AI 对话等节点占位
+│   │   ├── migrations/            # 数据库迁移（含 graph + conversation 表）
 │   │   └── models.py              # 数据模型
 │   ├── accounts/                  # 用户认证应用
 │   ├── checkpoint/                # LangGraph 状态持久化（DjangoSaver）
@@ -97,6 +103,9 @@ Flowly-AI/
 │   │   ├── stores/                # Pinia 状态管理
 │   │   ├── router/                # Vue Router 配置
 │   │   ├── types/                 # TypeScript 类型定义
+│   │   ├── modules/               # 按领域拆分的前端模块（预留）
+│   │   │   ├── workflow/          # 工作流节点类型与图同步相关导出
+│   │   │   └── ai-conversation/   # AI 对话 / 自动回复相关导出
 │   │   ├── utils/                 # 工具函数
 │   │   ├── styles/                # 全局样式
 │   │   ├── assets/                # 静态资源
@@ -281,6 +290,8 @@ npm run dev
 
 ### 环境变量详解
 
+AI 密钥除下表所列环境变量外，还可放在 **`Backend/ai_engine/integrations/project_secrets_local.py`**（从同目录 `project_secrets_local.example.py` 复制；该文件已加入 `.gitignore`）。示例文件中按 **语言 / 图片 / 音频 / 视频 / 向量** 分区预留了多厂商变量名。**环境变量非空时始终优先于该 Python 文件**。代码中通过 ``get_ai_provider_settings()`` 得到分组对象，例如 ``settings.language.openai_api_key``、``settings.image.stability_api_key``。
+
 | 变量 | 说明 | 示例 |
 |------|------|------|
 | `SECRET_KEY` | Django 密钥 | `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
@@ -294,6 +305,10 @@ npm run dev
 | `OPENAI_API_KEY` | OpenAI API Key | `sk-...` |
 | `OPENAI_MODEL` | OpenAI 模型 | `gpt-4o` |
 | `OPENAI_BASE_URL` | OpenAI API 地址 | `https://api.openai.com/v1` |
+| `DOUBAO_API_KEY` / `ARK_API_KEY` | 火山方舟 / 豆包（二选一） | 勿提交仓库；泄露请轮换 |
+| `DOUBAO_ARK_BASE_URL` | 方舟 OpenAI 兼容根路径 | 默认 `https://ark.cn-beijing.volces.com/api/v3` |
+| `DOUBAO_ARK_MODEL` | 推理接入点（多为 `ep-...`） | 控制台 endpoint id |
+| `FLOWLY_USE_DOUBAO_DEFAULT` | 已配置豆包密钥时是否将路由 `openai` 默认走方舟 | `1`（默认）或 `0` |
 | `ANTHROPIC_API_KEY` | Anthropic API Key | `sk-ant-...`（可选）|
 | `OLLAMA_BASE_URL` | Ollama 本地地址 | `http://localhost:11434`（可选）|
 | `VECTORENGINE_API_KEY` | VectorEngine API Key | `sk-...`（可选）|
@@ -379,6 +394,8 @@ celery -A flowly_backend beat --loglevel=info
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/workflows/run` | WebSocket | 创建并执行工作流 |
+| `/api/workflows/canvas-node/run` | POST | 同步执行单个画布节点（写 CostRecord，含 client_node_id） |
+| `/api/tasks/run/async` | POST | Celery 排队执行；`input_data` 含 `query`、`context`、`client_node_id`、`model_name`、`parallel_branches` |
 | `/api/workflows/resume` | POST | 人机交互节点恢复执行 |
 | `/api/workflows/abort` | POST | 中止运行中的工作流 |
 

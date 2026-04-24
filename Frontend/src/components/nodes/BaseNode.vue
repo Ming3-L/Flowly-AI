@@ -106,6 +106,22 @@ const configPreview = computed(() => {
       return cfg.conditionExpression ? cfg.conditionExpression.slice(0, 24) + '…' : null
     case 'human_approval':
       return cfg.approvalQuestion ? cfg.approvalQuestion.slice(0, 24) + '…' : null
+    case 'text': {
+      const p = String(cfg.prompt ?? '').trim()
+      return p ? `Prompt: ${p.slice(0, 28)}${p.length > 28 ? '…' : ''}` : null
+    }
+    case 'image': {
+      const url = String(cfg.image_url ?? '').trim()
+      return url ? `Image: ${url.slice(0, 30)}${url.length > 30 ? '…' : ''}` : 'Image'
+    }
+    case 'audio': {
+      const url = String(cfg.audio_url ?? '').trim()
+      return url ? `Audio: ${url.slice(0, 30)}${url.length > 30 ? '…' : ''}` : 'Audio'
+    }
+    case 'video': {
+      const url = String(cfg.video_url ?? '').trim()
+      return url ? `Video: ${url.slice(0, 30)}${url.length > 30 ? '…' : ''}` : 'Video'
+    }
     default:
       return null
   }

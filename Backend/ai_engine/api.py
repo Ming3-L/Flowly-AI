@@ -12,22 +12,54 @@ to the frontend through the WebSocket consumer.
 """
 
 import asyncio
+import logging
+import threading
 import uuid
-from typing import Any
+from typing import Any, Coroutine
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.db import transaction
 from django.http import HttpRequest
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from ninja import Router, Schema  # pyright: ignore[reportMissingImports]
 from pydantic import Field  # pyright: ignore[reportMissingImports]
 from ninja.security import HttpBearer  # pyright: ignore[reportMissingImports]
 
 from .auth import JWTAuth
-from .models import Workflow, WorkflowExecution, Thread
+from .models import Workflow, WorkflowExecution, Thread, WorkflowExecutionStep
 from .workflow import get_workflow_graph, WorkflowEventEmitter
+from .workflow_nodes.cost_context import clear_llm_cost_context, set_llm_cost_context
+from .workflow_nodes.execution import execute_canvas_node
+from .workflow_graph.canvas_runner import run_canvas_workflow_async
+
+logger = logging.getLogger(__name__)
+
+
+def _spawn_background_async(coro: Coroutine[Any, Any, None]) -> None:
+    """
+    在守护线程中运行协程，供同步 Ninja 视图在返回 HTTP 响应后继续执行工作流。
+
+    注意：仅用 ``loop.create_task`` 而不 ``run_until_complete`` 时，任务永远不会被调度。
+    """
+
+    def _runner() -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(coro)
+        except Exception:
+            logger.exception("Background workflow coroutine failed")
+        finally:
+            try:
+                loop.close()
+            except Exception:
+                pass
+
+    threading.Thread(target=_runner, daemon=True, name="flowly-bg-workflow").start()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Schemas
@@ -47,12 +79,24 @@ class WorkflowRunInputSchema(Schema):
     )
     # Phase 3: model selection and explicit parallel override
     model_name: str = Field(
-        default="openai",
-        description="LLM to use: 'openai', 'claude', or 'ollama'",
+        default="doubao",
+        description="LLM 路由：'doubao'（火山方舟，默认）、'openai'、'claude'、'ollama' 等",
     )
     parallel_branches: list[str] = Field(
         default_factory=list,
         description="Explicit list of branch names to run in parallel (optional, overrides router decision)",
+    )
+    client_node_id: str = Field(
+        default="",
+        description="可选：画布节点 id，用于 CostRecord 与 token 用量对齐",
+    )
+    conversation_session_id: int | None = Field(
+        default=None,
+        description="可选：独立 AI 对话会话 id（仅当 workflow_id 为空时生效）；服务端落库多轮上下文",
+    )
+    model_key: str = Field(
+        default="",
+        description="可选：模型目录键（如 gpt-4o、user:xxx），与画布一致；空则沿用 model_name 路由",
     )
 
 
@@ -85,6 +129,40 @@ class WorkflowResumeOutputSchema(Schema):
     resumed: bool
 
 
+class CanvasNodeRunInputSchema(Schema):
+    """POST /api/workflows/canvas-node/run — 执行单个画布节点。"""
+
+    workflow_id: int = Field(..., description="所属工作流 id")
+    client_node_id: str = Field(..., min_length=1, max_length=128, description="与编辑器节点 id 一致")
+    node_type: str = Field(..., min_length=1, max_length=64, description="如 chat 或 ut_<自定义类型主键>")
+    config: dict[str, Any] = Field(default_factory=dict)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+
+
+class CanvasNodeRunOutputSchema(Schema):
+    execution_id: int
+    status: str
+    output: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
+
+
+class CanvasWorkflowRunInputSchema(Schema):
+    """POST /api/workflows/canvas/run — 按画布 nodes/edges 串联执行整个工作流。"""
+
+    workflow_id: int = Field(..., description="所属工作流 id")
+    thread_id: str = Field(default="", description="可选：复用 thread uuid；为空则新建")
+    entry_node_id: str = Field(default="", description="可选：指定起始节点 id")
+    initial_inputs: dict[str, Any] = Field(default_factory=dict, description="起始节点 inputs（可选）")
+    query: str = Field(default="", description="用户主查询，将写入 initial_inputs.text / query")
+    context: dict[str, Any] = Field(default_factory=dict, description="与运行页一致的上下文 JSON")
+
+
+class CanvasWorkflowRunOutputSchema(Schema):
+    thread_id: str
+    status: str
+    execution_id: int | None = None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Async Workflow Executor
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,11 +170,16 @@ class WorkflowResumeOutputSchema(Schema):
 async def _run_workflow_async(
     execution_id: int,
     thread_id: str,
-    workflow_id: int,
+    workflow_id: int | None,
     query: str,
     context: dict[str, Any],
-    model_name: str = "openai",
+    model_name: str = "doubao",
     parallel_branches: list[str] | None = None,
+    client_node_id: str = "",
+    *,
+    force_general_assistant: bool = False,
+    model_key: str = "",
+    runtime_user_id: int | None = None,
 ) -> None:
     """
     Execute the Phase 3 workflow using real LangGraph with Send API parallel fan-out.
@@ -109,7 +192,8 @@ async def _run_workflow_async(
     - Multi-model support (OpenAI, Claude, Ollama)
     """
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=execution_id)
+    set_llm_cost_context(execution_id=execution_id, client_node_id=client_node_id or "")
 
     try:
         # Update execution status to running
@@ -119,7 +203,7 @@ async def _run_workflow_async(
             execution.save(update_fields=["status"])
 
         # Build initial state (Phase 3: includes model_name and parallel_branches)
-        initial_state = {
+        initial_state: dict[str, Any] = {
             "_thread_id": thread_id,
             "_execution_id": execution_id,
             "query": query,
@@ -140,7 +224,14 @@ async def _run_workflow_async(
             "model_name": model_name,
             "route": None,
             "branches": parallel_branches or [],
+            "_client_node_id": client_node_id or "",
         }
+        if (model_key or "").strip():
+            initial_state["model_key"] = (model_key or "").strip()
+        if runtime_user_id is not None:
+            initial_state["_runtime_user_id"] = int(runtime_user_id)
+        if force_general_assistant:
+            initial_state["_force_general_assistant"] = True
 
         # Build LangGraph config with checkpointer
         graph_config = {"configurable": {"thread_id": thread_id}}
@@ -148,14 +239,22 @@ async def _run_workflow_async(
         # Get the compiled graph
         app = get_workflow_graph()
 
+        last_announced: str | None = None
+        last_step: dict[str, Any] | None = None
+
         # Stream through each step of the graph
         async for step in app.astream(initial_state, config=graph_config, stream_mode="values"):
+            last_step = step
             current_node = step.get("current_node")
             if not current_node:
                 continue
 
-            # Emit node start on first observation of a new node
-            await emit.node_start(current_node)
+            mn = str(step.get("model_name") or model_name or "doubao").strip()
+            if current_node != last_announced:
+                if last_announced is not None:
+                    await emit.node_end(last_announced)
+                await emit.node_start(current_node, model_route=mn, title=current_node, node_type="langgraph")
+                last_announced = current_node
 
             # Emit tokens if there are new messages
             messages = step.get("messages", [])
@@ -183,32 +282,75 @@ async def _run_workflow_async(
                     if exec_obj:
                         exec_obj.status = "pending"
                         exec_obj.save(update_fields=["status"])
+                if last_announced is not None:
+                    await emit.node_end(last_announced)
                 # Interrupt here — stop streaming and wait for resume
                 return
 
-            await emit.node_end(current_node)
+        if last_announced is not None:
+            await emit.node_end(last_announced)
+
+        final_result: dict[str, Any] = {}
+        if last_step is not None:
+            fr = last_step.get("result")
+            if isinstance(fr, dict):
+                final_result = fr
 
         # All steps complete — update execution record
+        inp: dict[str, Any] = {}
         with transaction.atomic():
             execution = WorkflowExecution.objects.filter(id=execution_id).first()
             if execution:
+                inp = dict(execution.input_data or {})
                 execution.status = "completed"
                 execution.completed_at = timezone.now()
-                execution.output_data = initial_state.get("result", {})
+                execution.output_data = final_result
                 execution.save(update_fields=["status", "completed_at", "output_data"])
 
-        await emit.workflow_end("completed", initial_state.get("result"))
+        cid = inp.get("conversation_session_id")
+        if isinstance(cid, int) and final_result:
+            try:
+                from ai_engine.conversation.persist import record_assistant_reply
+
+                resp = ""
+                if isinstance(final_result, dict):
+                    resp = str(final_result.get("response") or "").strip()
+                if resp:
+                    record_assistant_reply(session_id=cid, content=resp)
+            except Exception:
+                logger.exception("record_assistant_reply failed")
+
+        await emit.workflow_end("completed", final_result)
 
     except Exception as exc:
+        execution_failed: WorkflowExecution | None = None
         with transaction.atomic():
-            execution = WorkflowExecution.objects.filter(id=execution_id).first()
-            if execution:
-                execution.status = "failed"
-                execution.error_message = str(exc)
-                execution.completed_at = timezone.now()
-                execution.save(update_fields=["status", "error_message", "completed_at"])
+            execution_failed = WorkflowExecution.objects.filter(id=execution_id).select_related("thread").first()
+            if execution_failed:
+                execution_failed.status = "failed"
+                execution_failed.error_message = str(exc)
+                execution_failed.completed_at = timezone.now()
+                execution_failed.save(update_fields=["status", "error_message", "completed_at"])
+
+        raw_in = (execution_failed.input_data if execution_failed else None) or {}
+        cid = raw_in.get("conversation_session_id")
+        uid = execution_failed.thread.user_id if execution_failed and execution_failed.thread_id else None
+        if isinstance(cid, int) and uid and raw_in.get("conversation_append_user"):
+            try:
+                from ai_engine.conversation.persist import remove_last_message_if_role
+                from ai_engine.models import ConversationMessage
+
+                remove_last_message_if_role(
+                    session_id=cid,
+                    user_id=int(uid),
+                    role=ConversationMessage.Role.USER,
+                )
+            except Exception:
+                logger.exception("remove_last_message_if_role failed")
 
         await emit.workflow_error(str(exc))
+    finally:
+        clear_llm_cost_context()
 
 
 async def _resume_workflow_async(
@@ -225,7 +367,16 @@ async def _resume_workflow_async(
     from langgraph.types import Command  # pyright: ignore[reportMissingImports]
 
     channel_layer = get_channel_layer()
-    emit = WorkflowEventEmitter(channel_layer, thread_id)
+    emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=execution_id)
+
+    def _resume_client_node_id() -> str:
+        ex = WorkflowExecution.objects.filter(pk=execution_id).first()
+        if not ex or not ex.input_data:
+            return ""
+        return str(ex.input_data.get("client_node_id") or "")
+
+    cid = await asyncio.to_thread(_resume_client_node_id)
+    set_llm_cost_context(execution_id=execution_id, client_node_id=cid)
 
     try:
         with transaction.atomic():
@@ -244,12 +395,21 @@ async def _resume_workflow_async(
         app = get_workflow_graph()
         graph_config = {"configurable": {"thread_id": thread_id}}
 
+        last_announced: str | None = None
+        last_step: dict[str, Any] | None = None
+
         async for step in app.astream(resume_command, config=graph_config, stream_mode="values"):
+            last_step = step
             current_node = step.get("current_node")
             if not current_node:
                 continue
 
-            await emit.node_start(current_node)
+            mn = str(step.get("model_name") or "doubao").strip()
+            if current_node != last_announced:
+                if last_announced is not None:
+                    await emit.node_end(last_announced)
+                await emit.node_start(current_node, model_route=mn, title=current_node, node_type="langgraph")
+                last_announced = current_node
 
             messages = step.get("messages", [])
             if messages:
@@ -262,17 +422,24 @@ async def _resume_workflow_async(
                 await emit.tool_call(tool_name, {}, current_node)
                 await emit.tool_result(str(result), current_node)
 
-            await emit.node_end(current_node)
+        if last_announced is not None:
+            await emit.node_end(last_announced)
+
+        final_result: dict[str, Any] = {}
+        if last_step is not None:
+            fr = last_step.get("result")
+            if isinstance(fr, dict):
+                final_result = fr
 
         with transaction.atomic():
             execution = WorkflowExecution.objects.filter(id=execution_id).first()
             if execution:
                 execution.status = "completed"
                 execution.completed_at = timezone.now()
-                execution.output_data = step.get("result", {})
+                execution.output_data = final_result
                 execution.save(update_fields=["status", "completed_at", "output_data"])
 
-        await emit.workflow_end("completed", step.get("result"))
+        await emit.workflow_end("completed", final_result)
 
     except Exception as exc:
         with transaction.atomic():
@@ -284,6 +451,8 @@ async def _resume_workflow_async(
                 execution.save(update_fields=["status", "error_message", "completed_at"])
 
         await emit.workflow_error(str(exc))
+    finally:
+        clear_llm_cost_context()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -351,39 +520,182 @@ def workflow_run(
         defaults={"workflow": workflow, "user": current_user},
     )
 
+    conv_id = payload.conversation_session_id
+    ctx = dict(payload.context or {})
+    query_eff = (payload.query or "").strip()
+    force_g = False
+    append_conv = False
+    model_key_eff = (payload.model_key or "").strip()
+
+    if conv_id is not None and payload.workflow_id is None:
+        from ai_engine.conversation import persist as chat_persist
+        from ai_engine.models import ConversationSession
+
+        try:
+            sess = chat_persist.get_session_for_user(session_id=conv_id, user_id=current_user.pk)
+            extra, latest_query = chat_persist.append_user_and_prepare_context(session=sess, user_text=query_eff)
+            ctx.update(extra)
+            query_eff = latest_query
+            force_g = True
+            append_conv = True
+        except ConversationSession.DoesNotExist:
+            return WorkflowRunOutputSchema(
+                thread_id="",
+                status="error",
+                execution_id=None,
+            )
+
     # Create execution record
     execution = WorkflowExecution.objects.create(
         workflow=workflow,
         thread=thread,
         status="pending",
         input_data={
-            "query": payload.query,
-            "context": payload.context,
+            "query": query_eff,
+            "context": ctx,
             "model_name": payload.model_name,
             "parallel_branches": payload.parallel_branches,
+            "client_node_id": payload.client_node_id or "",
+            "conversation_session_id": conv_id,
+            "model_key": model_key_eff,
+            "runtime_user_id_for_catalog": current_user.pk,
+            "force_general_assistant": force_g,
+            "conversation_append_user": append_conv,
         },
     )
 
-    # Join the WebSocket channel group
-    group_name = f"workflow_{thread_uuid}"
-    async_to_sync(get_channel_layer().group_add)(group_name, "workflow_events")
-
-    # Spawn async LangGraph execution task
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.create_task(
+    _spawn_background_async(
         _run_workflow_async(
             execution_id=execution.id,
             thread_id=str(thread_uuid),
             workflow_id=payload.workflow_id,
-            query=payload.query,
-            context=payload.context,
+            query=query_eff,
+            context=ctx,
             model_name=payload.model_name,
             parallel_branches=payload.parallel_branches,
+            client_node_id=payload.client_node_id or "",
+            force_general_assistant=force_g,
+            model_key=model_key_eff,
+            runtime_user_id=current_user.pk,
         )
     )
 
     return WorkflowRunOutputSchema(
+        thread_id=str(thread_uuid),
+        status="pending",
+        execution_id=execution.id,
+    )
+
+
+@router.post("/canvas-node/run", response=CanvasNodeRunOutputSchema)
+def run_canvas_node_endpoint(request: HttpRequest, payload: CanvasNodeRunInputSchema):
+    """
+    POST /api/workflows/canvas-node/run
+
+    同步执行单个画布节点，写入 ``WorkflowExecution`` 并触发 ``CostRecord``（含 ``client_node_id``）。
+    """
+    current_user = request.auth
+    if current_user is None:
+        from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+
+        raise AuthenticationError("Authentication required")
+
+    wf = get_object_or_404(Workflow, id=payload.workflow_id, user=current_user)
+    execution = WorkflowExecution.objects.create(
+        workflow=wf,
+        thread=None,
+        status="running",
+        input_data={
+            "client_node_id": payload.client_node_id,
+            "node_type": payload.node_type,
+            "config": payload.config,
+            "inputs": payload.inputs,
+        },
+    )
+    try:
+        output = execute_canvas_node(
+            node_type=payload.node_type,
+            config=payload.config,
+            inputs=payload.inputs,
+            user_id=current_user.id,
+            execution=execution,
+            client_node_id=payload.client_node_id,
+        )
+        execution.status = "completed"
+        execution.output_data = output
+        execution.completed_at = timezone.now()
+        execution.save(update_fields=["status", "output_data", "completed_at"])
+        return CanvasNodeRunOutputSchema(
+            execution_id=execution.id,
+            status="completed",
+            output=output,
+            error=None,
+        )
+    except Exception as exc:
+        execution.refresh_from_db()
+        return CanvasNodeRunOutputSchema(
+            execution_id=execution.id,
+            status=execution.status,
+            output=execution.output_data or {},
+            error=str(exc),
+        )
+
+
+@router.post("/canvas/run", response=CanvasWorkflowRunOutputSchema)
+def run_canvas_workflow_endpoint(request: HttpRequest, payload: CanvasWorkflowRunInputSchema):
+    """
+    POST /api/workflows/canvas/run
+
+    串联执行 workflow.definition（nodes/edges）并通过 WebSocket 推送节点进度与中间输出。
+    """
+    current_user = request.auth
+    if current_user is None:
+        from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+
+        raise AuthenticationError("Authentication required")
+
+    wf = get_object_or_404(Workflow, id=payload.workflow_id, user=current_user)
+
+    # Create or retrieve a Thread for WS streaming
+    thread_uuid = uuid.UUID(payload.thread_id) if payload.thread_id else uuid.uuid4()
+    thread, _ = Thread.objects.get_or_create(
+        thread_id=thread_uuid,
+        defaults={"workflow": wf, "user": current_user},
+    )
+
+    merged_inputs = dict(payload.initial_inputs or {})
+    if payload.query and payload.query.strip():
+        q = payload.query.strip()
+        merged_inputs.setdefault("text", q)
+        merged_inputs.setdefault("query", q)
+    if payload.context:
+        merged_inputs.setdefault("context", payload.context)
+
+    execution = WorkflowExecution.objects.create(
+        workflow=wf,
+        thread=thread,
+        status="pending",
+        input_data={
+            "workflow_id": wf.id,
+            "entry_node_id": payload.entry_node_id or "",
+            "initial_inputs": merged_inputs,
+            "query": payload.query or "",
+            "context": payload.context or {},
+        },
+    )
+
+    _spawn_background_async(
+        run_canvas_workflow_async(
+            workflow=wf,
+            execution=execution,
+            thread_id=str(thread_uuid),
+            user_id=current_user.id,
+            entry_node_id=payload.entry_node_id or None,
+            initial_inputs=merged_inputs,
+        )
+    )
+
+    return CanvasWorkflowRunOutputSchema(
         thread_id=str(thread_uuid),
         status="pending",
         execution_id=execution.id,
@@ -407,10 +719,21 @@ def workflow_state(request: HttpRequest, thread_id: str):
 
     try:
         thread_uuid = uuid.UUID(thread_id)
-        execution = WorkflowExecution.objects.select_related("thread", "workflow").get(
-            thread__thread_id=thread_uuid
+    except ValueError:
+        return WorkflowStateSchema(
+            thread_id=thread_id,
+            status="not_found",
+            messages=[],
+            metadata={},
         )
-    except (WorkflowExecution.DoesNotExist, ValueError):
+
+    execution = (
+        WorkflowExecution.objects.select_related("thread", "workflow")
+        .filter(thread__thread_id=thread_uuid)
+        .order_by("-id")
+        .first()
+    )
+    if execution is None:
         return WorkflowStateSchema(
             thread_id=thread_id,
             status="not_found",
@@ -443,6 +766,23 @@ def workflow_state(request: HttpRequest, thread_id: str):
             metadata={},
         )
 
+    from ai_engine.workflow_execution_tracking import redis_get_execution_live
+
+    node_steps = []
+    for row in WorkflowExecutionStep.objects.filter(execution_id=execution.id).order_by("id"):
+        node_steps.append(
+            {
+                "node_key": row.node_key,
+                "display_title": row.display_title,
+                "node_kind": row.node_kind,
+                "activity": row.activity,
+                "model_route": row.model_route,
+                "status": row.status,
+                "started_at": row.started_at.isoformat() if row.started_at else None,
+                "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+            }
+        )
+
     return WorkflowStateSchema(
         thread_id=thread_id,
         status=execution.status,
@@ -454,6 +794,8 @@ def workflow_state(request: HttpRequest, thread_id: str):
             "started_at": execution.started_at.isoformat() if execution.started_at else None,
             "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
             "error": execution.error_message or None,
+            "node_steps": node_steps,
+            "execution_live": redis_get_execution_live(execution.id),
         },
     )
 
@@ -479,11 +821,23 @@ def workflow_resume(
     if current_user is None:
         from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
         raise AuthenticationError("Authentication required")
+
     try:
-        execution = WorkflowExecution.objects.select_related("thread").get(
-            thread__thread_id=thread_id
+        thread_uuid = uuid.UUID(str(thread_id).strip())
+    except ValueError:
+        return WorkflowResumeOutputSchema(
+            thread_id=thread_id,
+            status="not_found",
+            resumed=False,
         )
-    except WorkflowExecution.DoesNotExist:
+
+    execution = (
+        WorkflowExecution.objects.select_related("thread")
+        .filter(thread__thread_id=thread_uuid, status="pending")
+        .order_by("-id")
+        .first()
+    )
+    if execution is None:
         return WorkflowResumeOutputSchema(
             thread_id=thread_id,
             status="not_found",
@@ -539,10 +893,7 @@ def workflow_resume(
         },
     )
 
-    # Spawn resume task
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.create_task(
+    _spawn_background_async(
         _resume_workflow_async(
             execution_id=execution.id,
             thread_id=thread_id,
@@ -614,20 +965,20 @@ async def legacy_workflow_execute(
             input_data={"query": payload.query, "context": payload.context},
         )
 
-        group_name = f"workflow_{thread_uuid}"
-        async_to_sync(get_channel_layer().group_add)(group_name, "workflow_events")
+        async def _legacy_runner() -> None:
+            try:
+                await _run_workflow_async(
+                    execution_id=execution.id,
+                    thread_id=str(thread_uuid),
+                    workflow_id=workflow.id,
+                    query=payload.query,
+                    context=payload.context,
+                    client_node_id="",
+                )
+            except Exception:
+                logger.exception("Legacy /api/ai/execute workflow failed")
 
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.create_task(
-            _run_workflow_async(
-                execution_id=execution.id,
-                thread_id=str(thread_uuid),
-                workflow_id=workflow.id,
-                query=payload.query,
-                context=payload.context,
-            )
-        )
+        _spawn_background_async(_legacy_runner())
 
         return LegacyWorkflowOutputSchema(
             thread_id=str(thread_uuid),

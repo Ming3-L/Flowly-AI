@@ -12,7 +12,8 @@ from typing import Any, Optional
 
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, F, Sum
-from django.db.models.functions import TruncDate
+from django.db import models as django_models
+from django.db.models.functions import TruncDate, TruncWeek, TruncMonth
 from django.http import HttpRequest
 from ninja import Router, Schema  # pyright: ignore[reportMissingImports]
 from pydantic import Field  # pyright: ignore[reportMissingImports]
@@ -134,8 +135,8 @@ def get_usage_analytics(
     # Group by date
     trunc_map = {
         "day": TruncDate("started_at"),
-        "week": TruncDate("started_at", kind="week"),
-        "month": TruncDate("started_at", kind="month"),
+        "week": TruncWeek("started_at"),
+        "month": TruncMonth("started_at"),
     }
     trunc = trunc_map.get(granularity, TruncDate("started_at"))
 
@@ -151,8 +152,6 @@ def get_usage_analytics(
         )
         .order_by("day")
     )
-
-    from django.db import models as django_models
 
     time_series = []
     for row in grouped:
@@ -207,8 +206,7 @@ def get_cost_analytics(
         group_by: 'model' | 'workflow' | 'user'
         user_id: Filter by user (admin only, defaults to own costs)
     """
-    from .cost_tracker import CostRecord
-    from django.db import models as django_models
+    from .analytics_models import CostRecord
 
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
@@ -280,7 +278,7 @@ def get_performance_analytics(
         start_date: Start date (default: 30 days ago)
         end_date: End date (default: today)
     """
-    from .cost_tracker import CostRecord
+    from .analytics_models import CostRecord
 
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
@@ -313,7 +311,7 @@ def get_performance_analytics(
         Workflow.objects.filter(user=request.user)
         .annotate(
             avg_dur=Avg(
-                "executions__completed_at" - "executions__started_at",
+                F("executions__completed_at") - F("executions__started_at"),
             )
         )
         .order_by("-avg_dur")[:5]

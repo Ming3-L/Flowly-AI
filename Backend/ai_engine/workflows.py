@@ -6,6 +6,7 @@ Each user only sees and manages their own workflows.
 """
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
@@ -13,7 +14,9 @@ from ninja import Query, Router, Schema  # pyright: ignore[reportMissingImports]
 from pydantic import Field  # pyright: ignore[reportMissingImports]
 
 from .auth import JWTAuth
-from .models import Workflow, WorkflowExecution, Thread
+from .models import Workflow, WorkflowExecution, Thread, WorkflowGraphValidation
+from .workflow_graph.definition_sync import sync_workflow_graph_from_definition
+from .workflow_graph.validator import validate_workflow_definition
 
 User = get_user_model()
 workflow_crud_router = Router(tags=["Workflows CRUD"], auth=JWTAuth())
@@ -54,6 +57,11 @@ class MessageSchema(Schema):
     detail: str | None = None
 
 
+class WorkflowValidationErrorSchema(Schema):
+    message: str
+    errors: list[dict[str, str]]
+
+
 def _workflow_to_response(wf: Workflow) -> WorkflowResponseSchema:
     return WorkflowResponseSchema(
         id=wf.id,
@@ -86,16 +94,25 @@ def list_workflows(request: HttpRequest, search: str = "", is_active: bool | Non
     return WorkflowListSchema(total=len(items), items=items)
 
 
-@workflow_crud_router.post("/", response={201: WorkflowResponseSchema})
+@workflow_crud_router.post("/", response={201: WorkflowResponseSchema, 400: WorkflowValidationErrorSchema})
 def create_workflow(request: HttpRequest, payload: WorkflowCreateSchema):
     """POST /api/workflows/ — create a new workflow for the authenticated user"""
-    wf = Workflow.objects.create(
-        user=request.user,
-        name=payload.name,
-        description=payload.description,
-        definition=payload.definition or {},
-        is_active=True,
-    )
+    ok, errors = validate_workflow_definition(payload.definition or {}, user_id=getattr(request.user, "id", None))
+    if not ok:
+        return 400, WorkflowValidationErrorSchema(message="工作流校验失败", errors=errors)
+    with transaction.atomic():
+        wf = Workflow.objects.create(
+            user=request.user,
+            name=payload.name,
+            description=payload.description,
+            definition=payload.definition or {},
+            is_active=True,
+        )
+        sync_workflow_graph_from_definition(wf, wf.definition if isinstance(wf.definition, dict) else {})
+        WorkflowGraphValidation.objects.update_or_create(
+            workflow=wf,
+            defaults={"is_valid": True, "errors": []},
+        )
     return 201, _workflow_to_response(wf)
 
 
@@ -106,21 +123,32 @@ def get_workflow(request: HttpRequest, workflow_id: int):
     return 200, _workflow_to_response(wf)
 
 
-@workflow_crud_router.put("/{workflow_id}", response=WorkflowResponseSchema)
+@workflow_crud_router.put("/{workflow_id}", response={200: WorkflowResponseSchema, 400: WorkflowValidationErrorSchema})
 def update_workflow(request: HttpRequest, workflow_id: int, payload: WorkflowUpdateSchema):
     """PUT /api/workflows/{id}"""
     wf = get_object_or_404(Workflow, id=workflow_id, user=request.user)
 
-    if payload.name is not None:
-        wf.name = payload.name
-    if payload.description is not None:
-        wf.description = payload.description
-    if payload.definition is not None:
-        wf.definition = payload.definition
-    if payload.is_active is not None:
-        wf.is_active = payload.is_active
+    with transaction.atomic():
+        if payload.name is not None:
+            wf.name = payload.name
+        if payload.description is not None:
+            wf.description = payload.description
+        if payload.definition is not None:
+            ok, errors = validate_workflow_definition(payload.definition or {}, user_id=getattr(request.user, "id", None))
+            if not ok:
+                return 400, WorkflowValidationErrorSchema(message="工作流校验失败", errors=errors)
+            wf.definition = payload.definition
+        if payload.is_active is not None:
+            wf.is_active = payload.is_active
 
-    wf.save()
+        wf.save()
+        # definition 为权威；MySQL 图为从属镜像，失败则整段事务回滚（见 definition_sync 文档）
+        sync_workflow_graph_from_definition(wf, wf.definition if isinstance(wf.definition, dict) else {})
+        WorkflowGraphValidation.objects.update_or_create(
+            workflow=wf,
+            defaults={"is_valid": True, "errors": []},
+        )
+
     return 200, _workflow_to_response(wf)
 
 
