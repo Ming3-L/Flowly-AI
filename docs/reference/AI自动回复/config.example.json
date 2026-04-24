@@ -1,0 +1,18 @@
+{
+  "friends_config": {
+    "示例好友": {
+      "name": "示例好友",
+      "personality": "gentle_healing",
+      "scene": "daily_chat",
+      "custom_system_prompt": "",
+      "knowledge_paths": [],
+      "knowledge_match_keywords": []
+    }
+  },
+  "chat_software": "wechat",
+  "chat_window_box": [0, 0, 100, 100],
+  "input_box_pos": [0, 0, 100, 100],
+  "user_name_box": [0, 0, 100, 100],
+  "friend_list_box": [0, 0, 100, 100],
+  "monitored_friends": ["示例好友"]
+}
