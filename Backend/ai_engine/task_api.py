@@ -93,9 +93,10 @@ def run_workflow_async(
 
     # Create thread and execution records
     thread_uuid = uuid.uuid4()
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
     thread = Thread.objects.create(
         thread_id=thread_uuid,
-        user=request.user,
+        user=u,
         workflow=workflow,
     )
     execution = WorkflowExecution.objects.create(

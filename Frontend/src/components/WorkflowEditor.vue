@@ -1394,6 +1394,7 @@ async function handleRunCanvas() {
 
 onMounted(() => {
   void loadAiModelsCatalog()
+  // 初次挂载时先按当前 props 初始化；后续编辑页会异步拉取 definition，需要 watch 才能回填
   if (props.initialDefinition && props.initialDefinition.nodes) {
     editorStore.loadFromDefinition(props.initialDefinition)
   } else {
@@ -1401,6 +1402,16 @@ onMounted(() => {
   }
   canvasContainerRef.value?.focus()
 })
+
+watch(
+  () => props.initialDefinition,
+  (def) => {
+    if (def && (def as any).nodes) {
+      editorStore.loadFromDefinition(def as any)
+    }
+  },
+  { deep: true }
+)
 
 onUnmounted(() => {
   editorStore.clear()

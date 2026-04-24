@@ -1633,6 +1633,14 @@ async def general_assistant(state: WorkflowState) -> WorkflowState:
             overrides = await asyncio.to_thread(get_user_preset_llm_overrides, cat_key, uid)
             llm = get_chat_model(route, model=model_id, **overrides)
             trace_route = route
+            import logging
+            logging.getLogger(__name__).info(
+                "chat model resolved model_key=%s route=%s model_id=%s catalog_key=%s",
+                mk,
+                route,
+                model_id,
+                cat_key,
+            )
         else:
             model_name = state.get("model_name", "doubao")
             llm = get_chat_model(model_name)

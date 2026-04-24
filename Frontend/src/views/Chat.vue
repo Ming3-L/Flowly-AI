@@ -8,8 +8,24 @@
           <el-button size="small" text @click="startNewChat" title="新对话">
             <el-icon><Plus /></el-icon>
           </el-button>
-          <el-button size="small" text @click="clearCurrentChat" title="清空当前对话">
+          <el-button
+            size="small"
+            text
+            @click="toggleSelectionMode"
+            :title="selectionMode ? '退出选择' : '选择删除'"
+          >
             <el-icon><Delete /></el-icon>
+          </el-button>
+        </div>
+      </div>
+
+      <div v-if="selectionMode" class="sidebar-batchbar">
+        <span class="batch-tip">已选 {{ selectedCount }} 个</span>
+        <div class="batch-actions">
+          <el-button size="small" text @click="selectAllSessions">全选</el-button>
+          <el-button size="small" text @click="clearSelectedSessions">清空</el-button>
+          <el-button size="small" type="danger" @click="deleteSelectedSessions" :disabled="selectedCount === 0">
+            删除
           </el-button>
         </div>
       </div>
@@ -20,11 +36,19 @@
           :key="session.id"
           class="session-item"
           :class="{ active: currentSessionId === session.id }"
-          @click="loadSession(session.id)"
+          @click="onSessionRowClick(session.id)"
         >
+          <el-checkbox
+            v-if="selectionMode"
+            class="session-check"
+            :model-value="isSessionSelected(session.id)"
+            @click.stop
+            @change="() => toggleSessionSelected(session.id)"
+          />
           <el-icon class="session-icon"><ChatLineSquare /></el-icon>
           <span class="session-title">{{ session.title || '新对话' }}</span>
           <el-button
+            v-if="!selectionMode"
             size="small"
             text
             class="delete-btn"
@@ -159,7 +183,6 @@ import {
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/utils/api'
-import { buildWorkflowWebSocketUrl } from '@/utils/workflowWs'
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
@@ -182,7 +205,11 @@ const streaming = ref(false)
 const streamingContent = ref('')
 const messagesAreaRef = ref<HTMLElement>()
 
-let ws: WebSocket | null = null
+const selectionMode = ref(false)
+const selectedSessionIds = ref<Set<number>>(new Set())
+const selectedCount = ref(0)
+
+let ws: WebSocket | null = null // legacy (workflow streaming); chat send API no longer uses WS
 useAuthStore() // ensure auth store initialized for JWT handling
 
 type AiModelRow = {
@@ -423,133 +450,49 @@ async function streamResponse(query: string, sessionId: number) {
   streaming.value = true
   streamingContent.value = ''
 
-  const threadId = crypto.randomUUID()
-
   try {
-    await api.post('/workflows/run', {
-      query,
-      context: {},
-      workflow_id: null,
-      thread_id: threadId,
-      model_name: 'doubao',
-      conversation_session_id: sessionId,
-      model_key: effectiveChatModelKey(),
-    })
-
-    const wsUrl = buildWorkflowWebSocketUrl(threadId)
-    console.debug('[Chat] workflow thread', threadId, 'wsUrl=', wsUrl)
-    ws = new WebSocket(wsUrl)
-
-    let assistantContent = ''
-    let resolved = false
-
-    ws.onopen = () => { console.debug('[WS] Connected to thread', threadId) }
-
-    ws.onmessage = async (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        if (data.event_type === 'connected') return
-
-        if (data.event_type === 'token' && data.content) {
-          assistantContent += data.content
-          streamingContent.value = assistantContent
-          scrollToBottom()
-          return
-        }
-
-        if (data.event_type === 'message' && data.content) {
-          assistantContent += data.content
-          streamingContent.value = assistantContent
-          scrollToBottom()
-          return
-        }
-
-        if (data.event_type === 'workflow_end') {
-          ws?.close()
-          ws = null
-          resolved = true
-          streaming.value = false
-          streamingContent.value = ''
-
-          try {
-            messages.value = await fetchMessagesForSession(sessionId)
-            syncSidebarTitleFromMessages()
-          } catch {
-            if (assistantContent) {
-              const lastMsg = messages.value[messages.value.length - 1]
-              if (lastMsg?.role === 'user') {
-                messages.value.push({
-                  role: 'assistant',
-                  content: assistantContent,
-                  created_at: new Date().toISOString(),
-                })
-              } else if (lastMsg?.role === 'assistant') {
-                lastMsg.content = assistantContent
-              }
-            } else if (data.result?.response) {
-              messages.value.push({
-                role: 'assistant',
-                content: data.result.response,
-                created_at: new Date().toISOString(),
-              })
-            }
-          }
-          scrollToBottom()
-          return
-        }
-
-        if (data.event_type === 'workflow_error') {
-          ws?.close()
-          ws = null
-          resolved = true
-          streaming.value = false
-          streamingContent.value = ''
-          try {
-            messages.value = await fetchMessagesForSession(sessionId)
-          } catch {
-            messages.value.push({
-              role: 'assistant',
-              content: `错误: ${data.error}`,
-              created_at: new Date().toISOString(),
-            })
-          }
-          scrollToBottom()
-          return
-        }
-      } catch {
-        // ignore
+    const { data } = await api.post<{ ok: boolean; assistant_message?: ChatMessage; error?: string }>(
+      `/chat/sessions/${sessionId}/send`,
+      {
+        content: query,
+        model_key: effectiveChatModelKey(),
+        attachments: [],
       }
+    )
+
+    streaming.value = false
+    streamingContent.value = ''
+
+    if (!data?.ok) {
+      messages.value.push({
+        role: 'assistant',
+        content: `错误: ${data?.error || 'unknown_error'}`,
+        created_at: new Date().toISOString(),
+      })
+      scrollToBottom()
+      return
     }
 
-    ws.onerror = () => {
-      ws?.close()
-      ws = null
-      if (!resolved) {
-        ElMessage.error(`连接中断，请重试（WS: ${wsUrl}）`)
+    // 拉取全量消息，保持与后端一致（含时间/id）
+    try {
+      messages.value = await fetchMessagesForSession(sessionId)
+      syncSidebarTitleFromMessages()
+    } catch {
+      if (data?.assistant_message?.content) {
+        messages.value.push({
+          role: 'assistant',
+          content: data.assistant_message.content,
+          created_at: data.assistant_message.created_at || new Date().toISOString(),
+        })
+      } else {
+        messages.value.push({
+          role: 'assistant',
+          content: '（无返回）',
+          created_at: new Date().toISOString(),
+        })
       }
-      resolved = true
-      streaming.value = false
-      streamingContent.value = ''
     }
-
-    ws.onclose = () => {
-      if (!resolved) {
-        resolved = true
-        streaming.value = false
-        streamingContent.value = ''
-      }
-    }
-
-    setTimeout(() => {
-      if (!resolved) {
-        ws?.close()
-        ws = null
-        resolved = true
-        streaming.value = false
-        streamingContent.value = ''
-        ElMessage.warning('响应超时')
-      }
-    }, 120000)
+    scrollToBottom()
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.detail || '发送失败，请检查后端连接')
     streaming.value = false
@@ -558,6 +501,66 @@ async function streamResponse(query: string, sessionId: number) {
       messages.value.pop()
     }
   }
+}
+
+function toggleSelectionMode() {
+  selectionMode.value = !selectionMode.value
+  if (!selectionMode.value) {
+    selectedSessionIds.value = new Set()
+    selectedCount.value = 0
+  }
+}
+
+function isSessionSelected(id: number) {
+  return selectedSessionIds.value.has(id)
+}
+
+function toggleSessionSelected(id: number) {
+  const s = new Set(selectedSessionIds.value)
+  if (s.has(id)) s.delete(id)
+  else s.add(id)
+  selectedSessionIds.value = s
+  selectedCount.value = s.size
+}
+
+function selectAllSessions() {
+  const s = new Set<number>()
+  for (const row of sessions.value) s.add(row.id)
+  selectedSessionIds.value = s
+  selectedCount.value = s.size
+}
+
+function clearSelectedSessions() {
+  selectedSessionIds.value = new Set()
+  selectedCount.value = 0
+}
+
+async function deleteSelectedSessions() {
+  const ids = Array.from(selectedSessionIds.value)
+  if (ids.length === 0) return
+  try {
+    await Promise.all(ids.map((id) => api.delete(`/chat/sessions/${id}`).catch(() => null)))
+  } finally {
+    // 刷新列表与当前会话
+    await fetchSessionList()
+    const still = sessions.value.find((s) => s.id === currentSessionId.value) != null
+    if (!still) {
+      currentSessionId.value = null
+      messages.value = []
+      if (sessions.value.length) await loadSession(sessions.value[0].id)
+      else await startNewChat()
+    }
+    clearSelectedSessions()
+    selectionMode.value = false
+  }
+}
+
+function onSessionRowClick(id: number) {
+  if (selectionMode.value) {
+    toggleSessionSelected(id)
+    return
+  }
+  loadSession(id)
 }
 
 onMounted(async () => {
@@ -612,6 +615,27 @@ onUnmounted(() => {
 .sidebar-actions {
   display: flex;
   gap: 4px;
+}
+
+.sidebar-batchbar {
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #666666;
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-check {
+  flex-shrink: 0;
 }
 
 .session-list {

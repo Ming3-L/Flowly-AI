@@ -96,9 +96,8 @@ def list_executions(
 
     List workflow executions for the authenticated user.
     """
-    queryset = WorkflowExecution.objects.filter(
-        workflow__user=request.user
-    ).select_related("workflow", "thread")
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    queryset = WorkflowExecution.objects.filter(thread__user=u).select_related("workflow", "thread")
 
     if workflow_id is not None:
         queryset = queryset.filter(workflow_id=workflow_id)
@@ -122,7 +121,8 @@ def execution_stats(request: HttpRequest, workflow_id: int | None = None):
 
     Return aggregated execution statistics for the authenticated user.
     """
-    queryset = WorkflowExecution.objects.filter(workflow__user=request.user)
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    queryset = WorkflowExecution.objects.filter(thread__user=u)
 
     if workflow_id is not None:
         queryset = queryset.filter(workflow_id=workflow_id)
@@ -170,7 +170,8 @@ class TtsRequestIn(Schema):
 
 
 def _execution_qs(request: HttpRequest):
-    return WorkflowExecution.objects.select_related("workflow", "thread").filter(workflow__user=request.user)
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    return WorkflowExecution.objects.select_related("workflow", "thread").filter(thread__user=u)
 
 
 def _allowed_media_urls(exec_obj: WorkflowExecution) -> set[str]:

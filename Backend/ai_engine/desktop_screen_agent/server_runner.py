@@ -89,7 +89,7 @@ def _apply_detected_layout(*, user_id: int, nonce: int, areas: dict[str, Any]) -
         p.save(update_fields=["chat_window_box", "input_box_pos", "user_name_box", "friend_list_box", "region_detect_ack_nonce", "updated_at"])
 
 
-def run_server_screen_agent(*, user_id: int) -> None:
+def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
     """
     阻塞循环：读取 profile → 识别 → 写 events/logs。
     设计为在 multiprocessing 子进程中运行。
@@ -101,6 +101,12 @@ def run_server_screen_agent(*, user_id: int) -> None:
     last_chat_signature = ""
 
     while True:
+        try:
+            if stop_event is not None and getattr(stop_event, "is_set", None) and stop_event.is_set():
+                _emit_log(user_id=uid, level="info", line="本机屏幕代理已收到停止信号", extra={"pid": os.getpid()})
+                break
+        except Exception:
+            pass
         interval = 10
         try:
             p = AutoReplyScreenProfile.objects.filter(user_id=uid).first()

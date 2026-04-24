@@ -131,7 +131,7 @@ def get_usage_analytics(
         raise AuthenticationError("Authentication required")
 
     queryset = WorkflowExecution.objects.filter(
-        workflow__user=u,
+        thread__user=u,
         started_at__date__gte=start,
         started_at__date__lte=end,
     )
@@ -326,7 +326,7 @@ def get_performance_analytics(
 
     # Slowest workflows (by avg duration)
     slowest = (
-        Workflow.objects.filter(user=u)
+        Workflow.objects.filter(user=u, is_deleted=False)
         .annotate(
             avg_dur=Avg(
                 F("executions__completed_at") - F("executions__started_at"),
@@ -382,7 +382,7 @@ def get_workflow_stats(
 
         raise AuthenticationError("Authentication required")
 
-    workflows = Workflow.objects.filter(user=u)
+    workflows = Workflow.objects.filter(user=u, is_deleted=False)
 
     results: list[WorkflowStatsSchema] = []
     for wf in workflows:

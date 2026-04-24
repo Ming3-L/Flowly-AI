@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from ninja import Query, Router, Schema  # pyright: ignore[reportMissingImports]
 from pydantic import Field  # pyright: ignore[reportMissingImports]
 
@@ -79,7 +80,8 @@ def _workflow_to_response(wf: Workflow) -> WorkflowResponseSchema:
 @workflow_crud_router.get("/", response=WorkflowListSchema)
 def list_workflows(request: HttpRequest, search: str = "", is_active: bool | None = None):
     """GET /api/workflows/ — list workflows for the authenticated user"""
-    queryset = Workflow.objects.filter(user=request.user)
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    queryset = Workflow.objects.filter(user=u, is_deleted=False)
 
     if search:
         queryset = queryset.filter(
@@ -97,16 +99,19 @@ def list_workflows(request: HttpRequest, search: str = "", is_active: bool | Non
 @workflow_crud_router.post("/", response={201: WorkflowResponseSchema, 400: WorkflowValidationErrorSchema})
 def create_workflow(request: HttpRequest, payload: WorkflowCreateSchema):
     """POST /api/workflows/ — create a new workflow for the authenticated user"""
-    ok, errors = validate_workflow_definition(payload.definition or {}, user_id=getattr(request.user, "id", None))
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    ok, errors = validate_workflow_definition(payload.definition or {}, user_id=getattr(u, "id", None))
     if not ok:
         return 400, WorkflowValidationErrorSchema(message="工作流校验失败", errors=errors)
     with transaction.atomic():
         wf = Workflow.objects.create(
-            user=request.user,
+            user=u,
             name=payload.name,
             description=payload.description,
             definition=payload.definition or {},
             is_active=True,
+            is_deleted=False,
+            deleted_at=None,
         )
         sync_workflow_graph_from_definition(wf, wf.definition if isinstance(wf.definition, dict) else {})
         WorkflowGraphValidation.objects.update_or_create(
@@ -119,14 +124,16 @@ def create_workflow(request: HttpRequest, payload: WorkflowCreateSchema):
 @workflow_crud_router.get("/{workflow_id}", response=WorkflowResponseSchema)
 def get_workflow(request: HttpRequest, workflow_id: int):
     """GET /api/workflows/{id}"""
-    wf = get_object_or_404(Workflow, id=workflow_id, user=request.user)
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    wf = get_object_or_404(Workflow, id=workflow_id, user=u, is_deleted=False)
     return 200, _workflow_to_response(wf)
 
 
 @workflow_crud_router.put("/{workflow_id}", response={200: WorkflowResponseSchema, 400: WorkflowValidationErrorSchema})
 def update_workflow(request: HttpRequest, workflow_id: int, payload: WorkflowUpdateSchema):
     """PUT /api/workflows/{id}"""
-    wf = get_object_or_404(Workflow, id=workflow_id, user=request.user)
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    wf = get_object_or_404(Workflow, id=workflow_id, user=u, is_deleted=False)
 
     with transaction.atomic():
         if payload.name is not None:
@@ -154,11 +161,13 @@ def update_workflow(request: HttpRequest, workflow_id: int, payload: WorkflowUpd
 
 @workflow_crud_router.delete("/{workflow_id}", response=MessageSchema)
 def delete_workflow(request: HttpRequest, workflow_id: int):
-    """DELETE /api/workflows/{id} — soft-delete by setting is_active=False"""
-    wf = get_object_or_404(Workflow, id=workflow_id, user=request.user)
-    wf.is_active = False
-    wf.save(update_fields=["is_active"])
+    """DELETE /api/workflows/{id} — soft-delete (is_deleted=True)"""
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    wf = get_object_or_404(Workflow, id=workflow_id, user=u, is_deleted=False)
+    wf.is_deleted = True
+    wf.deleted_at = timezone.now()
+    wf.save(update_fields=["is_deleted", "deleted_at"])
     return 200, MessageSchema(
-        message="Workflow deactivated",
-        detail=f"Workflow '{wf.name}' has been deactivated",
+        message="Workflow deleted",
+        detail=f"Workflow '{wf.name}' has been deleted",
     )

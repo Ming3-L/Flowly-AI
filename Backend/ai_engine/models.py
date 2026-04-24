@@ -21,6 +21,10 @@ class Workflow(models.Model):
     description = models.TextField(blank=True, help_text="Workflow description")
     definition = models.JSONField(help_text="Workflow definition in JSON format")
     is_active = models.BooleanField(default=True)
+    # Soft-delete: deleted workflows should not appear in lists,
+    # but their executions/history can remain for audit if needed.
+    is_deleted = models.BooleanField(default=False, db_index=True)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

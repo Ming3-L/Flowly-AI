@@ -559,7 +559,12 @@ def workflow_run(
     workflow = None
     if payload.workflow_id is not None:
         try:
-            workflow = Workflow.objects.get(id=payload.workflow_id, is_active=True)
+            workflow = Workflow.objects.get(
+                id=payload.workflow_id,
+                user=current_user,
+                is_active=True,
+                is_deleted=False,
+            )
         except Workflow.DoesNotExist:
             return WorkflowRunOutputSchema(
                 thread_id="",

@@ -27,16 +27,38 @@ logger = logging.getLogger(__name__)
 
 auto_reply_router = Router(tags=["AI Auto Reply"], auth=JWTAuth())
 
-# 以进程方式运行的「本机屏幕代理」（每用户一个）。
-# 注意：仅适用于单机开发/本机部署；多进程 gunicorn/uvicorn 场景需要外部 supervisor。
-_agent_process_by_user: dict[int, mp.Process] = {}
+class _AgentHandle:
+    def __init__(self, *, kind: str, proc: mp.Process | None = None, thread: threading.Thread | None = None, stop=None):
+        self.kind = kind
+        self.proc = proc
+        self.thread = thread
+        self.stop = stop
 
 
-def _agent_is_alive(p: mp.Process | None) -> bool:
+# 本机屏幕代理（每用户一个）。
+# - 优先 multiprocessing 子进程（隔离依赖/崩溃）
+# - Windows/开发环境下若启动失败，回退到线程（避免 500 直接不可用）
+_agent_handle_by_user: dict[int, _AgentHandle] = {}
+
+
+def _proc_is_alive(p: mp.Process | None) -> bool:
     try:
         return bool(p is not None and p.is_alive())
     except Exception:
         return False
+
+
+def _agent_is_running(h: _AgentHandle | None) -> bool:
+    if h is None:
+        return False
+    if h.kind == "process":
+        return _proc_is_alive(h.proc)
+    if h.kind == "thread":
+        try:
+            return bool(h.thread is not None and h.thread.is_alive())
+        except Exception:
+            return False
+    return False
 
 
 @auto_reply_router.get("/agent/status")
@@ -46,40 +68,64 @@ def agent_status(request: HttpRequest):
     u = request.auth
     if u is None:
         raise AuthenticationError("Authentication required")
-    p = _agent_process_by_user.get(int(u.pk))
-    return {"running": _agent_is_alive(p), "pid": getattr(p, "pid", None)}
+    h = _agent_handle_by_user.get(int(u.pk))
+    pid = getattr(h.proc, "pid", None) if h and h.kind == "process" else None
+    return {"running": _agent_is_running(h), "pid": pid}
 
 
 @auto_reply_router.post("/agent/start")
 def agent_start(request: HttpRequest):
     from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+    from ninja.errors import HttpError  # pyright: ignore[reportMissingImports]
 
     u = request.auth
     if u is None:
         raise AuthenticationError("Authentication required")
 
     uid = int(u.pk)
-    existing = _agent_process_by_user.get(uid)
-    if _agent_is_alive(existing):
-        return {"ok": True, "running": True, "pid": existing.pid}
+    existing = _agent_handle_by_user.get(uid)
+    if _agent_is_running(existing):
+        return {"ok": True, "running": True, "pid": getattr(existing.proc, "pid", None)}
 
     from ai_engine.desktop_screen_agent.server_runner import run_server_screen_agent
 
     ctx = mp.get_context("spawn")
 
-    def _entry(user_id: int) -> None:
+    stop_evt = ctx.Event()
+
+    def _entry(user_id: int, stop_event) -> None:
         import os
         import django
 
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowly_backend.settings")
         django.setup()
-        run_server_screen_agent(user_id=int(user_id))
+        run_server_screen_agent(user_id=int(user_id), stop_event=stop_event)
 
-    p = ctx.Process(target=_entry, args=(uid,), name=f"flowly-screen-agent-{uid}")
-    p.daemon = True
-    p.start()
-    _agent_process_by_user[uid] = p
-    return {"ok": True, "running": True, "pid": p.pid}
+    try:
+        p = ctx.Process(target=_entry, args=(uid, stop_evt), name=f"flowly-screen-agent-{uid}")
+        p.daemon = True
+        p.start()
+        _agent_handle_by_user[uid] = _AgentHandle(kind="process", proc=p, stop=stop_evt)
+        return {"ok": True, "running": True, "pid": p.pid}
+    except Exception as exc:
+        # 回退到线程模式（无法返回子进程 pid）
+        try:
+            stop_evt2 = threading.Event()
+
+            def _t_entry():
+                import os
+                import django
+
+                os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowly_backend.settings")
+                django.setup()
+                run_server_screen_agent(user_id=uid, stop_event=stop_evt2)
+
+            t = threading.Thread(target=_t_entry, daemon=True, name=f"flowly-screen-agent-thread-{uid}")
+            t.start()
+            _agent_handle_by_user[uid] = _AgentHandle(kind="thread", thread=t, stop=stop_evt2)
+            return {"ok": True, "running": True, "pid": None}
+        except Exception as exc2:
+            raise HttpError(500, f"启动失败: {exc}; 线程回退也失败: {exc2}") from exc2
 
 
 @auto_reply_router.post("/agent/stop")
@@ -90,15 +136,21 @@ def agent_stop(request: HttpRequest):
     if u is None:
         raise AuthenticationError("Authentication required")
     uid = int(u.pk)
-    p = _agent_process_by_user.get(uid)
-    if not _agent_is_alive(p):
-        _agent_process_by_user.pop(uid, None)
+    h = _agent_handle_by_user.get(uid)
+    if not _agent_is_running(h):
+        _agent_handle_by_user.pop(uid, None)
         return {"ok": True, "running": False}
     try:
-        p.terminate()
+        if h and h.stop is not None and getattr(h.stop, "set", None):
+            h.stop.set()
     except Exception:
         pass
-    _agent_process_by_user.pop(uid, None)
+    try:
+        if h and h.kind == "process" and h.proc is not None:
+            h.proc.terminate()
+    except Exception:
+        pass
+    _agent_handle_by_user.pop(uid, None)
     return {"ok": True, "running": False}
 
 
