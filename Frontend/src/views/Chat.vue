@@ -97,9 +97,31 @@
             @keydown.enter.shift.exact="() => {}"
           />
           <div class="input-actions">
-            <span class="model-hint">
-              模型: {{ auth.user?.ai_model || 'ark-doubao-smart-router' }}
-            </span>
+            <div class="model-hint">
+              <span style="margin-right:8px">模型</span>
+              <el-select
+                v-model="selectedModelKey"
+                size="small"
+                filterable
+                style="width: 260px"
+                :disabled="streaming"
+                placeholder="选择模型"
+              >
+                <el-option
+                  v-for="m in availableModels"
+                  :key="m.key"
+                  :label="m.label"
+                  :value="m.key"
+                >
+                  <span style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                    <span style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      {{ m.label }}
+                    </span>
+                    <span style="font-size:11px;color:#999">{{ m.route }}</span>
+                  </span>
+                </el-option>
+              </el-select>
+            </div>
             <div class="input-btns">
               <el-button
                 type="default"
@@ -152,7 +174,6 @@ interface Session {
   messages: ChatMessage[]
 }
 
-const auth = useAuthStore()
 const messages = ref<ChatMessage[]>([])
 const sessions = ref<Session[]>([])
 const currentSessionId = ref<number | null>(null)
@@ -162,7 +183,58 @@ const streamingContent = ref('')
 const messagesAreaRef = ref<HTMLElement>()
 
 let ws: WebSocket | null = null
-let currentThreadId: string | null = null
+useAuthStore() // ensure auth store initialized for JWT handling
+
+type AiModelRow = {
+  key: string
+  label: string
+  route: string
+  api_kind?: string
+  show_in_canvas_llm_nodes?: boolean
+}
+
+const availableModels = ref<AiModelRow[]>([])
+const selectedModelKey = ref<string>('')
+
+function loadSavedModelKey() {
+  const saved = localStorage.getItem('flowly_chat_model_key') || ''
+  selectedModelKey.value = saved.trim()
+}
+
+function saveModelKey() {
+  localStorage.setItem('flowly_chat_model_key', (selectedModelKey.value || '').trim())
+}
+
+async function fetchModelCatalog() {
+  try {
+    const { data } = await api.get<{ models: AiModelRow[] }>('/ai/models')
+    const rows = Array.isArray(data?.models) ? data.models : []
+    // 仅展示对话类（ark_chat）与可用于画布 LLM 的模型；避免把 embedding/生图等混进来
+    availableModels.value = rows
+      .filter((m) => (m.api_kind ?? 'ark_chat') === 'ark_chat')
+      .filter((m) => m.show_in_canvas_llm_nodes !== false)
+    if (!selectedModelKey.value) {
+      // 兼容旧默认：优先 smart-router，其次 doubao-default
+      const preferred =
+        availableModels.value.find((m) => m.key === 'ark-doubao-smart-router')?.key ||
+        availableModels.value.find((m) => m.key === 'doubao-default')?.key ||
+        availableModels.value[0]?.key ||
+        ''
+      selectedModelKey.value = preferred
+      saveModelKey()
+    } else {
+      // 若已保存但列表中不存在，回退到第一个可用项
+      const ok = availableModels.value.some((m) => m.key === selectedModelKey.value)
+      if (!ok) {
+        selectedModelKey.value = availableModels.value[0]?.key || ''
+        saveModelKey()
+      }
+    }
+  } catch {
+    availableModels.value = []
+    if (!selectedModelKey.value) selectedModelKey.value = 'doubao-default'
+  }
+}
 
 function renderMarkdown(text: string): string {
   if (!text) return ''
@@ -239,7 +311,6 @@ async function startNewChat() {
     sessions.value.unshift({ id: row.id, title: row.topic || '新对话', messages: [] })
     currentSessionId.value = row.id
     messages.value = []
-    currentThreadId = null
     scrollToBottom()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '创建会话失败')
@@ -256,7 +327,6 @@ async function loadSession(id: number) {
   } catch {
     messages.value = []
   }
-  currentThreadId = null
   scrollToBottom()
 }
 
@@ -344,12 +414,9 @@ async function sendMessage() {
   await streamResponse(text, sid)
 }
 
-/** 个人资料里若仍填 gpt-4o 等旧值，对话统一走豆包目录键 */
 function effectiveChatModelKey(): string {
-  const raw = (auth.user?.ai_model || '').trim()
-  if (!raw) return 'ark-doubao-smart-router'
-  if (/^gpt-/i.test(raw)) return 'ark-doubao-smart-router'
-  return raw
+  const raw = (selectedModelKey.value || '').trim()
+  return raw || 'doubao-default'
 }
 
 async function streamResponse(query: string, sessionId: number) {
@@ -357,7 +424,6 @@ async function streamResponse(query: string, sessionId: number) {
   streamingContent.value = ''
 
   const threadId = crypto.randomUUID()
-  currentThreadId = threadId
 
   try {
     await api.post('/workflows/run', {
@@ -494,10 +560,14 @@ async function streamResponse(query: string, sessionId: number) {
 }
 
 onMounted(async () => {
+  loadSavedModelKey()
+  await fetchModelCatalog()
   await fetchSessionList()
   if (sessions.value.length) await loadSession(sessions.value[0].id)
   else await startNewChat()
 })
+
+watch(selectedModelKey, () => saveModelKey())
 
 onUnmounted(() => {
   ws?.close()

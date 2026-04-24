@@ -2,9 +2,14 @@
 node_modules
 Frontend/node_modules
 Frontend/dist
+Frontend/.env*
 
 # Python virtual environments and cache
 Backend/venv
+.venv/
+venv/
+ENV/
+.envrc
 Backend/__pycache__
 Backend/**/__pycache__
 Backend/*.pyc
@@ -17,6 +22,8 @@ Backend/media
 Backend/.env
 Backend/.env.local
 Backend/.env.docker
+# 从 project_secrets_local.example.py 复制；真实密钥仅放此文件（勿提交）
+Backend/ai_engine/integrations/project_secrets_local.py
 
 # Test artifacts
 .pytest_cache
@@ -34,6 +41,18 @@ test-results
 *.sqlite3
 *.db
 
+# TypeScript incremental build info
+*.tsbuildinfo
+Frontend/tsconfig*.tsbuildinfo
+
+# Model weights / large artifacts (don't commit)
+*.pt
+*.pth
+*.onnx
+*.weights
+*.safetensors
+*.ckpt
+
 # OS
 .DS_Store
 Thumbs.db
@@ -45,7 +64,11 @@ Thumbs.db
 *.swo
 *~
 
+# Git worktrees (project-local)
+.worktrees/
+
 # Misc dev artifacts
 scripts
 1.text
 未命名.html
+ai模型接口.txt

@@ -124,8 +124,14 @@ def get_usage_analytics(
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
 
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    if not getattr(u, "is_authenticated", False):
+        from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+
+        raise AuthenticationError("Authentication required")
+
     queryset = WorkflowExecution.objects.filter(
-        workflow__user=request.user,
+        workflow__user=u,
         started_at__date__gte=start,
         started_at__date__lte=end,
     )
@@ -211,6 +217,12 @@ def get_cost_analytics(
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
 
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    if not getattr(u, "is_authenticated", False):
+        from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+
+        raise AuthenticationError("Authentication required")
+
     queryset = CostRecord.objects.filter(
         created_at__date__gte=start,
         created_at__date__lte=end,
@@ -218,7 +230,7 @@ def get_cost_analytics(
     if user_id:
         queryset = queryset.filter(user_id=user_id)
     else:
-        queryset = queryset.filter(user=request.user)
+        queryset = queryset.filter(user=u)
 
     # Total
     totals = queryset.aggregate(
@@ -283,9 +295,15 @@ def get_performance_analytics(
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
 
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    if not getattr(u, "is_authenticated", False):
+        from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+
+        raise AuthenticationError("Authentication required")
+
     latencies = list(
         CostRecord.objects.filter(
-            user=request.user,
+            user=u,
             created_at__date__gte=start,
             created_at__date__lte=end,
             latency_ms__gt=0,
@@ -308,7 +326,7 @@ def get_performance_analytics(
 
     # Slowest workflows (by avg duration)
     slowest = (
-        Workflow.objects.filter(user=request.user)
+        Workflow.objects.filter(user=u)
         .annotate(
             avg_dur=Avg(
                 F("executions__completed_at") - F("executions__started_at"),
@@ -358,7 +376,13 @@ def get_workflow_stats(
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
 
-    workflows = Workflow.objects.filter(user=request.user)
+    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    if not getattr(u, "is_authenticated", False):
+        from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+
+        raise AuthenticationError("Authentication required")
+
+    workflows = Workflow.objects.filter(user=u)
 
     results: list[WorkflowStatsSchema] = []
     for wf in workflows:
