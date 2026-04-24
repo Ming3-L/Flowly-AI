@@ -151,6 +151,7 @@ def ark_video_generate_poll(
     *,
     model_id: str,
     prompt_text: str,
+    image_url: str | None = None,
     duration: int | None = None,
     resolution: str | None = None,
     ratio: str | None = None,
@@ -161,7 +162,7 @@ def ark_video_generate_poll(
     timeout_s: float = 600.0,
 ) -> tuple[str, dict[str, Any]]:
     """
-    文生视频（异步任务），返回 (视频 URL 或空字符串, 原始结果 dict)。
+    文生视频 /（可选）参考图生视频（异步任务），返回 (视频 URL 或空字符串, 原始结果 dict)。
     """
     client = build_ark_client()
     mid = (model_id or "").strip()
@@ -171,10 +172,14 @@ def ark_video_generate_poll(
     if not text:
         raise ValueError("视频生成需要非空文案。")
 
-    create_kwargs: dict[str, Any] = {
-        "model": mid,
-        "content": [{"type": "text", "text": text}],
-    }
+    content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    ref = (image_url or "").strip()
+    if ref:
+        # 方舟多模态 content 结构与 chat/completions 类似：
+        # [{"type":"text","text":"..."},{"type":"image_url","image_url":{"url":"..."}}]
+        content.append({"type": "image_url", "image_url": {"url": ref}})
+
+    create_kwargs: dict[str, Any] = {"model": mid, "content": content}
     if duration is not None:
         create_kwargs["duration"] = int(duration)
     if resolution:

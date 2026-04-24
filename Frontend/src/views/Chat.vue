@@ -214,7 +214,7 @@ async function fetchModelCatalog() {
       .filter((m) => (m.api_kind ?? 'ark_chat') === 'ark_chat')
       .filter((m) => m.show_in_canvas_llm_nodes !== false)
     if (!selectedModelKey.value) {
-      // 兼容旧默认：优先 smart-router，其次 doubao-default
+      // 默认优先 smart-router（更贴近豆包体验）；若账号无权限会在后端映射到默认接入点
       const preferred =
         availableModels.value.find((m) => m.key === 'ark-doubao-smart-router')?.key ||
         availableModels.value.find((m) => m.key === 'doubao-default')?.key ||
@@ -437,6 +437,7 @@ async function streamResponse(query: string, sessionId: number) {
     })
 
     const wsUrl = buildWorkflowWebSocketUrl(threadId)
+    console.debug('[Chat] workflow thread', threadId, 'wsUrl=', wsUrl)
     ws = new WebSocket(wsUrl)
 
     let assistantContent = ''
@@ -524,7 +525,7 @@ async function streamResponse(query: string, sessionId: number) {
       ws?.close()
       ws = null
       if (!resolved) {
-        ElMessage.error('连接中断，请重试')
+        ElMessage.error(`连接中断，请重试（WS: ${wsUrl}）`)
       }
       resolved = true
       streaming.value = false

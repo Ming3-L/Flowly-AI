@@ -16,8 +16,9 @@ import logging
 import threading
 import uuid
 from typing import Any, Coroutine
+import time
 
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.db import transaction
@@ -38,6 +39,54 @@ from .workflow_graph.canvas_runner import run_canvas_workflow_async
 logger = logging.getLogger(__name__)
 
 
+@sync_to_async(thread_sensitive=True)
+def _sync_update_execution_status(execution_id: int, *, status: str) -> dict[str, Any]:
+    with transaction.atomic():
+        ex = WorkflowExecution.objects.select_for_update().filter(id=int(execution_id)).first()
+        if not ex:
+            return {"ok": False}
+        ex.status = str(status)
+        ex.save(update_fields=["status"])
+        return {"ok": True}
+
+
+@sync_to_async(thread_sensitive=True)
+def _sync_mark_execution_pending(execution_id: int) -> None:
+    with transaction.atomic():
+        ex = WorkflowExecution.objects.select_for_update().filter(id=int(execution_id)).first()
+        if ex:
+            ex.status = "pending"
+            ex.save(update_fields=["status"])
+
+
+@sync_to_async(thread_sensitive=True)
+def _sync_mark_execution_completed(execution_id: int, *, output: dict[str, Any]) -> dict[str, Any]:
+    with transaction.atomic():
+        ex = WorkflowExecution.objects.select_for_update().filter(id=int(execution_id)).first()
+        if not ex:
+            return {}
+        inp = dict(ex.input_data or {})
+        ex.status = "completed"
+        ex.completed_at = timezone.now()
+        ex.output_data = output
+        ex.save(update_fields=["status", "completed_at", "output_data"])
+        return inp
+
+
+@sync_to_async(thread_sensitive=True)
+def _sync_mark_execution_failed(execution_id: int, *, err: str) -> dict[str, Any]:
+    with transaction.atomic():
+        ex = WorkflowExecution.objects.select_for_update().filter(id=int(execution_id)).select_related("thread").first()
+        if not ex:
+            return {"input_data": {}, "user_id": None}
+        ex.status = "failed"
+        ex.error_message = str(err)
+        ex.completed_at = timezone.now()
+        ex.save(update_fields=["status", "error_message", "completed_at"])
+        uid = ex.thread.user_id if ex.thread_id else None
+        return {"input_data": dict(ex.input_data or {}), "user_id": uid}
+
+
 def _spawn_background_async(coro: Coroutine[Any, Any, None]) -> None:
     """
     在守护线程中运行协程，供同步 Ninja 视图在返回 HTTP 响应后继续执行工作流。
@@ -49,6 +98,7 @@ def _spawn_background_async(coro: Coroutine[Any, Any, None]) -> None:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
+            logger.info("bg-workflow thread started")
             loop.run_until_complete(coro)
         except Exception:
             logger.exception("Background workflow coroutine failed")
@@ -196,11 +246,19 @@ async def _run_workflow_async(
     set_llm_cost_context(execution_id=execution_id, client_node_id=client_node_id or "")
 
     try:
-        # Update execution status to running
-        with transaction.atomic():
-            execution = WorkflowExecution.objects.select_for_update().get(id=execution_id)
-            execution.status = "running"
-            execution.save(update_fields=["status"])
+        t0 = time.monotonic()
+        logger.info(
+            "workflow_async start execution_id=%s thread_id=%s workflow_id=%s model_name=%s model_key=%s runtime_user_id=%s force_general=%s",
+            execution_id,
+            thread_id,
+            workflow_id,
+            model_name,
+            (model_key or ""),
+            runtime_user_id,
+            force_general_assistant,
+        )
+        # Update execution status to running (Django ORM is sync-only)
+        await _sync_update_execution_status(execution_id, status="running")
 
         # Build initial state (Phase 3: includes model_name and parallel_branches)
         initial_state: dict[str, Any] = {
@@ -255,6 +313,13 @@ async def _run_workflow_async(
                     await emit.node_end(last_announced)
                 await emit.node_start(current_node, model_route=mn, title=current_node, node_type="langgraph")
                 last_announced = current_node
+                logger.info(
+                    "workflow_async node_start execution_id=%s thread_id=%s node=%s model_route=%s",
+                    execution_id,
+                    thread_id,
+                    current_node,
+                    mn,
+                )
 
             # Emit tokens if there are new messages
             messages = step.get("messages", [])
@@ -277,11 +342,7 @@ async def _run_workflow_async(
                     current_node,
                 )
                 # Update DB to reflect paused state
-                with transaction.atomic():
-                    exec_obj = WorkflowExecution.objects.filter(id=execution_id).first()
-                    if exec_obj:
-                        exec_obj.status = "pending"
-                        exec_obj.save(update_fields=["status"])
+                await _sync_mark_execution_pending(execution_id)
                 if last_announced is not None:
                     await emit.node_end(last_announced)
                 # Interrupt here — stop streaming and wait for resume
@@ -296,16 +357,8 @@ async def _run_workflow_async(
             if isinstance(fr, dict):
                 final_result = fr
 
-        # All steps complete — update execution record
-        inp: dict[str, Any] = {}
-        with transaction.atomic():
-            execution = WorkflowExecution.objects.filter(id=execution_id).first()
-            if execution:
-                inp = dict(execution.input_data or {})
-                execution.status = "completed"
-                execution.completed_at = timezone.now()
-                execution.output_data = final_result
-                execution.save(update_fields=["status", "completed_at", "output_data"])
+        # All steps complete — update execution record (sync ORM)
+        inp = await _sync_mark_execution_completed(execution_id, output=final_result)
 
         cid = inp.get("conversation_session_id")
         if isinstance(cid, int) and final_result:
@@ -315,32 +368,36 @@ async def _run_workflow_async(
                 resp = ""
                 if isinstance(final_result, dict):
                     resp = str(final_result.get("response") or "").strip()
-                if resp:
-                    record_assistant_reply(session_id=cid, content=resp)
+                # 即使为空也落库一条，避免前端“永远无回复”
+                if not resp:
+                    resp = "（空响应）"
+                logger.info("chat persist assistant_reply session_id=%s chars=%s", cid, len(resp))
+                await sync_to_async(record_assistant_reply, thread_sensitive=True)(
+                    session_id=cid,
+                    content=resp,
+                )
             except Exception:
                 logger.exception("record_assistant_reply failed")
 
         await emit.workflow_end("completed", final_result)
+        logger.info(
+            "workflow_async end execution_id=%s thread_id=%s status=completed elapsed_s=%.3f",
+            execution_id,
+            thread_id,
+            time.monotonic() - t0,
+        )
 
     except Exception as exc:
-        execution_failed: WorkflowExecution | None = None
-        with transaction.atomic():
-            execution_failed = WorkflowExecution.objects.filter(id=execution_id).select_related("thread").first()
-            if execution_failed:
-                execution_failed.status = "failed"
-                execution_failed.error_message = str(exc)
-                execution_failed.completed_at = timezone.now()
-                execution_failed.save(update_fields=["status", "error_message", "completed_at"])
-
-        raw_in = (execution_failed.input_data if execution_failed else None) or {}
+        failed_ctx = await _sync_mark_execution_failed(execution_id, err=str(exc))
+        raw_in = dict(failed_ctx.get("input_data") or {})
         cid = raw_in.get("conversation_session_id")
-        uid = execution_failed.thread.user_id if execution_failed and execution_failed.thread_id else None
+        uid = failed_ctx.get("user_id")
         if isinstance(cid, int) and uid and raw_in.get("conversation_append_user"):
             try:
                 from ai_engine.conversation.persist import remove_last_message_if_role
                 from ai_engine.models import ConversationMessage
 
-                remove_last_message_if_role(
+                await sync_to_async(remove_last_message_if_role, thread_sensitive=True)(
                     session_id=cid,
                     user_id=int(uid),
                     role=ConversationMessage.Role.USER,
@@ -349,6 +406,12 @@ async def _run_workflow_async(
                 logger.exception("remove_last_message_if_role failed")
 
         await emit.workflow_error(str(exc))
+        logger.exception(
+            "workflow_async end execution_id=%s thread_id=%s status=failed elapsed_s=%.3f",
+            execution_id,
+            thread_id,
+            time.monotonic() - t0 if "t0" in locals() else -1.0,
+        )
     finally:
         clear_llm_cost_context()
 
@@ -519,6 +582,15 @@ def workflow_run(
         thread_id=thread_uuid,
         defaults={"workflow": workflow, "user": current_user},
     )
+    logger.info(
+        "workflows.run request user_id=%s thread_id=%s workflow_id=%s conv_session_id=%s model_name=%s model_key=%s",
+        getattr(current_user, "pk", None),
+        str(thread_uuid),
+        payload.workflow_id,
+        payload.conversation_session_id,
+        payload.model_name,
+        (payload.model_key or "").strip(),
+    )
 
     conv_id = payload.conversation_session_id
     ctx = dict(payload.context or {})
@@ -578,6 +650,11 @@ def workflow_run(
             model_key=model_key_eff,
             runtime_user_id=current_user.pk,
         )
+    )
+    logger.info(
+        "workflows.run spawned execution_id=%s thread_id=%s status=pending",
+        execution.id,
+        str(thread_uuid),
     )
 
     return WorkflowRunOutputSchema(

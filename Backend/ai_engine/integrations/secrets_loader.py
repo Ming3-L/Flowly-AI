@@ -52,6 +52,7 @@ _LOCAL_ENV_KEYS: Final[tuple[str, ...]] = (
     "ARK_API_KEY",
     "DOUBAO_ARK_BASE_URL",
     "DOUBAO_ARK_MODEL",
+    "DOUBAO_ARK_SMART_ROUTER_ENDPOINT",
     "OPENAI_IMAGE_MODEL",
     "STABILITY_API_KEY",
     "STABILITY_BASE_URL",
@@ -152,6 +153,7 @@ class LanguageModelSettings:
     doubao_ark_api_key: str
     doubao_ark_base_url: str
     doubao_ark_model: str
+    doubao_ark_smart_router_endpoint: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,6 +254,7 @@ def get_ai_provider_settings() -> AIProviderSettings:
             default="https://ark.cn-beijing.volces.com/api/v3",
         ),
         doubao_ark_model=_resolve("DOUBAO_ARK_MODEL", default=""),
+        doubao_ark_smart_router_endpoint=_resolve("DOUBAO_ARK_SMART_ROUTER_ENDPOINT", default=""),
     )
     image = ImageModelSettings(
         openai_image_model=_resolve("OPENAI_IMAGE_MODEL", default="dall-e-3"),

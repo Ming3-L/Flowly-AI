@@ -1624,8 +1624,13 @@ async def general_assistant(state: WorkflowState) -> WorkflowState:
                 uid = None
 
         if mk:
-            route, model_id, cat_key = resolve_route_and_model_id({"modelKey": mk}, user_id=uid)
-            overrides = get_user_preset_llm_overrides(cat_key, uid)
+            # resolve_route_and_model_id / get_user_preset_llm_overrides use Django ORM (sync-only)
+            route, model_id, cat_key = await asyncio.to_thread(
+                resolve_route_and_model_id,
+                {"modelKey": mk},
+                user_id=uid,
+            )
+            overrides = await asyncio.to_thread(get_user_preset_llm_overrides, cat_key, uid)
             llm = get_chat_model(route, model=model_id, **overrides)
             trace_route = route
         else:
@@ -1670,8 +1675,17 @@ async def general_assistant(state: WorkflowState) -> WorkflowState:
         }
 
     except Exception as exc:
+        import logging
+
+        logging.getLogger(__name__).exception("general_assistant failed")
         await emit.workflow_error(f"General assistant failed: {exc}")
-        return {**state, "error": str(exc), "current_node": "general_assistant"}
+        # 避免前端“无回复”：把错误也作为 result.response 返回（同时便于落库排查）
+        return {
+            **state,
+            "error": str(exc),
+            "current_node": "general_assistant",
+            "result": {"response": f"错误: {exc}", "intent": "general_assistant"},
+        }
 
 
 # ─── Finalize ────────────────────────────────────────────────────────────────
@@ -1690,21 +1704,26 @@ async def finalize_node(state: WorkflowState) -> WorkflowState:
 
     execution_id = state.get("_execution_id")
     if execution_id:
+        from asgiref.sync import sync_to_async
         from .models import WorkflowExecution
         from django.utils import timezone
 
         try:
-            execution = WorkflowExecution.objects.get(id=execution_id)
-            execution.status = "completed"
-            execution.output_data = {
-                "response": state.get("result", {}),
-                "intent": state.get("intent"),
-                "tool_results": state.get("tool_results", {}),
-                "branch_results": state.get("branch_results", {}),
-                "error": state.get("error"),
-            }
-            execution.completed_at = timezone.now()
-            execution.save(update_fields=["status", "output_data", "completed_at"])
+            @sync_to_async(thread_sensitive=True)
+            def _sync_save() -> None:
+                execution = WorkflowExecution.objects.get(id=execution_id)
+                execution.status = "completed"
+                execution.output_data = {
+                    "response": state.get("result", {}),
+                    "intent": state.get("intent"),
+                    "tool_results": state.get("tool_results", {}),
+                    "branch_results": state.get("branch_results", {}),
+                    "error": state.get("error"),
+                }
+                execution.completed_at = timezone.now()
+                execution.save(update_fields=["status", "output_data", "completed_at"])
+
+            await _sync_save()
         except Exception:
             pass
 
@@ -1899,8 +1918,24 @@ def build_workflow_graph() -> StateGraph:
     # ── All paths converge at finalize ─────────────────────────────────────
     workflow.add_edge("finalize", END)
 
-    # ── Compile with AsyncDjangoSaver (required for async nodes + ainvoke/astream) ─
-    from langgraph.checkpoint.django.aio import AsyncDjangoSaver
+    # ── Compile with a checkpointer ─────────────────────────────────────────────
+    # `langgraph.checkpoint.django` is an *optional* extra in some LangGraph builds.
+    # When missing, we fall back to an in-memory saver so local dev can still run.
+    # Production should install the proper checkpoint extra for persistence.
+    try:
+        from langgraph.checkpoint.django.aio import AsyncDjangoSaver  # type: ignore[import-not-found]
+    except Exception:  # pragma: no cover
+        import logging
+
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "LangGraph Django checkpointer not available (missing 'langgraph.checkpoint.django'). "
+            "Falling back to in-memory checkpointer; workflow state will NOT persist across restarts. "
+            "Fix by installing LangGraph with Django checkpoint extras."
+        )
+        from langgraph.checkpoint.memory import MemorySaver  # type: ignore[import-not-found]
+
+        return workflow.compile(checkpointer=MemorySaver())
 
     # Capture the current event loop lazily — needed by AsyncDjangoSaver.sync methods
     # which use run_coroutine_threadsafe to bridge from sync → async context.

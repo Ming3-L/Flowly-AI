@@ -42,6 +42,13 @@ class WorkflowStreamConsumer(AsyncWebsocketConsumer):
             # 未 accept 即返回，由 Channels 拒绝握手；便于在终端看到 Redis/配置错误栈
             return
 
+        logger.info(
+            "Workflow WS connected thread_id=%s channel=%s group=%s",
+            self.thread_id,
+            getattr(self, "channel_name", None),
+            self.group_name,
+        )
+
         await self.send(
             text_data=json.dumps(
                 {
@@ -56,6 +63,12 @@ class WorkflowStreamConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
         except Exception:
             logger.debug("group_discard skipped (connect may have failed)", exc_info=True)
+        logger.info(
+            "Workflow WS disconnected thread_id=%s close_code=%s channel=%s",
+            getattr(self, "thread_id", None),
+            close_code,
+            getattr(self, "channel_name", None),
+        )
 
     async def receive(self, text_data=None, bytes_data=None):
         """
@@ -84,4 +97,12 @@ class WorkflowStreamConsumer(AsyncWebsocketConsumer):
             "event_type": event.get("event_type", "message"),
             **event.get("data", {}),
         }
-        await self.send(text_data=json.dumps(payload))
+        try:
+            await self.send(text_data=json.dumps(payload))
+        except Exception:
+            logger.exception(
+                "Workflow WS send failed thread_id=%s event_type=%s keys=%s",
+                getattr(self, "thread_id", None),
+                payload.get("event_type"),
+                list(payload.keys())[:30],
+            )

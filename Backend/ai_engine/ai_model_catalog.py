@@ -359,8 +359,11 @@ def _finalize_doubao_model_for_ark_endpoint(route: str, model_id: str, s: Any) -
     火山方舟常见部署方式：控制台只下发 ``ep-`` 推理接入点，此时 OpenAI 兼容接口的 ``model``
     字段应填接入点 id；若仍传 ``Doubao-Seed-2.0-mini`` 等逻辑名会返回 InvalidEndpointOrModel。
 
-    当环境 ``DOUBAO_ARK_MODEL`` 为 ``ep-…`` 时，将其它非 ep 的豆包模型名映射到该接入点；
-    ``Doubao-Smart-Router`` 保留原名（多数账号下可与接入点并存）。
+    当环境 ``DOUBAO_ARK_MODEL`` 为 ``ep-…`` 时，将其它非 ep 的豆包模型名映射到该接入点。
+
+    注意：部分账号/地域下 **不具备** ``Doubao-Smart-Router`` 的调用权限；此时传该模型名会 404。
+    为了让默认配置更稳健，这里也把 ``Doubao-Smart-Router`` 映射到接入点（如需强制用 Smart-Router，
+    请直接把 DOUBAO_ARK_MODEL 配置为该模型名，或在模型目录里填入可用的 endpoint/model）。
     """
     if (route or "").strip().lower() not in ("doubao", "ark", "byte", "volcengine"):
         return (model_id or "").strip()
@@ -370,8 +373,11 @@ def _finalize_doubao_model_for_ark_endpoint(route: str, model_id: str, s: Any) -
     mid = (model_id or "").strip()
     if mid.startswith("ep-"):
         return mid
+    # 若传 Smart-Router 模型名，优先使用专用接入点（若配置）
     if mid.lower() == "doubao-smart-router":
-        return mid
+        sr = (getattr(getattr(s, "language", None), "doubao_ark_smart_router_endpoint", "") or "").strip()
+        if sr.startswith("ep-"):
+            return sr
     return cfg
 
 
