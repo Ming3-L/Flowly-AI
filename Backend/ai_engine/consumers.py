@@ -80,7 +80,7 @@ class WorkflowStreamConsumer(AsyncWebsocketConsumer):
         if text_data:
             try:
                 data = json.loads(text_data)
-                # Respond to ping with pong
+                # 收到 ping 则回复 pong
                 if data.get("type") == "ping":
                     await self.send(text_data=json.dumps({"type": "pong"}))
             except json.JSONDecodeError:

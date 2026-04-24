@@ -16,6 +16,7 @@ from .custom_node_types import custom_node_type_router
 from .prompt_tools_api import ai_router, prompt_tools_router
 from .chat_sessions_api import chat_sessions_router
 from .auto_reply_api import auto_reply_router
+from .media_api import media_router
 from .ui_labels_api import router as ui_labels_router
 from accounts.views import router as accounts_router
 from accounts.api import router as profile_router
@@ -68,3 +69,6 @@ api.add_router("/chat", chat_sessions_router)
 
 # /api/auto-reply/* — AI 自动回复规则与异步任务
 api.add_router("/auto-reply", auto_reply_router)
+
+# /api/media/* — 上传与受保护下载（工作流多模态输入）
+api.add_router("/media", media_router)

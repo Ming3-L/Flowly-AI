@@ -55,6 +55,8 @@ class UserProfileSchema(Schema):
     ai_model: str
     language: str
     openai_base_url: str
+    nickname: str = ""
+    avatar_public_url: str = ""
     is_active: bool
     date_joined: str
     is_staff: bool = False
@@ -262,6 +264,16 @@ def get_me(request: HttpRequest):
 
     profile = getattr(user, "profile", None)
 
+    from ai_engine.local_media_store import build_public_url
+
+    nick = ""
+    avatar_url = ""
+    if profile:
+        nick = (getattr(profile, "nickname", "") or "").strip()
+        ap = (getattr(profile, "avatar_path", "") or "").strip()
+        if ap:
+            avatar_url = build_public_url(ap)
+
     return UserProfileSchema(
         id=user.id,
         username=user.username,
@@ -269,6 +281,8 @@ def get_me(request: HttpRequest):
         ai_model=profile.ai_model if profile else "ark-doubao-smart-router",
         language=profile.language if profile else "zh",
         openai_base_url=profile.openai_base_url if profile else "",
+        nickname=nick,
+        avatar_public_url=avatar_url,
         is_active=user.is_active,
         date_joined=user.date_joined.isoformat(),
         is_staff=bool(getattr(user, "is_staff", False)),

@@ -1,6 +1,6 @@
 <template>
   <div class="home-page">
-    <!-- Navigation Bar -->
+    <!-- 导航栏 -->
     <header class="home-nav">
       <div class="nav-brand">
         <img class="brand-logo" src="/logo.png" alt="Flowly" />
@@ -12,7 +12,7 @@
       </div>
     </header>
 
-    <!-- Hero -->
+    <!-- 首屏 -->
     <section class="hero">
       <div class="hero-eyebrow">
         <span class="eyebrow-tag">AI Workflow Automation</span>
@@ -47,7 +47,7 @@
       </div>
     </section>
 
-    <!-- Live Demo -->
+    <!-- 实时演示 -->
     <section ref="demoRef" class="demo-section">
       <div class="demo-header">
         <div class="section-label">实时演示</div>
@@ -124,7 +124,7 @@
       </div>
     </section>
 
-    <!-- Feature Grid -->
+    <!-- 功能列表 -->
     <section class="features-section">
       <div class="features-header">
         <div class="section-label">核心能力</div>
@@ -176,7 +176,7 @@
       </div>
     </section>
 
-    <!-- Pricing -->
+    <!-- 定价 -->
     <section class="pricing-section">
       <div class="pricing-header">
         <div class="section-label">定价方案</div>
@@ -232,7 +232,7 @@
       </div>
     </section>
 
-    <!-- Testimonials -->
+    <!-- 用户评价 -->
     <section class="testimonials-section">
       <div class="testimonials-header">
         <div class="section-label">用户评价</div>
@@ -287,7 +287,7 @@
       </div>
     </section>
 
-    <!-- CTA Strip -->
+    <!-- 行动号召条 -->
     <section class="cta-strip">
       <p class="cta-strip-text">准备好构建你的第一个工作流了吗？</p>
       <el-button type="primary" size="large" @click="$router.push('/register')">
@@ -296,7 +296,7 @@
       </el-button>
     </section>
 
-    <!-- Footer -->
+    <!-- 页脚 -->
     <footer class="home-footer">
       <div class="footer-brand">
         <img src="/logo.png" alt="Flowly" class="footer-logo" />
@@ -346,7 +346,7 @@ function scrollToDemo() {
   flex-direction: column;
 }
 
-// ─── Navigation ─────────────────────────────────────────────────────
+// ─── 导航栏 ─────────────────────────────────────────────────────
 .home-nav {
   display: flex;
   align-items: center;
@@ -384,7 +384,7 @@ function scrollToDemo() {
   gap: 8px;
 }
 
-// ─── Hero ───────────────────────────────────────────────────────────
+// ─── 首屏 ───────────────────────────────────────────────────────────
 .hero {
   display: flex;
   flex-direction: column;
@@ -454,7 +454,7 @@ function scrollToDemo() {
   }
 }
 
-// ─── Demo Section ─────────────────────────────────────────────────
+// ─── 演示区 ─────────────────────────────────────────────────
 .demo-section {
   padding: 60px 48px;
   background: #fafafa;
@@ -652,7 +652,7 @@ function scrollToDemo() {
   }
 }
 
-// ─── Features ────────────────────────────────────────────────────────
+// ─── 功能区 ────────────────────────────────────────────────────────
 .features-section {
   padding: 80px 48px;
   border-top: 1px solid #f0f0f0;
@@ -710,7 +710,7 @@ function scrollToDemo() {
   }
 }
 
-// ─── Pricing ────────────────────────────────────────────────────────
+// ─── 定价区 ────────────────────────────────────────────────────────
 .pricing-section {
   padding: 80px 48px;
   background: #fafafa;
@@ -820,7 +820,7 @@ function scrollToDemo() {
   border-radius: 6px;
 }
 
-// ─── Testimonials ─────────────────────────────────────────────────
+// ─── 用户评价区 ─────────────────────────────────────────────────
 .testimonials-section {
   padding: 80px 48px;
   border-top: 1px solid #f0f0f0;
@@ -894,7 +894,7 @@ function scrollToDemo() {
   color: #666666;
 }
 
-// ─── CTA Strip ────────────────────────────────────────────────────
+// ─── 行动号召条 ────────────────────────────────────────────────────
 .cta-strip {
   display: flex;
   flex-direction: column;
@@ -912,7 +912,7 @@ function scrollToDemo() {
   }
 }
 
-// ─── Footer ───────────────────────────────────────────────────────
+// ─── 页脚 ───────────────────────────────────────────────────────
 .home-footer {
   margin-top: auto;
   padding: 24px 48px;
@@ -958,7 +958,7 @@ function scrollToDemo() {
   }
 }
 
-// ─── Responsive ──────────────────────────────────────────────────
+// ─── 响应式 ──────────────────────────────────────────────────
 @media (max-width: 900px) {
   .features-grid,
   .pricing-grid,

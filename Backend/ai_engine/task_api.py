@@ -1,11 +1,11 @@
 """
-Async Task API — Phase 9: Celery
+异步任务 API —— Phase 9：Celery
 
-Ninja router for Celery task management:
-- Submit workflows for async execution
-- Query task status
-- Cancel running tasks
-- Monitor task progress
+用于 Celery 任务管理的 Ninja 路由：
+- 提交工作流异步执行
+- 查询任务状态
+- 取消运行中的任务
+- 监控任务进度
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from .auth import JWTAuth
 from .models import Workflow, WorkflowExecution, Thread
 
 
-# ─── Schemas ─────────────────────────────────────────────────────────────────
+# ─── 数据结构（Schema）─────────────────────────────────────────────────────────
 
 class TaskStatusSchema(Schema):
     task_id: str
@@ -51,7 +51,7 @@ class ProgressSchema(Schema):
     error: str | None = None
 
 
-# ─── Router ─────────────────────────────────────────────────────────────────
+# ─── 路由（Router）───────────────────────────────────────────────────────────
 
 router = Router(tags=["Async Tasks / Celery"], auth=JWTAuth())
 
@@ -67,19 +67,19 @@ def run_workflow_async(
     client_node_id: str = "",
 ) -> AsyncRunResponseSchema:
     """
-    Submit a workflow for async execution via Celery.
+    通过 Celery 提交工作流异步执行。
 
-    Returns immediately with a task_id. The frontend can:
-    - Poll GET /api/tasks/{task_id}/status for status updates
-    - Connect to WebSocket /ws/workflow/{thread_id}/ for real-time events
-    - Call POST /api/tasks/{task_id}/cancel to abort
+    会立即返回 task_id，前端可：
+    - 轮询 GET /api/tasks/{task_id}/status 获取状态
+    - 连接 WebSocket `/ws/workflow/{thread_id}/` 获取实时事件
+    - 调用 POST /api/tasks/{task_id}/cancel 中止执行
 
-    Use this endpoint instead of POST /api/workflows/run when:
-    - Workflows may take longer than the HTTP request timeout
-    - You need the ability to cancel mid-execution
-    - You want scheduled/queued execution
+    适用场景（优先使用本接口而不是 POST /api/workflows/run）：
+    - 工作流执行时间可能超过 HTTP 超时
+    - 需要中途取消的能力
+    - 需要排队/调度执行
     """
-    # Validate workflow
+    # 校验工作流
     try:
         workflow = Workflow.objects.get(id=workflow_id, is_active=True)
     except Workflow.DoesNotExist:
@@ -88,10 +88,10 @@ def run_workflow_async(
             execution_id=0,
             thread_id="",
             status="error",
-            message=f"Workflow {workflow_id} not found or inactive",
+            message=f"工作流 {workflow_id} 不存在或未启用",
         )
 
-    # Create thread and execution records
+    # 创建 thread 与 execution 记录
     thread_uuid = uuid.uuid4()
     u = getattr(request, "auth", None) or getattr(request, "user", None)
     thread = Thread.objects.create(
@@ -112,7 +112,7 @@ def run_workflow_async(
         },
     )
 
-    # Dispatch to Celery worker
+    # 投递到 Celery worker
     from ai_engine.tasks import run_workflow_task
 
     task = run_workflow_task.delay(
@@ -130,16 +130,16 @@ def run_workflow_async(
         execution_id=execution.id,
         thread_id=str(thread_uuid),
         status="queued",
-        message="Workflow queued for execution",
+        message="工作流已加入队列",
     )
 
 
 @router.get("/{task_id}/status", response=TaskStatusSchema)
 def get_task_status(request: HttpRequest, task_id: str) -> TaskStatusSchema:
     """
-    Query the status of a Celery task.
+    查询 Celery 任务状态。
 
-    Returns: PENDING | STARTED | SUCCESS | FAILURE | REVOKED
+    返回值：PENDING | STARTED | SUCCESS | FAILURE | REVOKED
     """
     from celery.result import AsyncResult
 
@@ -159,17 +159,16 @@ def cancel_task(
     execution_id: int,
 ) -> CancelResponseSchema:
     """
-    Cancel a running or queued Celery task.
+    取消一个运行中或排队中的 Celery 任务。
 
-    Best-effort: the task may still complete if it passed the cancellation
-    checkpoint before this request was processed.
+    Best-effort：若任务在本请求处理前已越过“可取消检查点”，仍可能继续完成。
     """
     from celery.result import AsyncResult
 
-    # Revoke the task in Celery
+    # 在 Celery 中撤销任务
     AsyncResult(task_id).revoke(terminate=True)
 
-    # Update execution record
+    # 更新执行记录
     WorkflowExecution.objects.filter(id=execution_id).update(
         status="cancelled",
         error_message="Cancelled by user",
@@ -203,7 +202,7 @@ def get_execution_progress(
             error=progress.get("error"),
         )
 
-    # Fallback: return DB status
+    # 回退：返回数据库状态
     try:
         exec_obj = WorkflowExecution.objects.get(id=execution_id)
         return ProgressSchema(

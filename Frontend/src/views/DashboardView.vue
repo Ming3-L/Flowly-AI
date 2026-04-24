@@ -73,7 +73,7 @@
           </el-col>
         </el-row>
 
-        <!-- Quick Actions Row -->
+        <!-- 快捷入口 -->
         <el-row :gutter="16" class="quick-actions-row">
           <el-col :span="8">
             <el-card class="quick-card" @click="router.push('/workflows/new')">
@@ -323,7 +323,7 @@ async function handleCreateSubmit() {
     store.fetchWorkflows()
     router.push('/workflows')
   } catch {
-    // validation errors shown inline
+    // 校验错误会在表单内联显示
   } finally {
     isCreating.value = false
   }

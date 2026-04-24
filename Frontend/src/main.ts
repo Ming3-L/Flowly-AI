@@ -8,6 +8,7 @@ import App from './App.vue'
 import router from './router'
 import './styles/main.scss'
 import { useUiLabelsStore } from './stores/uiLabels'
+import { applyTheme } from './utils/theme'
 
 async function bootstrap() {
   const app = createApp(App)
@@ -32,6 +33,9 @@ async function bootstrap() {
   } catch {
     // 超时或网络失败：仍挂载应用，文案回退为键名；生产环境应保证 /api/ui-labels 可用
   }
+
+  // 应用主题（light/dark/auto）
+  applyTheme()
 
   app.mount('#app')
 }

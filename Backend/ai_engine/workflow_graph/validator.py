@@ -54,7 +54,7 @@ def validate_workflow_definition(
     """
     严格校验 Workflow.definition（前端 workflow-editor.ts 形状）。
 
-    Returns:
+    返回：
         (ok, errors)
     """
     errors: list[ValidationErrorItem] = []
@@ -101,7 +101,7 @@ def validate_workflow_definition(
             if ntype not in BUILTIN_NODE_TYPES and not _is_ut_type(ntype):
                 errors.append(ValidationErrorItem(path=f"{pfx}.type", code="invalid", message=f"未知节点类型: {ntype}"))
             if _is_ut_type(ntype):
-                # Ownership check: ut_<pk> must belong to user (if provided)
+                # 归属校验：ut_<pk> 必须属于该用户（若传入 user_id）
                 pk = int(ntype[3:])
                 qs = UserCustomNodeType.objects.filter(pk=pk)
                 if user_id is not None:
@@ -122,7 +122,7 @@ def validate_workflow_definition(
         if nid:
             node_type_by_id[nid] = ntype
 
-    # Uniqueness
+    # 唯一性校验
     seen: set[str] = set()
     for nid in node_ids:
         if nid in seen:
@@ -190,7 +190,7 @@ def validate_workflow_definition(
                     )
                 )
 
-    # Edge id uniqueness
+    # 边 id 唯一性校验
     seen_e: set[str] = set()
     for eid in edge_ids:
         if eid in seen_e:

@@ -102,7 +102,7 @@ def _outgoing_edges(edges: list[dict[str, Any]]) -> dict[str, list[dict[str, Any
 
 
 def _detect_cycle(nodes: set[str], edges: list[dict[str, Any]]) -> bool:
-    # Kahn's algorithm on node ids
+    # Kahn 拓扑排序算法（基于节点 id）用于检测环路
     indeg: dict[str, int] = {nid: 0 for nid in nodes}
     for e in edges:
         s = str(e.get("sourceNodeId") or "")
@@ -182,7 +182,7 @@ async def run_canvas_workflow_async(
         inc = _incoming_edges(edges)
         out = _outgoing_edges(edges)
 
-        # Entry node: explicit > single in-degree-0 > first node
+        # 起始节点：显式指定 > 唯一入度为 0 的节点 > 第一个节点
         if entry_node_id and entry_node_id in node_by_id:
             entry = entry_node_id
         else:
@@ -193,11 +193,11 @@ async def run_canvas_workflow_async(
         trace: list[dict[str, Any]] = []
         visited: set[str] = set()
 
-        # Simple queue: topological-ish execution; only execute when all upstream done
+        # 简单队列：近似拓扑序执行；仅当所有上游完成后才执行该节点
         ready = [entry]
         pending = set(node_ids)
 
-        # Seed initial inputs at entry
+        # 在起始节点注入初始 inputs
         seed_inputs = dict(initial_inputs or {})
 
         while ready:
@@ -208,13 +208,13 @@ async def run_canvas_workflow_async(
             if not n:
                 continue
 
-            # Ensure all upstream nodes executed (except entry which can accept seed)
+            # 确保所有上游节点已执行（起始节点允许直接注入 seed）
             upstream_edges = inc.get(nid, [])
             upstream_ids = [str(e.get("sourceNodeId") or "") for e in upstream_edges if e.get("sourceNodeId")]
             if nid != entry and any(uid and uid not in outputs for uid in upstream_ids):
-                # Not ready yet; push back
+                # 条件尚未满足：先放回队列等待
                 ready.append(nid)
-                # Prevent infinite spin: if nothing can progress, break
+                # 防止死循环：若队列中都无法推进，则中止并报错
                 if all(
                     (x != entry and any(str(e.get("sourceNodeId") or "") not in outputs for e in inc.get(x, [])))
                     for x in ready
@@ -226,7 +226,7 @@ async def run_canvas_workflow_async(
             config = dict(n.get("config") or {})
             display_label = str(n.get("label") or n.get("title") or "").strip()
 
-            # Build inputs by merging upstream outputs
+            # 合并上游输出，构建当前节点 inputs
             upstream_payload: dict[str, Any] = {}
             texts: list[str] = []
             first_image_url = ""
@@ -344,17 +344,17 @@ async def run_canvas_workflow_async(
             visited.add(nid)
             pending.discard(nid)
 
-            # Enqueue downstream if all their upstream ready
+            # 若下游节点的全部上游都已就绪，则入队等待执行
             for e in out.get(nid, []):
                 tid = str(e.get("targetNodeId") or "")
                 if not tid or tid in visited:
                     continue
-                # Only enqueue if all sources for tid are done (or it's entry)
+                # 仅当 tid 的所有 source 都已完成（或它就是 entry）才入队
                 reqs = [str(x.get("sourceNodeId") or "") for x in inc.get(tid, [])]
                 if all((r in outputs) for r in reqs if r):
                     ready.append(tid)
 
-        # Final result: last executed node output or all outputs
+        # 最终结果：最后一个执行节点的输出预览 + 全量 outputs/trace
         result = {
             "entry": entry,
             "outputs": outputs,

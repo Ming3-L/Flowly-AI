@@ -1,7 +1,7 @@
 """
-Execution History API — list, retrieve, statistics.
+执行记录 API —— 列表、详情与统计。
 
-All endpoints require JWT authentication via HttpBearer.
+所有接口均需通过 HttpBearer 携带 JWT 鉴权。
 """
 
 from io import BytesIO
@@ -62,7 +62,7 @@ class MessageSchema(Schema):
 
 
 def _execution_to_response(exec: WorkflowExecution) -> ExecutionResponseSchema:
-    """Convert WorkflowExecution model to response schema."""
+    """将 WorkflowExecution 模型转换为响应结构。"""
     duration = None
     if exec.started_at and exec.completed_at:
         delta = exec.completed_at - exec.started_at
@@ -94,7 +94,7 @@ def list_executions(
     """
     GET /api/executions/
 
-    List workflow executions for the authenticated user.
+    列出当前已认证用户的工作流执行记录。
     """
     u = getattr(request, "auth", None) or getattr(request, "user", None)
     queryset = WorkflowExecution.objects.filter(thread__user=u).select_related("workflow", "thread")
@@ -119,7 +119,7 @@ def execution_stats(request: HttpRequest, workflow_id: int | None = None):
     """
     GET /api/executions/stats
 
-    Return aggregated execution statistics for the authenticated user.
+    返回当前已认证用户的执行统计汇总。
     """
     u = getattr(request, "auth", None) or getattr(request, "user", None)
     queryset = WorkflowExecution.objects.filter(thread__user=u)
@@ -404,7 +404,7 @@ def get_execution(request: HttpRequest, execution_id: int):
     """
     GET /api/executions/{id}
 
-    Retrieve a single execution by ID.
+    按 ID 获取单条执行记录。
     """
     exec_obj = get_object_or_404(_execution_qs(request), id=execution_id)
     return 200, _execution_to_response(exec_obj)

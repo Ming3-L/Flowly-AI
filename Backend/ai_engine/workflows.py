@@ -1,8 +1,8 @@
 """
-Workflow CRUD API — list, create, retrieve, update, delete.
+工作流 CRUD API —— 列表、新建、详情、更新与删除。
 
-All endpoints require JWT authentication via HttpBearer.
-Each user only sees and manages their own workflows.
+所有接口均需通过 HttpBearer 携带 JWT 鉴权。
+每个用户仅能查看与管理自己的工作流。
 """
 
 from django.contrib.auth import get_user_model
@@ -79,7 +79,7 @@ def _workflow_to_response(wf: Workflow) -> WorkflowResponseSchema:
 
 @workflow_crud_router.get("/", response=WorkflowListSchema)
 def list_workflows(request: HttpRequest, search: str = "", is_active: bool | None = None):
-    """GET /api/workflows/ — list workflows for the authenticated user"""
+    """GET /api/workflows/ —— 列出当前已认证用户的工作流。"""
     u = getattr(request, "auth", None) or getattr(request, "user", None)
     queryset = Workflow.objects.filter(user=u, is_deleted=False)
 
@@ -98,7 +98,7 @@ def list_workflows(request: HttpRequest, search: str = "", is_active: bool | Non
 
 @workflow_crud_router.post("/", response={201: WorkflowResponseSchema, 400: WorkflowValidationErrorSchema})
 def create_workflow(request: HttpRequest, payload: WorkflowCreateSchema):
-    """POST /api/workflows/ — create a new workflow for the authenticated user"""
+    """POST /api/workflows/ —— 为当前已认证用户创建工作流。"""
     u = getattr(request, "auth", None) or getattr(request, "user", None)
     ok, errors = validate_workflow_definition(payload.definition or {}, user_id=getattr(u, "id", None))
     if not ok:
@@ -161,13 +161,13 @@ def update_workflow(request: HttpRequest, workflow_id: int, payload: WorkflowUpd
 
 @workflow_crud_router.delete("/{workflow_id}", response=MessageSchema)
 def delete_workflow(request: HttpRequest, workflow_id: int):
-    """DELETE /api/workflows/{id} — soft-delete (is_deleted=True)"""
+    """DELETE /api/workflows/{id} —— 软删除（is_deleted=True）。"""
     u = getattr(request, "auth", None) or getattr(request, "user", None)
     wf = get_object_or_404(Workflow, id=workflow_id, user=u, is_deleted=False)
     wf.is_deleted = True
     wf.deleted_at = timezone.now()
     wf.save(update_fields=["is_deleted", "deleted_at"])
     return 200, MessageSchema(
-        message="Workflow deleted",
-        detail=f"Workflow '{wf.name}' has been deleted",
+        message="工作流已删除",
+        detail=f"工作流「{wf.name}」已删除",
     )

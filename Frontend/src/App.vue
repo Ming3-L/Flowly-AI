@@ -27,8 +27,14 @@
           <template v-if="auth.isAuthenticated">
             <el-dropdown trigger="click" @command="handleUserCommand">
               <el-button type="default" size="small" class="user-btn">
-                <el-icon><User /></el-icon>
-                {{ auth.user?.username }}
+                <el-avatar
+                  :size="22"
+                  :src="auth.user?.avatar_public_url || undefined"
+                  class="user-avatar"
+                >
+                  <el-icon><User /></el-icon>
+                </el-avatar>
+                {{ auth.user?.nickname || auth.user?.username }}
                 <el-tag
                   v-if="auth.user?.is_superuser"
                   size="small"
@@ -241,6 +247,10 @@ body {
     border-color: #000000;
     background: #f5f5f5;
   }
+}
+
+.user-avatar {
+  flex-shrink: 0;
 }
 
 .run-btn {

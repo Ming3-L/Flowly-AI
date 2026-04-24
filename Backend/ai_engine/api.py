@@ -112,11 +112,11 @@ def _spawn_background_async(coro: Coroutine[Any, Any, None]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Schemas
+# 数据结构（Schema）
 # ─────────────────────────────────────────────────────────────────────────────
 
 class WorkflowRunInputSchema(Schema):
-    """Input for POST /api/workflows/run."""
+    """POST /api/workflows/run 的输入。"""
     workflow_id: int | None = Field(
         default=None,
         description="ID of the workflow to execute. If null, runs a free-form AI chat using general_assistant.",
@@ -127,7 +127,7 @@ class WorkflowRunInputSchema(Schema):
         default="",
         description="Optional existing thread UUID to resume a session",
     )
-    # Phase 3: model selection and explicit parallel override
+    # Phase 3：模型选择与显式并行分支覆盖
     model_name: str = Field(
         default="doubao",
         description="LLM 路由：'doubao'（火山方舟，默认）、'openai'、'claude'、'ollama' 等",
@@ -151,14 +151,14 @@ class WorkflowRunInputSchema(Schema):
 
 
 class WorkflowRunOutputSchema(Schema):
-    """Output for POST /api/workflows/run."""
+    """POST /api/workflows/run 的输出。"""
     thread_id: str
     status: str
     execution_id: int | None = None
 
 
 class WorkflowStateSchema(Schema):
-    """Output for GET /api/workflows/{thread_id}/state."""
+    """GET /api/workflows/{thread_id}/state 的输出。"""
     thread_id: str
     status: str
     messages: list[dict[str, Any]] = Field(default_factory=list)
@@ -166,14 +166,14 @@ class WorkflowStateSchema(Schema):
 
 
 class WorkflowResumeInputSchema(Schema):
-    """Input for POST /api/workflows/{thread_id}/resume."""
+    """POST /api/workflows/{thread_id}/resume 的输入。"""
     approved: bool = Field(..., description="Whether the user approved the pending action")
     resume_input: str = Field(default="", description="User input for resuming the workflow")
     context: dict[str, Any] = Field(default_factory=dict)
 
 
 class WorkflowResumeOutputSchema(Schema):
-    """Output for POST /api/workflows/{thread_id}/resume."""
+    """POST /api/workflows/{thread_id}/resume 的输出。"""
     thread_id: str
     status: str
     resumed: bool
@@ -214,7 +214,7 @@ class CanvasWorkflowRunOutputSchema(Schema):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Async Workflow Executor
+# 异步工作流执行器
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _run_workflow_async(
@@ -257,10 +257,10 @@ async def _run_workflow_async(
             runtime_user_id,
             force_general_assistant,
         )
-        # Update execution status to running (Django ORM is sync-only)
+        # 将执行状态更新为 running（Django ORM 为同步接口）
         await _sync_update_execution_status(execution_id, status="running")
 
-        # Build initial state (Phase 3: includes model_name and parallel_branches)
+        # 构建初始 state（Phase 3：包含 model_name 与 parallel_branches）
         initial_state: dict[str, Any] = {
             "_thread_id": thread_id,
             "_execution_id": execution_id,
@@ -277,7 +277,7 @@ async def _run_workflow_async(
             "tool_results": {},
             "current_node": None,
             "intent": None,
-            # Phase 3 new fields
+            # Phase 3 新增字段
             "branch_results": {},
             "model_name": model_name,
             "route": None,
@@ -291,16 +291,16 @@ async def _run_workflow_async(
         if force_general_assistant:
             initial_state["_force_general_assistant"] = True
 
-        # Build LangGraph config with checkpointer
+        # 构建带 checkpointer 的 LangGraph 配置
         graph_config = {"configurable": {"thread_id": thread_id}}
 
-        # Get the compiled graph
+        # 获取已编译的图
         app = get_workflow_graph()
 
         last_announced: str | None = None
         last_step: dict[str, Any] | None = None
 
-        # Stream through each step of the graph
+        # 逐步流式执行图
         async for step in app.astream(initial_state, config=graph_config, stream_mode="values"):
             last_step = step
             current_node = step.get("current_node")
@@ -321,31 +321,31 @@ async def _run_workflow_async(
                     mn,
                 )
 
-            # Emit tokens if there are new messages
+            # 如有新消息则推送 token 增量
             messages = step.get("messages", [])
             if messages:
                 last_msg = messages[-1]
                 if hasattr(last_msg, "content") and last_msg.content:
                     await emit.token(last_msg.content, current_node)
 
-            # Emit tool call events
+            # 推送工具调用事件
             tool_results = step.get("tool_results", {})
             for tool_name, result in tool_results.items():
                 await emit.tool_call(tool_name, {}, current_node)
                 await emit.tool_result(str(result), current_node)
 
-            # Handle pending approval (interrupt triggered)
+            # 处理待审批状态（触发 interrupt）
             if step.get("needs_approval") and step.get("approval_question"):
                 await emit.pending_approval(
                     step["approval_question"],
                     step.get("approval_reasoning", ""),
                     current_node,
                 )
-                # Update DB to reflect paused state
+                # 更新数据库：反映暂停状态
                 await _sync_mark_execution_pending(execution_id)
                 if last_announced is not None:
                     await emit.node_end(last_announced)
-                # Interrupt here — stop streaming and wait for resume
+                # 在此中断：停止流式输出，等待恢复
                 return
 
         if last_announced is not None:
@@ -357,7 +357,7 @@ async def _run_workflow_async(
             if isinstance(fr, dict):
                 final_result = fr
 
-        # All steps complete — update execution record (sync ORM)
+        # 全部步骤完成：更新执行记录（同步 ORM）
         inp = await _sync_mark_execution_completed(execution_id, output=final_result)
 
         cid = inp.get("conversation_session_id")
@@ -447,7 +447,7 @@ async def _resume_workflow_async(
             execution.status = "running"
             execution.save(update_fields=["status"])
 
-        # Build resume state using Command
+        # 使用 Command 构建恢复 state
         resume_command = Command(
             resume={
                 "approved": approved,
@@ -519,7 +519,7 @@ async def _resume_workflow_async(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# API Router
+# API 路由
 # ─────────────────────────────────────────────────────────────────────────────
 
 router = Router(tags=["Workflows"], auth=JWTAuth())
@@ -546,16 +546,16 @@ def workflow_run(
     - model_name: which LLM ("openai", "claude", "ollama")
     - parallel_branches: explicit list of branch names to fan out in parallel
     """
-    current_user = request.auth  # injected by JWTAuth
+    current_user = request.auth  # 由 JWTAuth 注入
     if current_user is None:
         from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
         raise AuthenticationError("Authentication required")
 
-    # Lazy import to avoid circular dependency
+    # 延迟导入以避免循环依赖
     from django.contrib.auth import get_user_model
     User = get_user_model()
 
-    # Resolve workflow (null = free-form chat via general_assistant)
+    # 解析 workflow（为空表示走 general_assistant 的自由对话）
     workflow = None
     if payload.workflow_id is not None:
         try:
@@ -572,7 +572,7 @@ def workflow_run(
                 execution_id=None,
             )
     else:
-        # Create a default "free chat" workflow if none exists
+        # 若不存在则创建默认“自由对话”工作流
         workflow, _ = Workflow.objects.get_or_create(
             name="general_assistant",
             defaults={
@@ -581,7 +581,7 @@ def workflow_run(
             },
         )
 
-    # Create or retrieve a Thread — associate with the authenticated user
+    # 创建或复用 Thread，并关联到已认证用户
     thread_uuid = uuid.UUID(payload.thread_id) if payload.thread_id else uuid.uuid4()
     thread, _ = Thread.objects.get_or_create(
         thread_id=thread_uuid,
@@ -622,7 +622,7 @@ def workflow_run(
                 execution_id=None,
             )
 
-    # Create execution record
+    # 创建执行记录
     execution = WorkflowExecution.objects.create(
         workflow=workflow,
         thread=thread,
@@ -738,7 +738,7 @@ def run_canvas_workflow_endpoint(request: HttpRequest, payload: CanvasWorkflowRu
 
     wf = get_object_or_404(Workflow, id=payload.workflow_id, user=current_user)
 
-    # Create or retrieve a Thread for WS streaming
+    # 为 WebSocket 流式创建或复用 Thread
     thread_uuid = uuid.UUID(payload.thread_id) if payload.thread_id else uuid.uuid4()
     thread, _ = Thread.objects.get_or_create(
         thread_id=thread_uuid,
@@ -794,7 +794,7 @@ def workflow_state(request: HttpRequest, thread_id: str):
     falling back to the execution record in the database.
     Only returns state for executions belonging to the authenticated user.
     """
-    current_user = request.auth  # injected by JWTAuth
+    current_user = request.auth  # 由 JWTAuth 注入
     if current_user is None:
         from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
         raise AuthenticationError("Authentication required")
@@ -823,7 +823,7 @@ def workflow_state(request: HttpRequest, thread_id: str):
             metadata={},
         )
 
-    # Try to read from checkpointer first (gives full state including pending interrupt)
+    # 优先从 checkpointer 读取（包含完整 state 与 pending interrupt）
     try:
         app = get_workflow_graph()
         config = {"configurable": {"thread_id": thread_id}}
@@ -839,7 +839,7 @@ def workflow_state(request: HttpRequest, thread_id: str):
     except Exception:
         messages = execution.input_data.get("messages", [])
 
-    # Authorization: only allow access to threads owned by the current user
+    # 鉴权：仅允许访问当前用户所属的 thread
     if execution.thread is not None and execution.thread.user_id != current_user.id:
         return WorkflowStateSchema(
             thread_id=thread_id,
@@ -926,7 +926,7 @@ def workflow_resume(
             resumed=False,
         )
 
-    # Authorization: only the thread owner can resume
+    # 鉴权：仅 thread 所有者可恢复
     if execution.thread is not None and execution.thread.user_id != current_user.id:
         return WorkflowResumeOutputSchema(
             thread_id=thread_id,
@@ -934,7 +934,7 @@ def workflow_resume(
             resumed=False,
         )
 
-    # Reject path — abort immediately
+    # 拒绝路径：立即中止
     if not payload.approved:
         execution.status = "failed"
         execution.error_message = f"Execution rejected by user: {payload.resume_input}"
@@ -956,11 +956,11 @@ def workflow_resume(
             resumed=True,
         )
 
-    # Approve path — update execution and resume async task
+    # 通过路径：更新执行记录并恢复异步任务
     execution.status = "running"
     execution.save(update_fields=["status"])
 
-    # Notify frontend that execution is resuming
+    # 通知前端：执行已恢复
     channel_layer = get_channel_layer()
     async_to_sync(channel_layer.group_send)(
         f"workflow_{thread_id}",
@@ -992,7 +992,7 @@ def workflow_resume(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Legacy Endpoints (backward compatibility)
+# 兼容旧接口（向后兼容）
 # ─────────────────────────────────────────────────────────────────────────────
 
 class LegacyWorkflowInputSchema(Schema):
@@ -1029,7 +1029,7 @@ async def legacy_workflow_execute(
     try:
         thread_uuid = uuid.uuid4()
 
-        # Create a default workflow if none exist
+        # 若不存在则创建默认工作流
         workflow, _ = Workflow.objects.get_or_create(
             name="default",
             defaults={
@@ -1082,7 +1082,7 @@ async def legacy_workflow_status(
     request: HttpRequest,
     thread_id: str,
 ):
-    """GET /api/ai/status/{thread_id} (legacy)."""
+    """GET /api/ai/status/{thread_id}（旧接口）。"""
     current_user = request.auth
     if current_user is None:
         from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
@@ -1098,7 +1098,7 @@ async def legacy_workflow_status(
             "messages": [],
             "metadata": {},
         }
-    # Authorization
+    # 鉴权
     if execution.thread is not None and execution.thread.user_id != current_user.id:
         return {
             "thread_id": thread_id,

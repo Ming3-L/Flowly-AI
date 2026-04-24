@@ -1,18 +1,18 @@
 """
-LangGraph Workflow Engine — Phase 3: Parallel Nodes & Advanced LangGraph
+LangGraph 工作流引擎——Phase 3：并行节点与高级 LangGraph 能力
 
-Core capabilities (Phase 1 + 2的基础上扩展):
-- Async LLM nodes with structured output
-- Tool nodes: database query, HTTP API call, notification
-- Human-in-the-loop via interrupt() + Command(resume=True)
-- State persistence via DjangoSaver (MySQL)
-- Full streaming via Django Channels + WebSocket
-- **NEW Phase 3**:
-  * Parallel fan-out with LangGraph Send API (generate content in parallel branches)
-  * Branching logic: router node dispatches to specialized sub-branches
-  * Multi-model support: Claude, OpenAI, Ollama via model factory
-  * Retry with tenacity on LLM and tool calls
-  * Conditional routing: route_to_tool conditional edge
+核心能力（在 Phase 1 + 2 基础上扩展）：
+- 异步 LLM 节点（支持结构化输出）
+- 工具节点：数据库查询、HTTP 接口调用、通知等
+- 人在回路：通过 interrupt() + Command(resume=True) 实现审批/确认
+- 状态持久化：通过 DjangoSaver（MySQL）
+- 全量流式：通过 Django Channels + WebSocket
+- **Phase 3 新增**：
+  * 使用 LangGraph Send API 并行 fan-out（多分支并行生成）
+  * 分支逻辑：router 节点分发到不同子分支
+  * 多模型支持：Claude / OpenAI / Ollama（通过工厂构建）
+  * 使用 tenacity 为 LLM 与工具调用提供重试
+  * 条件路由：route_to_tool 条件边
 """
 
 from __future__ import annotations
@@ -32,63 +32,63 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# State Schema
+# State 结构定义
 # ─────────────────────────────────────────────────────────────────────────────
 
 class WorkflowState(TypedDict):
-    """Shared state passed between all nodes in the workflow graph."""
+    """工作流图中各节点共享传递的状态（state）。"""
 
-    # Core fields
+    # 核心字段
     query: str
     context: dict[str, Any]
 
-    # Message history
+    # 消息历史
     messages: Annotated[list[BaseMessage], add_messages]
 
-    # Execution result
+    # 执行结果
     result: dict[str, Any] | None
 
-    # Error tracking
+    # 错误信息
     error: str | None
 
-    # Human-in-the-loop
+    # 人在回路（审批/确认）
     needs_approval: bool
     approval_question: str | None
     approval_reasoning: str | None
     approved: bool | None
     user_input: str | None
 
-    # Tool results
+    # 工具结果
     tool_results: dict[str, Any]
 
-    # Execution metadata
+    # 执行元数据
     current_node: str | None
     intent: str | None
 
-    # ─── Phase 3 fields ────────────────────────────────────────────────────
+    # ─── Phase 3 字段 ────────────────────────────────────────────────────
 
-    # Parallel execution: each fan-out branch writes its results here.
-    # Keys are branch names (e.g. "generate_email", "generate_report").
+    # 并行执行：每个 fan-out 分支将结果写入此处。
+    # key 为分支名（如 "generate_email"、"generate_report"）。
     branch_results: dict[str, Any]
 
-    # Model selection: which LLM to use for this execution.
-    # Options: "openai" (default), "claude", "ollama"
+    # 模型选择：本次执行使用哪个 LLM。
+    # 取值示例："openai"（默认）、"claude"、"ollama"
     model_name: str
 
-    # Routing decision: which branch(es) to execute.
-    # Set by the router node, consumed by the branching conditional.
+    # 路由决策：执行哪个分支。
+    # 由 router 节点写入，供分支条件节点消费。
     route: str | None
 
-    # Branch list for fan-out (set by router, used by conditional Send)
+    # fan-out 分支列表（router 设置，conditional Send 使用）
     branches: list[str]
 
-    # ─── Phase 8: RAG fields ─────────────────────────────────────────────────
-    # Set by rag_retrieval_node when a knowledge base query is detected.
-    # Contains retrieved document chunks injected into the LLM context.
+    # ─── Phase 8：RAG 字段 ─────────────────────────────────────────────────
+    # 当检测到知识库查询时由 rag_retrieval_node 设置。
+    # 包含注入到 LLM 上下文中的检索文档片段。
     rag_context: str | None
     retrieved_documents: list[dict[str, Any]]
 
-    # ─── Runtime injection (API / checkpointer, not persisted in editor JSON) ─
+    # ─── 运行时注入（API / checkpointer；不会持久化到编辑器 JSON） ─
     _thread_id: NotRequired[str]
     _execution_id: NotRequired[int]
     _client_node_id: NotRequired[str]
@@ -97,21 +97,23 @@ class WorkflowState(TypedDict):
     _force_general_assistant: NotRequired[bool]
 
 
-# Use TypedDict for the full state type annotation
+# 使用 TypedDict 作为完整 state 的类型标注
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RAG Retrieval Node (Phase 8)
+# RAG 检索节点（Phase 8）
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def rag_retrieval_node(state: WorkflowState) -> WorkflowState:
     """
-    Phase 8 RAG retrieval node: queries the workflow's vector knowledge base.
+    Phase 8 的 RAG 检索节点：查询工作流的向量知识库。
 
-    Activated when the router sets route="rag" or when the query contains
-    knowledge-base keywords (e.g. "in the documents", "based on the uploaded files").
+    触发条件：
+    - router 设置 route="rag"
+    - 或 query 命中知识库相关关键词（例如“在文档里”“基于上传文件”等）
 
-    Retrieves top-K relevant chunks and injects them as rag_context into the state.
+    行为：
+    - 检索 Top-K 相关片段，并将其作为 rag_context 注入到 state 中。
     """
     from channels.layers import get_channel_layer
 
@@ -186,7 +188,7 @@ async def rag_retrieval_node(state: WorkflowState) -> WorkflowState:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Event Emitter
+# 事件推送器
 # ─────────────────────────────────────────────────────────────────────────────
 
 class WorkflowEventEmitter:
@@ -316,7 +318,7 @@ class WorkflowEventEmitter:
             {"question": question, "reasoning": reasoning, "node": node},
         )
 
-    # Phase 3: parallel events
+    # Phase 3：并行事件
     async def parallel_start(self, branches: list[str]):
         await self._send("parallel_start", {"branches": branches})
 
@@ -331,7 +333,7 @@ class WorkflowEventEmitter:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Multi-Model Factory
+# 多模型工厂
 # ─────────────────────────────────────────────────────────────────────────────
 
 def get_chat_model(
@@ -394,7 +396,7 @@ def get_chat_model(
             streaming=override_kwargs.get("streaming", True),
         )
 
-    # Vector Engine (OpenAI-compatible proxy for Codex)
+    # Vector Engine（OpenAI 兼容代理，用于 Codex 等）
     if route == "vectorengine":
         return ChatOpenAI(
             model=override_kwargs.get("model", s.language.vectorengine_model or "codex"),
@@ -424,7 +426,7 @@ def get_chat_model(
             streaming=override_kwargs.get("streaming", True),
         )
 
-    # Default: OpenAI-compatible
+    # 默认：OpenAI 兼容
     return ChatOpenAI(
         model=override_kwargs.get("model", s.language.openai_model),
         api_key=override_kwargs.get("api_key", s.language.openai_api_key),
@@ -435,7 +437,7 @@ def get_chat_model(
 
 
 def get_traced_model(model: BaseChatModel, model_name: str) -> BaseChatModel:
-    """Wrap model with LangSmith @traceable if tracing is configured."""
+    """如启用 tracing，则用 LangSmith @traceable 包装模型调用。"""
     import os
 
     tracing = os.getenv("LANGSMITH_TRACING", "").lower() in ("true", "1", "yes")
@@ -477,11 +479,11 @@ async def _async_record_llm_cost(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Retry wrappers
+# 重试封装
 # ─────────────────────────────────────────────────────────────────────────────
 
 def retry_on_rate_limit_or_error(retry_state):
-    """Tenacity retry callback: return True to keep retrying on rate limit or 5xx."""
+    """Tenacity 重试回调：遇到限流或 5xx 时返回 True 以继续重试。"""
     outcome = retry_state.outcome
     if outcome is None:
         return False
@@ -490,7 +492,7 @@ def retry_on_rate_limit_or_error(retry_state):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tools
+# 工具
 # ─────────────────────────────────────────────────────────────────────────────
 
 @retry(
@@ -691,7 +693,7 @@ def send_notification_tool(
 
 
 def get_tools() -> list:
-    """Return all tools available to the workflow LLM, wrapped as LangChain @tool."""
+    """返回工作流中 LLM 可用的全部工具，并以 LangChain @tool 形式包装。"""
     from langchain_core.tools import tool  # pyright: ignore[reportMissingImports]
 
     @tool
@@ -712,7 +714,7 @@ def get_tools() -> list:
         body: str = "{}",
         timeout: int = 30,
     ) -> str:
-        """Call an external HTTP API endpoint. headers and body should be JSON strings."""
+        """调用外部 HTTP 接口。headers 与 body 应为 JSON 字符串。"""
         try:
             parsed_headers = json.loads(headers) if headers != "{}" else None
         except json.JSONDecodeError:
@@ -730,14 +732,14 @@ def get_tools() -> list:
         message: str = "",
         subject: str = "",
     ) -> str:
-        """Send a notification. channel: log (always works), email, webhook, slack."""
+        """发送通知。channel：log（永远可用）、email、webhook、slack。"""
         return send_notification_tool(recipient, channel, message, subject)
 
     return [query_database, call_external_api, send_notification]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# System Prompt
+# 系统提示词
 # ─────────────────────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """You are Flowly, an intelligent AI workflow assistant.
@@ -768,7 +770,7 @@ Always be helpful, precise, and proactive."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: invoke a single tool and emit events
+# 辅助函数：调用单个工具并推送事件
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def _run_tool(
@@ -778,7 +780,7 @@ async def _run_tool(
     emit: WorkflowEventEmitter,
     node: str,
 ) -> str:
-    """Execute one tool call, emit events, and return the result string."""
+    """执行一次工具调用，推送事件，并返回结果字符串。"""
     await emit.tool_call(tool_name, tool_args, node)
 
     import asyncio
@@ -792,7 +794,7 @@ async def _run_tool(
                     None, lambda: tool_func.invoke(tool_args)
                 )
             except Exception:
-                # Fallback: call tool directly
+                # 回退：直接调用工具
                 result = _call_tool_direct(tool_name, tool_args)
         else:
             result = f"Tool '{tool_name}' not found"
@@ -805,7 +807,7 @@ async def _run_tool(
 
 
 def _call_tool_direct(tool_name: str, args: dict[str, Any]) -> str:
-    """Direct tool invocation without LangChain invoke() wrapper."""
+    """不通过 LangChain invoke() 包装的直接工具调用。"""
     if tool_name == "query_database":
         return query_database_tool(args.get("query", ""), args.get("params"))
     elif tool_name == "call_external_api":
@@ -827,7 +829,7 @@ def _call_tool_direct(tool_name: str, args: dict[str, Any]) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Nodes
+# 节点
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def router_node(state: WorkflowState) -> WorkflowState:
@@ -1004,8 +1006,8 @@ async def approval_gate(state: WorkflowState) -> WorkflowState:
 
 
 # ─── Parallel branch functions ────────────────────────────────────────────────
-# These are node functions used by the Send API. They receive a partial state
-# dict (the keys defined in fan_out_state) and return a partial state update.
+# 这些节点函数由 Send API 调用。它们接收一份“部分 state”
+#（fan_out_state 中定义的 key），并返回部分 state 的增量更新。
 
 
 async def _parallel_branch_wrapper(branch: str, state: dict) -> dict:
@@ -1024,7 +1026,7 @@ async def _parallel_branch_wrapper(branch: str, state: dict) -> dict:
 
     model_name = state.get("model_name", "doubao")
 
-    # Build model with retry
+    # 构建带重试的模型
     def _build_and_call():
         llm = get_chat_model(model_name)
         llm = get_traced_model(llm, model_name)
@@ -1037,7 +1039,7 @@ async def _parallel_branch_wrapper(branch: str, state: dict) -> dict:
         loop = asyncio.get_running_loop()
         llm, tools = await loop.run_in_executor(None, _build_and_call)
     except Exception:
-        # Fallback for sync context
+        # 同步上下文回退
         llm = get_chat_model(model_name)
         llm = get_traced_model(llm, model_name)
         tools = get_tools()
@@ -1053,7 +1055,7 @@ async def _parallel_branch_wrapper(branch: str, state: dict) -> dict:
 
     try:
         system_msg = SystemMessage(content=SYSTEM_PROMPT)
-        # Inject branch context into the user prompt
+        # 将分支上下文注入到用户提示中
         user_content = f"""You are executing the branch: "{branch}"
 
 Original query: {state['query']}
@@ -1063,7 +1065,7 @@ Focus ONLY on this branch's task."""
         user_msg = HumanMessage(content=user_content)
         messages = [system_msg, user_msg]
 
-        # Allow up to 2 tool-call iterations per branch
+        # 每个分支最多允许 2 次工具调用迭代
         for _ in range(2):
             response = await _invoke_llm(messages)
             if hasattr(response, "content") and response.content:
@@ -1100,7 +1102,7 @@ Focus ONLY on this branch's task."""
 
 
 async def send_email_alice_branch(state: dict) -> dict:
-    """Branch: send email to Alice."""
+    """分支：向 Alice 发送邮件。"""
     from channels.layers import get_channel_layer
 
     thread_id = str(state.get("_thread_id", "unknown"))
@@ -1145,7 +1147,7 @@ Write only the email body (professional tone)."""
 
 
 async def send_email_bob_branch(state: dict) -> dict:
-    """Branch: send email to Bob."""
+    """分支：向 Bob 发送邮件。"""
     from channels.layers import get_channel_layer
 
     thread_id = str(state.get("_thread_id", "unknown"))
@@ -1190,7 +1192,7 @@ Write only the email body (professional tone)."""
 
 
 async def generate_report_branch(state: dict) -> dict:
-    """Branch: generate a report."""
+    """分支：生成报告。"""
     from channels.layers import get_channel_layer
 
     thread_id = str(state.get("_thread_id", "unknown"))
@@ -1198,7 +1200,7 @@ async def generate_report_branch(state: dict) -> dict:
     emit = WorkflowEventEmitter(channel_layer, thread_id, execution_id=state.get("_execution_id"))
     await emit.parallel_branch_start("generate_report")
 
-    model_name = state.get("model_name", "claude")  # Use Claude for long-form content
+    model_name = state.get("model_name", "claude")  # 长文优先用 Claude
     llm = get_chat_model(model_name)
     llm = get_traced_model(llm, model_name)
     tools = get_tools()
@@ -1235,7 +1237,7 @@ Include sections, data analysis where applicable, and clear conclusions."""
 
 
 async def generate_email_branch(state: dict) -> dict:
-    """Branch: generate an email."""
+    """分支：生成邮件内容。"""
     from channels.layers import get_channel_layer
 
     thread_id = str(state.get("_thread_id", "unknown"))
@@ -1279,7 +1281,7 @@ Write the email body in a clear, professional tone."""
 
 
 async def web_search_branch(state: dict) -> dict:
-    """Branch: perform a web search."""
+    """分支：执行网页搜索。"""
     from channels.layers import get_channel_layer
 
     thread_id = str(state.get("_thread_id", "unknown"))
@@ -1321,7 +1323,7 @@ async def web_search_branch(state: dict) -> dict:
 
 
 async def db_query_branch(state: dict) -> dict:
-    """Branch: query the database."""
+    """分支：查询数据库。"""
     from channels.layers import get_channel_layer
 
     thread_id = str(state.get("_thread_id", "unknown"))
@@ -1343,7 +1345,7 @@ async def db_query_branch(state: dict) -> dict:
     }
 
 
-# Map of branch name → handler function
+# 分支名 → 处理函数映射
 BRANCH_HANDLERS: dict[str, Any] = {
     "send_email_alice": send_email_alice_branch,
     "send_email_bob": send_email_bob_branch,
@@ -1355,7 +1357,7 @@ BRANCH_HANDLERS: dict[str, Any] = {
 
 
 def _default_parallel_branch(branch: str):
-    """Factory: create a generic branch handler for any named branch."""
+    """工厂：为任意命名分支创建通用处理器。"""
     async def handler(state: dict) -> dict:
         from channels.layers import get_channel_layer
 
@@ -1429,16 +1431,16 @@ async def parallel_executor(state: WorkflowState) -> list[dict]:
 
     await emit.parallel_start(branches)
 
-    # Build shared state snapshot for each branch
+    # 为每个分支构建共享 state 快照
     shared_keys = ["_thread_id", "_execution_id", "_client_node_id", "query", "context", "model_name"]
     shared_state = {k: state[k] for k in shared_keys if k in state}
 
-    # Launch all branches concurrently using Send
-    # The actual concurrent execution is handled by the graph's Send API
+    # 使用 Send 并发启动所有分支
+    # 实际并发由图的 Send API 执行与调度
     send_tasks = []
     for branch_name in branches:
         handler = BRANCH_HANDLERS.get(branch_name) or _default_parallel_branch(branch_name)
-        # Use Send to fan out — each branch runs its handler with the shared state
+        # 使用 Send 扇出：每个分支使用共享 state 运行各自处理器
         send_tasks.append(
             Send(
                 branch_name,
@@ -1475,7 +1477,7 @@ async def consolidate_node(state: WorkflowState) -> WorkflowState:
         await emit.node_end("consolidate", "skipped")
         return {**state, "current_node": "consolidate"}
 
-    # Format each branch result
+    # 格式化每个分支的结果
     formatted_parts = []
     for branch_name, branch_data in branch_results.items():
         content = branch_data.get("content", "")
@@ -1524,7 +1526,7 @@ async def tool_executor(state: WorkflowState) -> WorkflowState:
         llm_with_tools = llm.bind_tools(tools, tool_choice="auto")
 
         system_msg = SystemMessage(content=SYSTEM_PROMPT)
-        # Phase 8: Inject RAG context if documents were retrieved
+        # Phase 8：如已检索到文档，则注入 RAG 上下文
         rag_context = state.get("rag_context")
         if rag_context:
             rag_system = SystemMessage(
@@ -1624,7 +1626,7 @@ async def general_assistant(state: WorkflowState) -> WorkflowState:
                 uid = None
 
         if mk:
-            # resolve_route_and_model_id / get_user_preset_llm_overrides use Django ORM (sync-only)
+            # resolve_route_and_model_id / get_user_preset_llm_overrides 使用 Django ORM（仅同步）
             route, model_id, cat_key = await asyncio.to_thread(
                 resolve_route_and_model_id,
                 {"modelKey": mk},
@@ -1742,7 +1744,7 @@ async def finalize_node(state: WorkflowState) -> WorkflowState:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Conditional Edges
+# 条件边
 # ─────────────────────────────────────────────────────────────────────────────
 
 def route_decision(state: WorkflowState) -> Literal[
@@ -1753,7 +1755,7 @@ def route_decision(state: WorkflowState) -> Literal[
 
     route values:
       - "approval"  → approval_gate
-      - "rag"       → rag_retrieval  (Phase 8: RAG knowledge base query)
+      - "rag"       → rag_retrieval  （Phase 8：RAG 知识库查询）
       - "parallel"  → parallel_executor  (Send API fan-out)
       - "single"    → tool_executor       (single LLM + tools)
       - "general"   → general_assistant  (no tools)
@@ -1776,7 +1778,7 @@ def route_decision(state: WorkflowState) -> Literal[
 
 
 def after_approval(state: WorkflowState) -> Literal["parallel_executor", "tool_executor", "general_assistant", END]:
-    """After approval_gate: continue to appropriate executor, or END if rejected."""
+    """经过 approval_gate 后：继续到对应执行器；若拒绝则 END。"""
     if not state.get("approved", True):
         return END
 
@@ -1789,7 +1791,7 @@ def after_approval(state: WorkflowState) -> Literal["parallel_executor", "tool_e
 
 
 def after_parallel(state: WorkflowState) -> Literal["consolidate"]:
-    """After parallel_executor returns a list[Send], LangGraph handles fan-out automatically."""
+    """parallel_executor 返回 list[Send] 后，LangGraph 会自动处理 fan-out。"""
     return "consolidate"
 
 
@@ -1806,22 +1808,22 @@ def after_rag_retrieval(state: WorkflowState) -> Literal["tool_executor", "gener
 
 
 def after_consolidate(state: WorkflowState) -> Literal["finalize"]:
-    """Consolidate always leads to finalize."""
+    """consolidate 总是流向 finalize。"""
     return "finalize"
 
 
 def after_tool_executor(state: WorkflowState) -> Literal["finalize"]:
-    """Tool executor always leads to finalize."""
+    """tool_executor 总是流向 finalize。"""
     return "finalize"
 
 
 def after_general_assistant(state: WorkflowState) -> Literal["finalize"]:
-    """General assistant always leads to finalize."""
+    """general_assistant 总是流向 finalize。"""
     return "finalize"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Graph Construction — Phase 3 with Send API parallel fan-out
+# 图构建：Phase 3（使用 Send API 并行 fan-out）
 # ─────────────────────────────────────────────────────────────────────────────
 
 def build_workflow_graph() -> StateGraph:
@@ -1862,14 +1864,14 @@ def build_workflow_graph() -> StateGraph:
     # ── Nodes ──────────────────────────────────────────────────────────────
     workflow.add_node("router", router_node)
     workflow.add_node("approval_gate", approval_gate)
-    workflow.add_node("rag_retrieval", rag_retrieval_node)  # Phase 8: RAG
+    workflow.add_node("rag_retrieval", rag_retrieval_node)  # Phase 8：RAG
     workflow.add_node("parallel_executor", parallel_executor)
     workflow.add_node("consolidate", consolidate_node)
     workflow.add_node("tool_executor", tool_executor)
     workflow.add_node("general_assistant", general_assistant)
     workflow.add_node("finalize", finalize_node)
 
-    # Register all known branch handlers as explicit nodes
+    # 将所有已知分支处理器注册为显式节点
     for branch_name in BRANCH_HANDLERS:
         workflow.add_node(branch_name, _default_parallel_branch(branch_name))
 
@@ -1914,8 +1916,8 @@ def build_workflow_graph() -> StateGraph:
     )
 
     # ── Post-parallel routing: Send API fan-out happens here ────────────────
-    # parallel_executor returns list[Send] — LangGraph automatically dispatches
-    # each Send to its named node, waits for all, then continues.
+    # parallel_executor 返回 list[Send]：LangGraph 会自动分发到对应命名节点，
+    # 等待全部完成后再继续。
     workflow.add_edge("parallel_executor", "consolidate")
     workflow.add_edge("consolidate", "finalize")
 
@@ -1928,8 +1930,8 @@ def build_workflow_graph() -> StateGraph:
 
     # ── Compile with a checkpointer ─────────────────────────────────────────────
     # `langgraph.checkpoint.django` is an *optional* extra in some LangGraph builds.
-    # When missing, we fall back to an in-memory saver so local dev can still run.
-    # Production should install the proper checkpoint extra for persistence.
+    # 若缺少依赖，则回退到内存 saver，保证本地开发仍可运行。
+    # 生产环境应安装正确的 checkpoint extra 以实现持久化。
     try:
         from langgraph.checkpoint.django.aio import AsyncDjangoSaver  # type: ignore[import-not-found]
     except Exception:  # pragma: no cover
@@ -1945,15 +1947,15 @@ def build_workflow_graph() -> StateGraph:
 
         return workflow.compile(checkpointer=MemorySaver())
 
-    # Capture the current event loop lazily — needed by AsyncDjangoSaver.sync methods
-    # which use run_coroutine_threadsafe to bridge from sync → async context.
-    # We use get_event_loop() (not get_running_loop()) so this works even when
-    # the graph is first built outside an async context (e.g. at Django startup).
+    # 延迟捕获当前事件循环：AsyncDjangoSaver.sync 方法需要它，
+    # 它会用 run_coroutine_threadsafe 在 sync → async 之间桥接。
+    # 这里用 get_event_loop()（而不是 get_running_loop()），保证即使图在非 async
+    # 上下文中构建（例如 Django 启动时）也可工作。
     _saver_loop = asyncio.get_event_loop()
 
     class _LoopCapturingAsyncDjangoSaver(AsyncDjangoSaver):
         def __init__(self):
-            # Skip parent __init__ which calls get_running_loop() — we inject our own loop.
+            # 跳过父类 __init__（其会调用 get_running_loop()）；此处注入自有 loop。
             from langgraph.checkpoint.base import BaseCheckpointSaver
             from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
             BaseCheckpointSaver.__init__(self)
@@ -1967,14 +1969,14 @@ def build_workflow_graph() -> StateGraph:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Singleton — initialized lazily
+# 单例：延迟初始化
 # ─────────────────────────────────────────────────────────────────────────────
 
 _workflow_graph: StateGraph | None = None
 
 
 def get_workflow_graph() -> StateGraph:
-    """Get or create the singleton compiled workflow graph."""
+    """获取或创建已编译工作流图的单例。"""
     global _workflow_graph
     if _workflow_graph is None:
         _workflow_graph = build_workflow_graph()

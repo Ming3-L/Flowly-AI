@@ -100,7 +100,7 @@ class VectorStoreManager:
                 settings=Settings(anonymized_telemetry=False),
             )
         except ImportError:
-            # Fallback: in-memory if chromadb not installed
+            # 回退：未安装 chromadb 时使用内存客户端
             import chromadb
 
             return chromadb.Client()
@@ -114,20 +114,20 @@ class VectorStoreManager:
         metadata: Optional[dict[str, Any]] = None,
     ) -> list[str]:
         """
-        Add documents to a workflow's vector store.
+        将文档写入某个工作流的向量知识库。
 
-        Args:
-            workflow_id: Target workflow ID.
-            documents: List of LangChain Document objects.
-            metadata: Optional metadata dict merged into each document's metadata.
+        参数：
+            workflow_id：目标工作流 ID。
+            documents：LangChain Document 列表。
+            metadata：可选元数据，会合并到每个 document.metadata 中。
 
-        Returns:
-            List of chunk IDs (Chroma's internal IDs).
+        返回：
+            chunk_id 列表（Chroma 的内部 ID）。
         """
         collection = self.get_collection(workflow_id)
         base_metadata = metadata or {}
 
-        # Merge base metadata into each document
+        # 将基础 metadata 合并到每个文档
         enriched_docs = []
         for doc in documents:
             enriched_docs.append(
@@ -147,16 +147,16 @@ class VectorStoreManager:
         filter_dict: Optional[dict[str, Any]] = None,
     ) -> list[Document]:
         """
-        Perform semantic similarity search against a workflow's knowledge base.
+        在某个工作流的知识库上执行语义相似度检索。
 
-        Args:
-            workflow_id: Target workflow ID.
-            query: The search query string.
-            top_k: Number of results to return (default 5).
-            filter_dict: Optional metadata filter (e.g. {"source": "manual.pdf"}).
+        参数：
+            workflow_id：目标工作流 ID。
+            query：检索 query。
+            top_k：返回条数（默认 5）。
+            filter_dict：可选元数据过滤（例如 {"source": "manual.pdf"}）。
 
-        Returns:
-            List of matching LangChain Document objects, ordered by relevance.
+        返回：
+            匹配的 LangChain Document 列表（按相关度排序）。
         """
         collection = self.get_collection(workflow_id)
         return collection.similarity_search(
@@ -173,10 +173,10 @@ class VectorStoreManager:
         filter_dict: Optional[dict[str, Any]] = None,
     ) -> list[tuple[Document, float]]:
         """
-        Similarity search with relevance scores.
+        带相关度分数的相似度检索。
 
-        Returns:
-            List of (Document, score) tuples. Lower scores = more similar.
+        返回：
+            (Document, score) 元组列表。score 越小表示越相似。
         """
         collection = self.get_collection(workflow_id)
         return collection.similarity_search_with_score(
@@ -187,10 +187,10 @@ class VectorStoreManager:
 
     def delete_collection(self, workflow_id: int) -> None:
         """
-        Delete all documents for a workflow.
+        删除某个工作流的全部知识库文档。
 
-        Args:
-            workflow_id: Target workflow ID.
+        参数：
+            workflow_id：目标工作流 ID。
         """
         name = self._collection_name(workflow_id)
         if name in self._collections:
@@ -205,14 +205,14 @@ class VectorStoreManager:
             )
             collection.delete_collection()
         except Exception:
-            pass  # Collection may not exist
+            pass  # 集合可能不存在
 
     def get_collection_stats(self, workflow_id: int) -> dict[str, Any]:
         """
-        Return statistics for a workflow's vector collection.
+        返回某个工作流向量集合的统计信息。
 
-        Returns:
-            Dict with document count and embedding dimension.
+        返回：
+            包含文档数量与向量维度等信息的字典。
         """
         collection = self.get_collection(workflow_id)
         try:
@@ -234,11 +234,11 @@ class VectorStoreManager:
         self, workflow_id: int, document_id: str
     ) -> None:
         """
-        Delete specific document chunks by their IDs.
+        按 document_id 删除指定文档的分块（chunk）。
 
-        Args:
-            workflow_id: Target workflow ID.
-            document_id: The document ID to delete (matches metadata.document_id).
+        参数：
+            workflow_id：目标工作流 ID。
+            document_id：要删除的文档 ID（匹配 metadata.document_id）。
         """
         collection = self.get_collection(workflow_id)
         collection.delete(filter={"document_id": document_id})
@@ -250,26 +250,26 @@ class VectorStoreManager:
         new_text: str,
     ) -> None:
         """
-        Update a document's text and re-embed it.
+        更新文档文本并重新向量化。
 
-        Note: Chroma doesn't support in-place updates, so we delete and re-add.
+        说明：Chroma 不支持原地更新，因此采用“删除旧 chunk → 重新写入”的方式。
 
-        Args:
-            workflow_id: Target workflow ID.
-            document_id: The document ID to update.
-            new_text: The new text content.
+        参数：
+            workflow_id：目标工作流 ID。
+            document_id：要更新的文档 ID。
+            new_text：新的文本内容。
         """
         collection = self.get_collection(workflow_id)
 
-        # Find existing chunks
+        # 查找已有分块
         existing = collection.get(filter={"document_id": document_id})
         if not existing or not existing.get("ids"):
             return
 
-        # Delete old chunks
+        # 删除旧分块
         collection.delete(ids=existing["ids"])
 
-        # Re-add with new text
+        # 用新文本重新写入
         old_docs = [
             Document(page_content=old_text, metadata=old_meta)
             for old_text, old_meta in zip(existing.get("documents", []), existing.get("metadatas", []))
@@ -280,12 +280,12 @@ class VectorStoreManager:
 
     @classmethod
     def get_instance(cls) -> "VectorStoreManager":
-        """Get the singleton VectorStoreManager instance."""
+        """获取单例 VectorStoreManager 实例。"""
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
 
 
 def get_vector_store() -> VectorStoreManager:
-    """Convenience alias for getting the singleton instance."""
+    """便捷方法：获取单例实例。"""
     return VectorStoreManager.get_instance()

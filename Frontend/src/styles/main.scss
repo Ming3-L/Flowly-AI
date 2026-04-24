@@ -11,8 +11,8 @@ body {
     'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color: #000;
-  background: #fff;
+  color: var(--app-text);
+  background: var(--app-bg);
 }
 
 #app {
@@ -22,6 +22,15 @@ body {
 // ── Element Plus — Pure Black & White Overrides ───────────────────────────────
 
 :root {
+  // App tokens (light)
+  --app-bg: #ffffff;
+  --app-surface: #ffffff;
+  --app-surface-2: #fafafa;
+  --app-text: #000000;
+  --app-text-2: #333333;
+  --app-text-3: #666666;
+  --app-border: #e0e0e0;
+
   // Primary: pure black (no blue)
   --el-color-primary: #000000;
   --el-color-primary-light-3: #333333;
@@ -68,6 +77,57 @@ body {
   --el-box-shadow-dark: 0px 4px 12px rgba(0, 0, 0, 0.1);
 }
 
+// ── Dark theme overrides ────────────────────────────────────────────────────
+html.theme-dark {
+  --app-bg: #0f1115;
+  --app-surface: #141824;
+  --app-surface-2: #10131c;
+  --app-text: #f5f7fb;
+  --app-text-2: #d7dbe6;
+  --app-text-3: #a8afc0;
+  --app-border: rgba(255, 255, 255, 0.12);
+
+  // Element Plus tokens
+  --el-color-primary: #ffffff;
+  --el-color-primary-light-3: rgba(255, 255, 255, 0.85);
+  --el-color-primary-light-5: rgba(255, 255, 255, 0.7);
+  --el-color-primary-light-7: rgba(255, 255, 255, 0.55);
+  --el-color-primary-light-8: rgba(255, 255, 255, 0.4);
+  --el-color-primary-light-9: rgba(255, 255, 255, 0.25);
+  --el-color-primary-dark-2: #ffffff;
+
+  --el-text-color-primary: var(--app-text);
+  --el-text-color-regular: var(--app-text-2);
+  --el-text-color-secondary: var(--app-text-3);
+  --el-text-color-placeholder: rgba(245, 247, 251, 0.45);
+  --el-text-color-disabled: rgba(245, 247, 251, 0.35);
+
+  --el-bg-color: var(--app-surface);
+  --el-bg-color-page: var(--app-bg);
+  --el-bg-color-overlay: var(--app-surface);
+  --el-fill-color: rgba(255, 255, 255, 0.06);
+  --el-fill-color-light: rgba(255, 255, 255, 0.05);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.04);
+  --el-fill-color-blank: var(--app-surface);
+
+  --el-border-color: var(--app-border);
+  --el-border-color-light: rgba(255, 255, 255, 0.14);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.1);
+  --el-border-color-extra-light: rgba(255, 255, 255, 0.08);
+  --el-border-color-dark: rgba(255, 255, 255, 0.18);
+  --el-border-color-darker: rgba(255, 255, 255, 0.22);
+
+  --el-color-success: rgba(255, 255, 255, 0.9);
+  --el-color-warning: rgba(255, 255, 255, 0.75);
+  --el-color-danger: #ffffff;
+  --el-color-info: rgba(255, 255, 255, 0.6);
+
+  --el-box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.5);
+  --el-box-shadow-light: 0px 1px 2px rgba(0, 0, 0, 0.4);
+  --el-box-shadow-lighter: 0px 0px 0px rgba(0, 0, 0, 0.25);
+  --el-box-shadow-dark: 0px 10px 30px rgba(0, 0, 0, 0.55);
+}
+
 // Scrollbar styling
 ::-webkit-scrollbar {
   width: 6px;
@@ -75,23 +135,23 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f5f5f5;
+  background: var(--el-fill-color);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cccccc;
+  background: rgba(255, 255, 255, 0.22);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #999999;
+  background: rgba(255, 255, 255, 0.34);
 }
 
 // ── Global element overrides ─────────────────────────────────────────────────
 
 // All links — black, no blue
 a {
-  color: #000000;
+  color: var(--el-text-color-primary);
   text-decoration: none;
 
   &:hover {
@@ -197,7 +257,7 @@ a {
 
   .el-input__wrapper {
     box-shadow: 0 0 0 1px var(--el-input-border-color) inset;
-    background: #ffffff;
+    background: var(--el-input-bg-color);
 
     &:hover {
       box-shadow: 0 0 0 1px #000000 inset;
@@ -207,6 +267,22 @@ a {
       box-shadow: 0 0 0 2px #000000 inset !important;
     }
   }
+}
+
+// 强制若页面仍写死白底，暗色下兜底覆盖（避免大片白屏）
+html.theme-dark .app-nav,
+html.theme-dark .app-main,
+html.theme-dark .dashboard-view,
+html.theme-dark .settings-page,
+html.theme-dark .chat-page,
+html.theme-dark .workflow-run-view,
+html.theme-dark .workflow-detail-page,
+html.theme-dark .workflow-list-page,
+html.theme-dark .knowledge-base-view,
+html.theme-dark .observability-view,
+html.theme-dark .editor-view {
+  background: var(--app-bg) !important;
+  color: var(--app-text) !important;
 }
 
 // Select

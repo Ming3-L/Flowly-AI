@@ -3,11 +3,11 @@ from django.db import models
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AI Engine Models
+# AI 引擎模型
 # ─────────────────────────────────────────────────────────────────────────────
 
 class Workflow(models.Model):
-    """Represents an AI workflow definition."""
+    """表示一个 AI 工作流定义。"""
 
     user = models.ForeignKey(
         User,
@@ -21,8 +21,8 @@ class Workflow(models.Model):
     description = models.TextField(blank=True, help_text="Workflow description")
     definition = models.JSONField(help_text="Workflow definition in JSON format")
     is_active = models.BooleanField(default=True)
-    # Soft-delete: deleted workflows should not appear in lists,
-    # but their executions/history can remain for audit if needed.
+    # 软删除：被删除的工作流不应出现在列表中；
+    # 但其执行记录/历史可按需保留，用于审计。
     is_deleted = models.BooleanField(default=False, db_index=True)
     deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -37,11 +37,10 @@ class Workflow(models.Model):
 
 class Thread(models.Model):
     """
-    Tracks a single workflow session (thread).
+    跟踪一次工作流会话（thread）。
 
-    One user can have many threads; each thread is tied to exactly one workflow.
-    The thread_id (UUID) is the primary handle used by LangGraph's checkpointer
-    to persist and resume state.
+    一个用户可拥有多个 thread；每个 thread 绑定且仅绑定一个工作流。
+    thread_id（UUID）是 LangGraph checkpointer 用于持久化与恢复状态的主句柄。
     """
 
     thread_id = models.UUIDField(
@@ -79,7 +78,7 @@ class Thread(models.Model):
 
 
 class WorkflowExecution(models.Model):
-    """Represents a single execution of a workflow."""
+    """表示一次工作流执行记录。"""
 
     STATUS_CHOICES = [
         ('pending', 'Pending'),
@@ -120,7 +119,7 @@ class WorkflowExecution(models.Model):
 
     @property
     def thread_id(self) -> str:
-        """Returns the UUID string of the parent Thread (for backward compatibility)."""
+        """返回父 Thread 的 UUID 字符串（用于兼容旧字段/旧逻辑）。"""
         return str(self.thread.thread_id) if self.thread else ""
 
 
@@ -680,6 +679,44 @@ class AIModelCatalogEntry(models.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 本地媒体资源（用户上传/生成的图片、音频、视频等，路径存库）
+# ─────────────────────────────────────────────────────────────────────────────
+class LocalMediaAsset(models.Model):
+    """用户在系统内产生/上传的资源：文件落在 MEDIA_ROOT 下，本表记录路径与元数据。"""
+
+    class Kind(models.TextChoices):
+        IMAGE = "image", "图片"
+        AUDIO = "audio", "音频"
+        VIDEO = "video", "视频"
+        FILE = "file", "文件"
+        AVATAR = "avatar", "头像"
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="local_media_assets",
+        verbose_name="所属用户",
+    )
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.FILE, db_index=True)
+    original_name = models.CharField(max_length=255, blank=True, default="")
+    mime = models.CharField(max_length=128, blank=True, default="")
+    size_bytes = models.BigIntegerField(default=0)
+    rel_path = models.CharField(max_length=512, db_index=True, help_text="相对 MEDIA_ROOT 的路径")
+    source_url = models.CharField(max_length=2048, blank=True, default="", help_text="若由第三方生成/抓取，记录来源 URL（可空）")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "created_at"]),
+            models.Index(fields=["user", "kind", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id}:{self.kind}:{self.rel_path}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 用户自定义「聊天模型」预设（供标准画布节点 modelKey 使用，与项目内置 catalog 并列）
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1110,32 +1147,6 @@ class AutoReplyScreenProfile(models.Model):
         return f"ScreenProfile(user={self.user_id})"
 
 
-class AutoReplyScreenEvent(models.Model):
-    """本机代理上报的心跳、错误或后续 new_message 等（便于前端「本机代理」调试列表）。"""
-
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="auto_reply_screen_events",
-        verbose_name="所属用户",
-    )
-    event_type = models.CharField("事件类型", max_length=40, db_index=True)
-    message = models.TextField("简短说明", blank=True)
-    payload = models.JSONField("附加数据", default=dict, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-        verbose_name = "屏幕代理事件"
-        verbose_name_plural = "屏幕代理事件"
-        indexes = [
-            models.Index(fields=["user", "created_at"]),
-        ]
-
-    def __str__(self) -> str:
-        return f"{self.event_type}@{self.created_at}"
-
-
 class AutoReplyKnowledgeEntry(models.Model):
     """替代原 knowledge/ 下文本文件：按用户存库，支持共享与按好友挂载、触发关键词。"""
 
@@ -1217,35 +1228,4 @@ class AutoReplyChatHistoryEntry(models.Model):
 
     def __str__(self) -> str:
         return f"ChatHist#{self.pk}"
-
-
-class AutoReplyMonitorLogLine(models.Model):
-    """替代原 logs/ 文本流：监控界面「消息提醒」只读列表。"""
-
-    class Level(models.TextChoices):
-        INFO = "info", "信息"
-        WARN = "warn", "警告"
-        ERROR = "error", "错误"
-
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="auto_reply_monitor_logs",
-        verbose_name="所属用户",
-    )
-    level = models.CharField("级别", max_length=8, choices=Level.choices, default=Level.INFO)
-    line = models.TextField("日志行")
-    extra = models.JSONField("附加", default=dict, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["-created_at"]
-        verbose_name = "自动回复监控日志"
-        verbose_name_plural = "自动回复监控日志"
-        indexes = [
-            models.Index(fields=["user", "created_at"]),
-        ]
-
-    def __str__(self) -> str:
-        return (self.line or "")[:40]
 

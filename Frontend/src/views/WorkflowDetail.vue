@@ -1,6 +1,6 @@
 <template>
   <div class="workflow-detail-page">
-    <!-- Header -->
+    <!-- 页头 -->
     <div class="detail-header">
       <div class="header-left">
         <el-button text @click="$router.push('/workflows')">
@@ -57,12 +57,12 @@
       </div>
     </div>
 
-    <!-- Content -->
+    <!-- 内容 -->
     <div class="detail-body">
       <el-row :gutter="16">
-        <!-- Left: Info + Definition -->
+        <!-- 左侧：信息 + 定义 -->
         <el-col :span="16">
-          <!-- Info card -->
+          <!-- 信息卡片 -->
           <el-card class="info-card">
             <template #header>
               <span>基本信息</span>
@@ -98,7 +98,7 @@
             </el-descriptions>
           </el-card>
 
-          <!-- Definition card -->
+          <!-- 定义卡片 -->
           <el-card class="definition-card">
             <template #header>
               <div class="card-header-row">
@@ -110,7 +110,7 @@
               </div>
             </template>
 
-            <!-- Visual preview -->
+            <!-- 可视化预览 -->
             <div v-if="showDefinition === 'visual'" class="definition-preview">
               <div v-if="!workflow?.definition?.nodes?.length" class="empty-def">
                 <el-empty description="暂无节点定义" />
@@ -138,7 +138,7 @@
               </div>
             </div>
 
-            <!-- JSON view -->
+            <!-- 结构化视图 -->
             <div v-else class="definition-json">
               <el-input
                 :model-value="definitionJson"
@@ -151,7 +151,7 @@
           </el-card>
         </el-col>
 
-        <!-- Right: Execution History -->
+        <!-- 右侧：执行历史 -->
         <el-col :span="8">
           <el-card class="history-card">
             <template #header>
@@ -176,7 +176,7 @@
                 v-for="exec in executions"
                 :key="exec.id"
                 class="execution-item"
-                @click="$router.push(`/run/${workflowId}?thread=${exec.thread_id}`)"
+                @click="$router.push(`/run/${workflowId}?thread=${exec.thread_id}&execution=${exec.id}`)"
               >
                 <div class="exec-header">
                   <el-tag :type="execStatusType(exec.status)" size="small">
@@ -343,7 +343,7 @@ function handleExport(command: string) {
     return
   }
 
-  // Download JSON file
+  // 下载 JSON 文件
   const blob = new Blob([definitionJson.value], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -369,7 +369,7 @@ async function handleDelete() {
     ElMessage.success('删除成功')
     router.push('/workflows')
   } catch {
-    // cancelled
+    // 已取消
   }
 }
 

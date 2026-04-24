@@ -2,6 +2,7 @@
   <div class="auto-reply-page">
     <header class="page-head">
       <h1>AI 自动回复</h1>
+      <div v-if="whoami" class="whoami">当前用户：{{ whoami }}</div>
       <p class="sub">
         Vue 页面 + 服务端入库；规则支持自定义系统提示或「人格 / 情景」预设（与参考项目键一致）。任务在后台执行，数据存数据库。
       </p>
@@ -147,9 +148,6 @@
                 </el-form-item>
               </el-col>
             </el-row>
-            <el-form-item label="YOLO 权重（固定使用仓库根目录 best.pt 或环境变量 FLOWLY_SCREEN_YOLO_WEIGHTS）">
-              <el-input v-model="screenForm.yolo_weights_path" readonly placeholder="由服务端自动填写" />
-            </el-form-item>
             <el-form-item label="启用 YOLO 区域检测">
               <el-switch v-model="screenForm.use_yolo" />
             </el-form-item>
@@ -264,6 +262,21 @@ python -m ai_engine.desktop_screen_agent</pre>
             </div>
           </template>
           <el-alert v-if="agentError" type="warning" :closable="false" class="mb8" :title="agentError" />
+          <el-descriptions :column="2" border size="small" class="mb8">
+            <el-descriptions-item label="聊天软件">{{ screenForm.chat_software || '—' }}</el-descriptions-item>
+            <el-descriptions-item label="检测间隔">{{ screenForm.check_interval_seconds }}s</el-descriptions-item>
+            <el-descriptions-item label="YOLO 区域检测">{{ screenForm.use_yolo ? '启用' : '关闭' }}</el-descriptions-item>
+            <el-descriptions-item label="资料库合并">{{ screenForm.knowledge_reply_enabled ? '启用' : '关闭' }}</el-descriptions-item>
+            <el-descriptions-item label="区域识别 nonce">{{ screenFormRegionNonce }}</el-descriptions-item>
+            <el-descriptions-item label="配置更新时间">{{ screenUpdatedAt }}</el-descriptions-item>
+            <el-descriptions-item label="聊天区域">{{ screenBoxes.chat_window || '未配置' }}</el-descriptions-item>
+            <el-descriptions-item label="输入框区域">{{ screenBoxes.input_box || '未配置' }}</el-descriptions-item>
+            <el-descriptions-item label="用户名区域">{{ screenBoxes.user_name || '未配置' }}</el-descriptions-item>
+            <el-descriptions-item label="好友列表区域">{{ screenBoxes.friend_list || '未配置' }}</el-descriptions-item>
+            <el-descriptions-item label="默认规则（含模型）" :span="2">
+              {{ defaultRuleLabel }}
+            </el-descriptions-item>
+          </el-descriptions>
           <el-form label-position="left" label-width="120px">
             <el-form-item label="开始监控">
               <el-switch v-model="screenForm.monitoring_active" active-text="运行中" inactive-text="已暂停" />
@@ -285,61 +298,7 @@ python -m ai_engine.desktop_screen_agent</pre>
               </div>
             </el-form-item>
           </el-form>
-          <p class="box-hint">本机代理拉取该开关；关闭时仅低频轮询配置。区域事件见下表。</p>
-        </el-card>
-        <el-card shadow="never" class="card mt">
-          <template #header>
-            <div class="card-hdr">
-              <span>识别提示</span>
-              <el-button size="small" @click="loadScreenEvents">刷新</el-button>
-            </div>
-          </template>
-          <div class="hint-grid">
-            <div class="hint-item">
-              <div class="k">检测到用户区域</div>
-              <div class="v">
-                <el-tag size="small" :type="lastDetect.detected_user ? 'success' : 'info'">
-                  {{ lastDetect.detected_user ? '是' : '否' }}
-                </el-tag>
-              </div>
-            </div>
-            <div class="hint-item">
-              <div class="k">检测到聊天区域</div>
-              <div class="v">
-                <el-tag size="small" :type="lastDetect.detected_chat_area ? 'success' : 'info'">
-                  {{ lastDetect.detected_chat_area ? '是' : '否' }}
-                </el-tag>
-              </div>
-            </div>
-            <div class="hint-item">
-              <div class="k">检测到输入框</div>
-              <div class="v">
-                <el-tag size="small" :type="lastDetect.detected_input_box ? 'success' : 'info'">
-                  {{ lastDetect.detected_input_box ? '是' : '否' }}
-                </el-tag>
-              </div>
-            </div>
-            <div class="hint-item">
-              <div class="k">检测到好友列表</div>
-              <div class="v">
-                <el-tag size="small" :type="lastDetect.detected_friend_list ? 'success' : 'info'">
-                  {{ lastDetect.detected_friend_list ? '是' : '否' }}
-                </el-tag>
-              </div>
-            </div>
-            <div class="hint-item">
-              <div class="k">检测到消息（粗略）</div>
-              <div class="v">
-                <el-tag size="small" :type="lastDetect.message_detected ? 'warning' : 'info'">
-                  {{ lastDetect.message_detected ? '疑似有变化' : '—' }}
-                </el-tag>
-              </div>
-            </div>
-            <div class="hint-item">
-              <div class="k">最近心跳</div>
-              <div class="v">{{ lastDetect.at || '—' }}</div>
-            </div>
-          </div>
+          <p class="box-hint">本机代理拉取该开关；关闭时仅低频轮询配置。</p>
         </el-card>
         <el-card shadow="never" class="card mt">
           <template #header>
@@ -364,6 +323,8 @@ python -m ai_engine.desktop_screen_agent</pre>
             <el-table-column prop="name" label="好友名称" min-width="100" />
             <el-table-column prop="personality_label" label="风格" min-width="120" />
             <el-table-column prop="scene_label" label="情景" min-width="120" />
+            <el-table-column prop="rule_label" label="规则（含模型）" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="effective_model_key" label="实际模型 key" min-width="160" show-overflow-tooltip />
             <el-table-column label="提示词" width="88">
               <template #default="{ row }">
                 {{ row.has_custom ? '自定义' : '默认' }}
@@ -371,40 +332,11 @@ python -m ai_engine.desktop_screen_agent</pre>
             </el-table-column>
             <el-table-column label="操作" width="100" align="right">
               <template #default="{ row }">
+                <el-button link size="small" @click="openFriendDialog(row.name)">配置</el-button>
                 <el-button type="danger" link size="small" @click="removeMonitored(row.name)">取消监听</el-button>
               </template>
             </el-table-column>
           </el-table>
-        </el-card>
-        <el-card shadow="never" class="card mt">
-          <template #header>
-            <div class="card-hdr">
-              <span>本机代理事件</span>
-              <el-button size="small" @click="loadScreenEvents">刷新</el-button>
-            </div>
-          </template>
-          <el-table :data="screenEvents" size="small" stripe max-height="220" empty-text="暂无事件">
-            <el-table-column prop="id" label="#" width="56" />
-            <el-table-column prop="event_type" label="类型" width="100" />
-            <el-table-column prop="message" label="说明" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="created_at" label="时间" width="160" />
-          </el-table>
-        </el-card>
-        <el-card shadow="never" class="card mt">
-          <template #header>
-            <div class="card-hdr">
-              <span>消息提醒（监控日志入库）</span>
-              <el-button size="small" @click="loadMonitorLogs">刷新</el-button>
-            </div>
-          </template>
-          <div class="log-box">
-            <div v-for="l in monitorLogs" :key="l.id" class="log-line">
-              <span class="log-t">{{ l.created_at }}</span>
-              <el-tag size="small" :type="l.level === 'error' ? 'danger' : l.level === 'warn' ? 'warning' : 'info'">{{ l.level }}</el-tag>
-              <span>{{ l.line }}</span>
-            </div>
-            <p v-if="!monitorLogs.length" class="hint">暂无日志</p>
-          </div>
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -437,8 +369,28 @@ python -m ai_engine.desktop_screen_agent</pre>
         <el-form-item label="自定义系统提示（可选；填写后将覆盖人格/情景组合）">
           <el-input v-model="ruleForm.system_prompt" type="textarea" :rows="6" placeholder="留空且已选人格/情景时，由服务端按预设生成系统提示" />
         </el-form-item>
-        <el-form-item label="模型键（可选，与设置里模型目录一致）">
-          <el-input v-model="ruleForm.model_key" placeholder="留空则用服务端 FLOWLY_AUTO_REPLY_MODEL_KEY，默认较强模型" />
+        <el-form-item label="模型（可选，使用项目内「语言/文本」模型目录）">
+          <el-select
+            v-model="ruleForm.model_key"
+            filterable
+            clearable
+            placeholder="留空则用服务端 FLOWLY_AUTO_REPLY_MODEL_KEY"
+            style="width: 100%"
+          >
+            <el-option label="（留空：用服务端默认）" value="" />
+            <el-option-group
+              v-for="(grp, idx) in autoReplyModelGroups"
+              :key="`${grp.label}-${idx}`"
+              :label="grp.label"
+            >
+              <el-option
+                v-for="m in grp.rows"
+                :key="m.key"
+                :label="m.label"
+                :value="m.key"
+              />
+            </el-option-group>
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -451,6 +403,11 @@ python -m ai_engine.desktop_screen_agent</pre>
       <el-form :model="friendForm" label-position="top">
         <el-form-item label="好友名称" required>
           <el-input v-model="friendForm.name" maxlength="128" :disabled="friendForm.nameLocked" />
+        </el-form-item>
+        <el-form-item label="触发规则（可选；用于按好友选择不同模型/提示）">
+          <el-select v-model="friendForm.rule_id" clearable placeholder="默认规则（屏幕配置中的 default_rule）" style="width: 100%">
+            <el-option v-for="r in activeRules" :key="r.id" :label="r.name" :value="r.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="聊天风格（人格键）">
           <el-select v-model="friendForm.personality_key" clearable placeholder="默认" style="width: 100%">
@@ -511,6 +468,7 @@ python -m ai_engine.desktop_screen_agent</pre>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
+import { useAuthStore } from '@/stores/auth'
 
 interface PresetOpt {
   key: string
@@ -571,12 +529,7 @@ interface KbEntry {
   sort_order: number
 }
 
-interface MonitorLogLine {
-  id: number
-  level: string
-  line: string
-  created_at: string
-}
+// 监控日志（AutoReplyMonitorLogLine）已下线：不再入库，也不在前端展示
 
 interface FriendOverrideRow {
   name: string
@@ -589,18 +542,21 @@ interface MonitoredRow {
   name: string
   personality_label: string
   scene_label: string
+  rule_label: string
+  effective_model_key: string
   has_custom: boolean
 }
 
-interface ScreenEvent {
-  id: number
-  event_type: string
-  message: string
-  payload: Record<string, unknown>
-  created_at: string
-}
+// 监控事件（AutoReplyScreenEvent）已下线：不再入库，也不在前端展示
 
 const mainTab = ref('overview')
+const auth = useAuthStore()
+const whoami = computed(() => {
+  const u = auth.user as any
+  if (!u) return ''
+  const nm = u.username || u.email || ''
+  return nm ? `${nm}（id=${u.id}）` : `id=${u.id}`
+})
 const rules = ref<Rule[]>([])
 const jobs = ref<Job[]>([])
 const selectedRuleId = ref<number | undefined>(undefined)
@@ -622,6 +578,42 @@ const ruleForm = ref({
 const presetScenes = ref<PresetOpt[]>([])
 const presetPersonalities = ref<PresetOpt[]>([])
 
+type CatalogModelRow = {
+  key: string
+  label: string
+  route: string
+  api_kind?: string
+  show_in_canvas_llm_nodes?: boolean
+  category?: string
+  category_label?: string
+  category_order?: number
+}
+
+type ModelGroup = { label: string; order: number; rows: CatalogModelRow[] }
+
+const aiModelsCatalog = ref<{ models: CatalogModelRow[] } | null>(null)
+
+function buildGroups(rows: CatalogModelRow[]): ModelGroup[] {
+  const map = new Map<string, ModelGroup>()
+  for (const r of rows) {
+    const cid = String(r.category ?? 'other')
+    const lab = String(r.category_label ?? '其它')
+    const key = `${cid}@@${lab}`
+    const order = typeof r.category_order === 'number' ? r.category_order : 999
+    const g = map.get(key)
+    if (g) g.rows.push(r)
+    else map.set(key, { label: lab, order, rows: [r] })
+  }
+  return [...map.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label))
+}
+
+const autoReplyModelGroups = computed<ModelGroup[]>(() => {
+  const all = aiModelsCatalog.value?.models ?? []
+  // 自动回复只需要“对话/补全”类模型（ark_chat/openai兼容等）；向量/生图等不需要
+  const rows = all.filter((m) => (m.api_kind ?? 'ark_chat') === 'ark_chat')
+  return buildGroups(rows)
+})
+
 const screenSaving = ref(false)
 const screenForm = ref({
   chat_software: 'wechat',
@@ -641,8 +633,7 @@ const screenBoxes = ref({
   friend_list: '',
 })
 const friendNameInput = ref('')
-const screenEvents = ref<ScreenEvent[]>([])
-const monitorLogs = ref<MonitorLogLine[]>([])
+// 屏幕事件/监控日志相关前端数据结构已移除
 const kbEntries = ref<KbEntry[]>([])
 const regionDetectLoading = ref(false)
 const agentRunning = ref(false)
@@ -661,6 +652,7 @@ const friendDialogVisible = ref(false)
 const friendForm = ref({
   name: '',
   nameLocked: false,
+  rule_id: undefined as number | undefined,
   personality_key: '',
   scene_key: '',
   custom_system_prompt: '',
@@ -680,6 +672,30 @@ const kbForm = ref({
 })
 
 const activeRules = computed(() => rules.value.filter((r) => r.is_active))
+
+const screenProfileUpdatedAt = ref('')
+const screenProfileNonce = ref(0)
+const screenProfileAckNonce = ref(0)
+
+const screenUpdatedAt = computed(
+  () => (screenProfileUpdatedAt.value || '').slice(0, 19).replace('T', ' ') || '—'
+)
+const screenFormRegionNonce = computed(
+  () => `${screenProfileNonce.value}/${screenProfileAckNonce.value}`
+)
+
+const defaultRuleLabel = computed(() => {
+  const rid = Number(screenForm.value.default_rule_id || 0) || 0
+  if (!rid) return '（未设置：由服务端默认/好友覆盖决定）'
+  const r = rules.value.find((x) => x.id === rid)
+  if (!r) return `规则#${rid}`
+  return `${r.name}${r.model_key ? `（${r.model_key}）` : '（使用服务端默认模型）'}`
+})
+
+function ruleLabelById(id: number) {
+  const r = rules.value.find((x) => x.id === id)
+  return r ? r.name : `规则#${id}`
+}
 
 const friendDialogTitle = computed(() => (friendForm.value.nameLocked ? '编辑好友' : '添加好友配置'))
 
@@ -712,10 +728,24 @@ const monitoredFriendRows = computed<MonitoredRow[]>(() => {
     const o = fo[name] || {}
     const pk = String(o.personality || o.personality_key || '')
     const sk = String(o.scene || o.scene_key || '')
+    const rid = Number(o.rule_id || 0) || 0
+    const rule = rid ? rules.value.find((x) => x.id === rid) : null
+    const defRid = Number(screenForm.value.default_rule_id || 0) || 0
+    const defRule = !rid && defRid ? rules.value.find((x) => x.id === defRid) : null
+    const effectiveModelKey =
+      (rule?.model_key || '').trim() ||
+      (defRule?.model_key || '').trim() ||
+      '（服务端默认：FLOWLY_AUTO_REPLY_MODEL_KEY）'
     return {
       name,
       personality_label: presetPersonalityLabel(pk),
       scene_label: presetSceneLabel(sk),
+      rule_label: rid
+        ? `${ruleLabelById(rid)}${rule?.model_key ? `（${rule.model_key}）` : '（服务端默认模型）'}`
+        : defRule
+          ? `${ruleLabelById(defRid)}${defRule.model_key ? `（${defRule.model_key}）` : '（服务端默认模型）'}`
+          : '默认规则（服务端默认模型）',
+      effective_model_key: effectiveModelKey,
       has_custom: !!String(o.custom_system_prompt || '').trim(),
     }
   })
@@ -810,6 +840,9 @@ function applyScreenProfile(p: ScreenProfile) {
     user_name: formatBox4(p.user_name_box),
     friend_list: formatBox4(p.friend_list_box),
   }
+  screenProfileUpdatedAt.value = p.updated_at || ''
+  screenProfileNonce.value = Number(p.region_detect_nonce || 0) || 0
+  screenProfileAckNonce.value = Number(p.region_detect_ack_nonce || 0) || 0
   fillNboxFromArrays('chat_window', p.chat_window_box)
   fillNboxFromArrays('user_name', p.user_name_box)
   fillNboxFromArrays('friend_list', p.friend_list_box)
@@ -820,24 +853,6 @@ async function loadScreenProfile() {
   const { data } = await api.get<ScreenProfile>('/auto-reply/screen-profile')
   applyScreenProfile(data)
 }
-
-async function loadScreenEvents() {
-  const { data } = await api.get<ScreenEvent[]>('/auto-reply/screen-events', { params: { limit: 50 } })
-  screenEvents.value = Array.isArray(data) ? data : []
-}
-
-const lastDetect = computed(() => {
-  const hb = screenEvents.value.find((e) => e.event_type === 'heartbeat')
-  const p = (hb?.payload || {}) as any
-  return {
-    detected_user: !!p.detected_user,
-    detected_chat_area: !!p.detected_chat_area,
-    detected_input_box: !!p.detected_input_box,
-    detected_friend_list: !!p.detected_friend_list,
-    message_detected: !!p.message_detected,
-    at: hb?.created_at || '',
-  }
-})
 
 async function refreshAgentStatus() {
   agentLoading.value = true
@@ -916,7 +931,6 @@ async function saveScreenProfile(successTip: string | undefined = '屏幕配置�
     })
     applyScreenProfile(data)
     ElMessage.success(successTip)
-    await loadScreenEvents()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     ElMessage.error(err?.response?.data?.detail || '保存失败')
@@ -938,6 +952,15 @@ async function loadPresets() {
   const { data } = await api.get<{ scenes: PresetOpt[]; personalities: PresetOpt[] }>('/auto-reply/presets')
   presetScenes.value = data.scenes || []
   presetPersonalities.value = data.personalities || []
+}
+
+async function loadAiModelsCatalog() {
+  try {
+    const { data } = await api.get<{ models: CatalogModelRow[] }>('/ai/models')
+    aiModelsCatalog.value = data
+  } catch {
+    aiModelsCatalog.value = null
+  }
 }
 
 async function loadRules() {
@@ -983,17 +1006,10 @@ async function loadKbEntries() {
   kbEntries.value = Array.isArray(data) ? data : []
 }
 
-async function loadMonitorLogs() {
-  const { data } = await api.get<MonitorLogLine[]>('/auto-reply/monitor-logs', { params: { limit: 200 } })
-  monitorLogs.value = Array.isArray(data) ? data : []
-}
-
 function onMainTabChange(tab: string | number) {
   const t = String(tab)
   if (t === 'knowledge') void loadKbEntries()
   if (t === 'monitor') {
-    void loadMonitorLogs()
-    void loadScreenEvents()
     void refreshAgentStatus()
   }
 }
@@ -1037,6 +1053,7 @@ function openFriendDialog(name?: string) {
     friendForm.value = {
       name,
       nameLocked: true,
+      rule_id: typeof o.rule_id === 'number' ? (o.rule_id as number) : undefined,
       personality_key: String(o.personality || o.personality_key || ''),
       scene_key: String(o.scene || o.scene_key || ''),
       custom_system_prompt: String(o.custom_system_prompt || ''),
@@ -1048,6 +1065,7 @@ function openFriendDialog(name?: string) {
     friendForm.value = {
       name: '',
       nameLocked: false,
+      rule_id: undefined,
       personality_key: '',
       scene_key: '',
       custom_system_prompt: '',
@@ -1061,6 +1079,7 @@ function resetFriendForm() {
   friendForm.value = {
     name: '',
     nameLocked: false,
+    rule_id: undefined,
     personality_key: '',
     scene_key: '',
     custom_system_prompt: '',
@@ -1081,6 +1100,7 @@ async function saveFriendOverride() {
   const fo = { ...(screenForm.value.friends_overrides as Record<string, unknown>) }
   fo[nm] = {
     name: nm,
+    rule_id: friendForm.value.rule_id ?? null,
     personality: friendForm.value.personality_key || 'gentle_healing',
     scene: friendForm.value.scene_key || 'daily_chat',
     custom_system_prompt: friendForm.value.custom_system_prompt.trim(),
@@ -1293,7 +1313,14 @@ async function saveRule() {
 
 onMounted(async () => {
   try {
-    await Promise.all([loadPresets(), loadRules(), loadJobs(), loadScreenProfile(), loadScreenEvents(), loadKbEntries(), loadMonitorLogs()])
+    await Promise.all([
+      loadAiModelsCatalog(),
+      loadPresets(),
+      loadRules(),
+      loadJobs(),
+      loadScreenProfile(),
+      loadKbEntries(),
+    ])
     await refreshAgentStatus()
   } catch {
     ElMessage.error('加载失败，请确认已登录且后端可用')
@@ -1328,6 +1355,12 @@ onMounted(async () => {
   .sub2 {
     margin-top: 8px;
   }
+}
+
+.whoami {
+  font-size: 12px;
+  color: #666;
+  margin: 6px 0 0;
 }
 
 .card {

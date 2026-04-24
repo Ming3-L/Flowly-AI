@@ -17,9 +17,7 @@ from ai_engine.models import (
     AutoReplyChatHistoryEntry,
     AutoReplyJob,
     AutoReplyKnowledgeEntry,
-    AutoReplyMonitorLogLine,
     AutoReplyRule,
-    AutoReplyScreenEvent,
     AutoReplyScreenProfile,
 )
 
@@ -323,32 +321,11 @@ class AutoReplyChatHistoryCreate(Schema):
     meta: dict[str, Any] = Field(default_factory=dict)
 
 
-class AutoReplyMonitorLogOut(Schema):
-    id: int
-    level: str
-    line: str
-    extra: dict[str, Any]
-    created_at: str
-
-
-class AutoReplyMonitorLogCreate(Schema):
-    level: str = Field(default="info", max_length=8)
-    line: str = Field(..., min_length=1, max_length=8000)
-    extra: dict[str, Any] = Field(default_factory=dict)
-
-
-class AutoReplyScreenEventOut(Schema):
-    id: int
-    event_type: str
-    message: str
-    payload: dict[str, Any]
-    created_at: str
-
-
-class AutoReplyScreenEventCreate(Schema):
-    event_type: str = Field(..., min_length=1, max_length=40)
-    message: str = Field(default="", max_length=4000)
-    payload: dict[str, Any] = Field(default_factory=dict)
+#
+# 说明：
+#   AutoReplyScreenEvent / AutoReplyMonitorLogLine 已按需求下线：
+#   - 不再将屏幕代理事件/日志写入数据库
+#   - 相关 API（/screen-events, /monitor-logs）同步移除
 
 
 def _rule_out(r: AutoReplyRule) -> dict[str, Any]:
@@ -399,16 +376,6 @@ def _screen_profile_out(p: AutoReplyScreenProfile) -> dict[str, Any]:
         "region_detect_ack_nonce": int(getattr(p, "region_detect_ack_nonce", 0) or 0),
         "default_rule_id": p.default_rule_id,
         "updated_at": p.updated_at.isoformat() if p.updated_at else "",
-    }
-
-
-def _screen_event_out(e: AutoReplyScreenEvent) -> dict[str, Any]:
-    return {
-        "id": e.pk,
-        "event_type": e.event_type,
-        "message": e.message or "",
-        "payload": e.payload if isinstance(e.payload, dict) else {},
-        "created_at": e.created_at.isoformat() if e.created_at else "",
     }
 
 
@@ -507,34 +474,6 @@ def request_region_detect(request: HttpRequest):
     return _screen_profile_out(p)
 
 
-@auto_reply_router.get("/screen-events", response=list[AutoReplyScreenEventOut])
-def list_screen_events(request: HttpRequest, limit: int = 50):
-    from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
-
-    u = request.auth
-    if u is None:
-        raise AuthenticationError("Authentication required")
-    lim = max(1, min(limit, 200))
-    rows = AutoReplyScreenEvent.objects.filter(user=u).order_by("-created_at")[:lim]
-    return [_screen_event_out(e) for e in rows]
-
-
-@auto_reply_router.post("/screen-events", response={201: AutoReplyScreenEventOut})
-def create_screen_event(request: HttpRequest, payload: AutoReplyScreenEventCreate):
-    from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
-
-    u = request.auth
-    if u is None:
-        raise AuthenticationError("Authentication required")
-    e = AutoReplyScreenEvent.objects.create(
-        user=u,
-        event_type=payload.event_type.strip()[:40],
-        message=(payload.message or "")[:4000],
-        payload=dict(payload.payload or {}),
-    )
-    return 201, _screen_event_out(e)
-
-
 def _knowledge_out(e: AutoReplyKnowledgeEntry) -> dict[str, Any]:
     kws = e.trigger_keywords if isinstance(e.trigger_keywords, list) else []
     return {
@@ -557,16 +496,6 @@ def _chat_hist_out(row: AutoReplyChatHistoryEntry) -> dict[str, Any]:
         "role": row.role,
         "content": row.content,
         "meta": row.meta if isinstance(row.meta, dict) else {},
-        "created_at": row.created_at.isoformat() if row.created_at else "",
-    }
-
-
-def _monitor_log_out(row: AutoReplyMonitorLogLine) -> dict[str, Any]:
-    return {
-        "id": row.pk,
-        "level": row.level,
-        "line": row.line,
-        "extra": row.extra if isinstance(row.extra, dict) else {},
         "created_at": row.created_at.isoformat() if row.created_at else "",
     }
 
@@ -691,37 +620,6 @@ def create_chat_history(request: HttpRequest, payload: AutoReplyChatHistoryCreat
         meta=dict(payload.meta or {}),
     )
     return 201, _chat_hist_out(row)
-
-
-@auto_reply_router.get("/monitor-logs", response=list[AutoReplyMonitorLogOut])
-def list_monitor_logs(request: HttpRequest, limit: int = 200):
-    from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
-
-    u = request.auth
-    if u is None:
-        raise AuthenticationError("Authentication required")
-    lim = max(1, min(limit, 500))
-    rows = AutoReplyMonitorLogLine.objects.filter(user=u).order_by("-created_at")[:lim]
-    return [_monitor_log_out(r) for r in rows]
-
-
-@auto_reply_router.post("/monitor-logs", response={201: AutoReplyMonitorLogOut})
-def create_monitor_log(request: HttpRequest, payload: AutoReplyMonitorLogCreate):
-    from ninja.errors import AuthenticationError, HttpError  # pyright: ignore[reportMissingImports]
-
-    u = request.auth
-    if u is None:
-        raise AuthenticationError("Authentication required")
-    lv = (payload.level or "info").strip()[:8]
-    if lv not in {x[0] for x in AutoReplyMonitorLogLine.Level.choices}:
-        raise HttpError(400, "level 无效")
-    row = AutoReplyMonitorLogLine.objects.create(
-        user=u,
-        level=lv,
-        line=payload.line.strip(),
-        extra=dict(payload.extra or {}),
-    )
-    return 201, _monitor_log_out(row)
 
 
 @auto_reply_router.get("/rules", response=list[AutoReplyRuleOut])

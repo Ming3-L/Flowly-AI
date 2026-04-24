@@ -93,7 +93,7 @@ async function onSave(data: { name: string; description: string; definition: any
       hasChanges.value = false
       ElMessage.success('工作流已创建')
 
-      // Update URL to reflect new ID
+      // 更新 URL 以反映新的 ID
       router.replace({ name: 'WorkflowEditor', params: { id: String(workflowId.value) } })
     }
   } finally {
@@ -122,7 +122,7 @@ onMounted(async () => {
       router.push('/workflows')
     }
   } else {
-    // New workflow
+    // 新建工作流
     workflowName.value = '新工作流'
     workflowDescription.value = ''
     workflowDefinition.value = {}
@@ -130,9 +130,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  // Warn if leaving with unsaved changes
+  // 如有未保存更改，离开前进行提示
   if (editorStore.hasUnsavedChanges) {
-    // Just clear the store
+    // 仅清理 store
   }
 })
 </script>

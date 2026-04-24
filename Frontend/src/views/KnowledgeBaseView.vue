@@ -1,6 +1,6 @@
 <template>
   <div class="knowledge-base-view">
-    <!-- Header -->
+    <!-- 页头 -->
     <div class="page-header">
       <div class="header-left">
         <h2 class="page-title">知识库</h2>
@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <!-- Stats Row -->
+    <!-- 统计区 -->
     <el-row :gutter="16" class="stats-row">
       <el-col :span="6">
         <el-card shadow="hover" class="stat-card">
@@ -49,7 +49,7 @@
       </el-col>
     </el-row>
 
-    <!-- Search -->
+    <!-- 搜索 -->
     <el-card class="search-card">
       <el-input
         v-model="searchQuery"
@@ -66,7 +66,7 @@
         </template>
       </el-input>
 
-      <!-- Search Results -->
+      <!-- 搜索结果 -->
       <div v-if="searchResults.length > 0" class="search-results">
         <div class="results-header">
           找到 {{ searchResults.length }} 条相关结果
@@ -89,7 +89,7 @@
       </div>
     </el-card>
 
-    <!-- Documents Table -->
+    <!-- 文档表格 -->
     <el-card class="documents-card">
       <template #header>
         <div class="card-header">
@@ -193,7 +193,7 @@
         </el-table-column>
       </el-table>
 
-      <!-- Pagination -->
+      <!-- 分页 -->
       <div class="pagination-wrapper" v-if="totalDocuments > pageSize">
         <el-pagination
           v-model:current-page="currentPage"
@@ -205,7 +205,7 @@
       </div>
     </el-card>
 
-    <!-- Upload Dialog -->
+    <!-- 上传弹窗 -->
     <el-dialog
       v-model="showUploadDialog"
       title="上传文档"
@@ -235,7 +235,7 @@
         </el-form-item>
       </el-form>
 
-      <!-- Upload Progress -->
+      <!-- 上传进度 -->
       <div v-if="uploadQueue.length > 0" class="upload-queue">
         <div class="queue-header">上传队列</div>
         <div v-for="item in uploadQueue" :key="item.name" class="queue-item">
@@ -263,7 +263,7 @@
       </template>
     </el-dialog>
 
-    <!-- Preview Dialog -->
+    <!-- 预览弹窗 -->
     <el-dialog
       v-model="showPreview"
       :title="previewDoc?.filename || '文档预览'"
@@ -385,7 +385,7 @@ async function handleUpload() {
   if (fileList.value.length === 0) return
   uploading.value = true
 
-  // Build upload queue
+  // 构建上传队列
   uploadQueue.value = fileList.value.map((f: any) => ({ name: f.name, progress: 0 }))
 
   for (let i = 0; i < fileList.value.length; i++) {
@@ -435,7 +435,7 @@ async function handleBatchDelete() {
     selectedDocs.value = []
     await fetchDocuments()
   } catch {
-    // cancelled
+    // 已取消
   }
 }
 

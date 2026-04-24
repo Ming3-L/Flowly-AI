@@ -57,6 +57,30 @@
         />
       </el-form-item>
 
+      <!-- Multi-modal attachments -->
+      <el-form-item label="附件（图片/音频/视频）">
+        <el-upload
+          v-model:file-list="fileList"
+          :auto-upload="false"
+          :multiple="true"
+          :limit="6"
+          :disabled="store.isRunning"
+          accept="image/*,audio/*,video/*"
+          drag
+          class="full-width"
+        >
+          <el-icon><UploadFilled /></el-icon>
+          <div class="el-upload__text">
+            拖拽文件到这里，或 <em>点击选择</em>
+          </div>
+          <template #tip>
+            <div class="el-upload__tip">
+              支持图片/音频/视频；最多 6 个文件（单个文件大小由服务端限制）。
+            </div>
+          </template>
+        </el-upload>
+      </el-form-item>
+
       <!-- Context (optional) -->
       <el-form-item :label="ui.t('wf.runner.contextLabel')" prop="context">
         <el-input
@@ -120,14 +144,17 @@
 
 <script setup lang="ts">
 import { reactive, ref, computed } from 'vue'
-import { VideoPlay, RefreshLeft } from '@element-plus/icons-vue'
+import { VideoPlay, RefreshLeft, UploadFilled } from '@element-plus/icons-vue'
 import { useWorkflowStore } from '@/stores/workflow'
 import { useUiLabelsStore } from '@/stores/uiLabels'
 import type { FormInstance, FormRules } from 'element-plus'
+import type { UploadUserFile } from 'element-plus'
+import api from '@/utils/api'
 
 const store = useWorkflowStore()
 const ui = useUiLabelsStore()
 const formRef = ref<FormInstance>()
+const fileList = ref<UploadUserFile[]>([])
 
 // ── Form State ────────────────────────────────────────────────────────────────
 
@@ -177,6 +204,32 @@ async function handleSubmit() {
       }
     }
 
+    // 上传附件（如有）
+    const attachments: Array<{
+      name: string
+      size: number
+      mime: string
+      path: string
+      proxy_url: string
+      public_url: string
+    }> = []
+
+    for (const f of fileList.value) {
+      const raw = f.raw as File | undefined
+      if (!raw) continue
+      const fd = new FormData()
+      fd.append('file', raw)
+      const res = await api.post('/media/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      })
+      attachments.push(res.data)
+    }
+
+    if (attachments.length) {
+      context.attachments = attachments
+    }
+
     const wf = store.workflows.find((w) => w.id === form.workflowId) ?? null
     const def = wf?.definition as Record<string, any> | undefined
     const nodes = def?.nodes
@@ -187,6 +240,7 @@ async function handleSubmit() {
         workflow_id: form.workflowId!,
         query: form.query.trim(),
         context,
+        initial_inputs: attachments.length ? { files: attachments } : {},
         ...(form.clientNodeId.trim()
           ? { client_node_id: form.clientNodeId.trim() }
           : {}),
@@ -212,6 +266,7 @@ function handleReset() {
   formRef.value?.resetFields()
   form.contextText = ''
   form.clientNodeId = ''
+  fileList.value = []
 }
 </script>
 

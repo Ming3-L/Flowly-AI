@@ -3,6 +3,8 @@ URL configuration for flowly_backend project.
 """
 
 from django.contrib import admin
+from django.conf import settings
+from django.conf.urls.static import static
 from django.urls import path
 from django.http import JsonResponse
 from django.db import connection
@@ -30,3 +32,7 @@ urlpatterns = [
     path("api/", api.urls),
     path("health/", health_check, name="health_check"),
 ]
+
+# 开发环境：提供 MEDIA_URL 静态访问（生产建议由 Nginx/对象存储提供）
+if getattr(settings, "DEBUG", False):
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

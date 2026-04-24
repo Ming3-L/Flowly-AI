@@ -1,6 +1,6 @@
 <template>
   <div class="auth-page">
-    <!-- 3D Canvas Background -->
+    <!-- 三维画布背景 -->
     <BgCubeCanvas />
 
     <!-- 左右分离：左侧品牌+小人卡片，右侧表单卡片 -->
@@ -23,13 +23,13 @@
       </aside>
 
       <section class="auth-form-card">
-        <!-- Back to Home -->
+        <!-- 返回首页 -->
         <button class="back-btn" @click="router.push('/')">
           <el-icon><ArrowLeft /></el-icon>
           <span>返回</span>
         </button>
 
-        <!-- Tab Switcher -->
+        <!-- 登录/注册切换 -->
         <div class="auth-tabs">
           <button
             class="auth-tab"
@@ -48,7 +48,7 @@
           <div class="tab-indicator" :class="activeTab"></div>
         </div>
 
-        <!-- Login Form -->
+        <!-- 登录表单 -->
         <div v-show="activeTab === 'login'" class="form-wrapper">
           <div class="form-heading">
             <h2>欢迎回来</h2>
@@ -107,7 +107,7 @@
           </el-form>
         </div>
 
-        <!-- Register Form -->
+        <!-- 注册表单 -->
         <div v-show="activeTab === 'register'" class="form-wrapper">
           <div class="form-heading">
             <h2>创建账户</h2>
@@ -253,14 +253,14 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 
-// ── Tab State ──────────────────────────────────────────────────────────────
+// ── Tab 状态 ──────────────────────────────────────────────────────────────
 const activeTab = ref<'login' | 'register'>('login')
 
 function switchTab(tab: 'login' | 'register') {
   activeTab.value = tab
 }
 
-// ── Login ──────────────────────────────────────────────────────────────────
+// ── 登录 ──────────────────────────────────────────────────────────────────
 const loginFormRef = ref<FormInstance>()
 const loginLoading = ref(false)
 const loginForm = reactive({ username: '', password: '' })
@@ -286,7 +286,7 @@ async function handleLogin() {
   }
 }
 
-// ── Register ────────────────────────────────────────────────────────────────
+// ── 注册 ────────────────────────────────────────────────────────────────
 const registerFormRef = ref<FormInstance>()
 const registerLoading = ref(false)
 const registerForm = reactive({
@@ -380,7 +380,7 @@ async function handleRegister() {
   background: #0a0a0a;
 }
 
-// ── Background ─────────────────────────────────────────────────────────────
+// ── 背景 ─────────────────────────────────────────────────────────────
 // 背景由 BgCubeCanvas 组件接管
 // 如需叠加图片背景，可在 .auth-page 添加 background-image
 
@@ -505,7 +505,7 @@ async function handleRegister() {
   }
 }
 
-// ── Back Button ────────────────────────────────────────────────────────────
+// ── 返回按钮 ────────────────────────────────────────────────────────────
 .back-btn {
   position: absolute;
   top: 16px;
@@ -529,7 +529,7 @@ async function handleRegister() {
   }
 }
 
-// ── Tab Switcher ───────────────────────────────────────────────────────────
+// ── Tab 切换 ───────────────────────────────────────────────────────────
 .auth-tabs {
   display: flex;
   position: relative;
@@ -578,7 +578,7 @@ async function handleRegister() {
   }
 }
 
-// ── Form ──────────────────────────────────────────────────────────────────
+// ── 表单 ──────────────────────────────────────────────────────────────────
 .form-wrapper {
   animation: fadeIn 0.2s ease;
 }
@@ -629,7 +629,7 @@ async function handleRegister() {
   }
 }
 
-// ── Responsive ─────────────────────────────────────────────────────────────
+// ── 响应式 ─────────────────────────────────────────────────────────────
 @media (max-width: 768px) {
   .auth-page {
     padding: 20px;

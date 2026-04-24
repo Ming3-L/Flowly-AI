@@ -1,8 +1,8 @@
 """
-Observability API — Phase 10: Observability
+可观测性 API —— Phase 10：Observability
 
-Analytics endpoints for usage, cost, and performance monitoring.
-Also provides integration with LangSmith/Langfuse for tracing.
+提供用量、成本与性能监控的统计接口。
+并支持与 LangSmith / Langfuse 集成，用于链路追踪（tracing）。
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from .models import Workflow, WorkflowExecution
 from .cost_tracker import get_cost_tracker
 
 
-# ─── Schemas ─────────────────────────────────────────────────────────────────
+# ─── 数据结构（Schema）─────────────────────────────────────────────────────────
 
 class UsageDataPointSchema(Schema):
     date: str
@@ -89,13 +89,13 @@ class WorkflowStatsSchema(Schema):
     avg_duration_seconds: float | None
 
 
-# ─── Router ─────────────────────────────────────────────────────────────────
+# ─── 路由（Router）───────────────────────────────────────────────────────────
 
 router = Router(tags=["Observability / Analytics"], auth=JWTAuth())
 
 
 def _parse_date(d: Optional[str], default: date) -> date:
-    """Parse date string 'YYYY-MM-DD' to date object."""
+    """将日期字符串（YYYY-MM-DD）解析为 date 对象。"""
     if not d:
         return default
     try:
@@ -113,13 +113,13 @@ def get_usage_analytics(
     workflow_id: Optional[int] = None,
 ) -> UsageAnalyticsSchema:
     """
-    Usage analytics: execution counts over time.
+    用量统计：按时间聚合执行次数。
 
-    Args:
-        start_date: Start date (default: 30 days ago)
-        end_date: End date (default: today)
-        granularity: 'day' | 'week' | 'month'
-        workflow_id: Filter by specific workflow (optional)
+    参数：
+        start_date：开始日期（默认：30 天前）
+        end_date：结束日期（默认：今天）
+        granularity：'day' | 'week' | 'month'
+        workflow_id：可选，按指定工作流过滤
     """
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
@@ -138,7 +138,7 @@ def get_usage_analytics(
     if workflow_id:
         queryset = queryset.filter(workflow_id=workflow_id)
 
-    # Group by date
+    # 按日期聚合
     trunc_map = {
         "day": TruncDate("started_at"),
         "week": TruncWeek("started_at"),
@@ -232,24 +232,24 @@ def get_cost_analytics(
     else:
         queryset = queryset.filter(user=u)
 
-    # Total
+    # 总计
     totals = queryset.aggregate(
         total_cost=django_models.Sum("total_cost_usd"),
         total_input=django_models.Sum("input_tokens"),
         total_output=django_models.Sum("output_tokens"),
     )
 
-    # By model
+    # 按模型分组
     model_breakdown = get_cost_tracker().get_model_breakdown(start, end)
     if user_id:
-        pass  # Already filtered above
+        pass  # 已在上方过滤
     else:
         model_breakdown = [
             row for row in model_breakdown
-            if True  # All models for the user
+            if True  # 当前用户的全部模型
         ]
 
-    # By date
+    # 按日期分组
     by_date_qs = (
         queryset.annotate(day=TruncDate("created_at"))
         .values("day")
@@ -324,7 +324,7 @@ def get_performance_analytics(
     p95 = percentile(latencies, 0.95)
     p99 = percentile(latencies, 0.99)
 
-    # Slowest workflows (by avg duration)
+    # 最慢的工作流（按平均耗时）
     slowest = (
         Workflow.objects.filter(user=u, is_deleted=False)
         .annotate(
@@ -401,7 +401,7 @@ def get_workflow_stats(
         )
         avg_seconds = avg_dur.total_seconds() if avg_dur else None
 
-        # Average cost from cost records
+        # 从成本记录计算平均成本
         cost_sum = (
             wf.cost_records.filter(
                 created_at__date__gte=start,

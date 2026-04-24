@@ -1,6 +1,6 @@
 <template>
   <div class="workflow-list-page">
-    <!-- Header -->
+    <!-- 页头 -->
     <div class="list-header">
       <h1>工作流</h1>
       <div class="header-actions">
@@ -19,7 +19,7 @@
       </div>
     </div>
 
-    <!-- Search & Filter -->
+    <!-- 搜索与筛选 -->
     <div class="list-toolbar">
       <el-input
         v-model="search"
@@ -41,7 +41,7 @@
       </el-select>
     </div>
 
-    <!-- Table -->
+    <!-- 表格 -->
     <div class="list-content">
       <el-table
         :data="workflows"
@@ -127,14 +127,14 @@
         </el-table-column>
       </el-table>
 
-      <!-- Empty state -->
+      <!-- 空状态 -->
       <div v-if="!isLoading && workflows.length === 0" class="empty-state">
         <el-empty description="暂无工作流">
           <el-button type="primary" @click="showCreateDialog = true">创建第一个工作流</el-button>
         </el-empty>
       </div>
 
-      <!-- Pagination -->
+      <!-- 分页 -->
       <div v-if="total > pageSize" class="pagination">
         <el-pagination
           v-model:current-page="currentPage"
@@ -146,7 +146,7 @@
       </div>
     </div>
 
-    <!-- Create Dialog -->
+    <!-- 新建弹窗 -->
     <el-dialog
       v-model="showCreateDialog"
       title="新建工作流"
@@ -337,7 +337,7 @@ async function handleDelete(row: any) {
     ElMessage.success('删除成功')
     fetchWorkflows()
   } catch {
-    // cancelled
+    // 已取消
   }
 }
 
@@ -364,7 +364,7 @@ async function handleBatchDelete() {
     selectedRows.value = []
     fetchWorkflows()
   } catch {
-    // cancelled
+    // 已取消
   }
 }
 

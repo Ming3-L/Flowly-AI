@@ -12,6 +12,10 @@ from pydantic import Field  # pyright: ignore[reportMissingImports]
 from ai_engine.auth import JWTAuth
 from ai_engine.conversation import persist as chat_persist
 from ai_engine.models import ConversationMessage, ConversationSession
+from ai_engine.models import AIModelCatalogEntry, LocalMediaAsset
+from ai_engine.local_media_store import save_local_media_bytes
+from ai_engine.integrations.ark_generative import ark_images_generate_url, ark_video_generate_poll
+from ai_engine.execution_media_services import fetch_url_bytes, openai_tts_bytes
 
 chat_sessions_router = Router(tags=["Chat Sessions"], auth=JWTAuth())
 
@@ -207,12 +211,114 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
             parts.append("【附件】\n" + "\n".join(lines))
     human_text = "\n\n".join([p for p in parts if p.strip()]).strip()
 
-    # 解析模型：优先 model_key（支持 smart-router），否则走默认 doubao 配置
+    # 解析模型：优先 model_key（支持 smart-router）；对于非 ark_chat 的目录项，走对应生成能力分流
     model_key = (payload.model_key or "").strip()
     route = "doubao"
     model_id = ""
     overrides: dict[str, Any] = {}
     if model_key:
+        entry = AIModelCatalogEntry.objects.filter(catalog_key=model_key, is_active=True).first()
+        if entry is not None and str(entry.api_kind or "") != AIModelCatalogEntry.ApiKind.ARK_CHAT:
+            ak = str(entry.api_kind or "")
+            mid = (entry.model_id or "").strip()
+            user_prompt = (latest_query or user_text or "").strip() or human_text
+
+            try:
+                if ak == AIModelCatalogEntry.ApiKind.ARK_IMAGE_GEN:
+                    if not mid:
+                        raise ValueError(f"目录项「{entry.label}」未配置 model_id")
+                    gen_url = ark_images_generate_url(model_id=mid, prompt=user_prompt, size="2K", watermark=False)
+                    raw, ct = fetch_url_bytes(gen_url)
+                    saved = save_local_media_bytes(
+                        user_id=u.pk,
+                        kind=LocalMediaAsset.Kind.IMAGE,
+                        data=raw,
+                        mime=ct or "image/png",
+                        original_name="generated.png",
+                        source_url=gen_url,
+                    )
+                    assistant_text = (
+                        f"已生成图片（{entry.label}）。\n"
+                        f"预览链接：{saved['public_url']}\n"
+                        f"下载链接：{saved['proxy_url']}\n"
+                    )
+                elif ak == AIModelCatalogEntry.ApiKind.ARK_VIDEO_GEN:
+                    if not mid:
+                        raise ValueError(f"目录项「{entry.label}」未配置 model_id")
+                    ref_img = ""
+                    for a in (payload.attachments or []):
+                        if str(a.type or "").strip().lower() == "image" and str(a.url or "").strip():
+                            ref_img = str(a.url).strip()
+                            break
+                    vid_url, _raw = ark_video_generate_poll(
+                        model_id=mid,
+                        prompt_text=user_prompt,
+                        image_url=ref_img or None,
+                        duration=5,
+                        resolution="720p",
+                        ratio="16:9",
+                        watermark=False,
+                        poll_interval_s=3.0,
+                        timeout_s=600.0,
+                    )
+                    if not vid_url:
+                        raise RuntimeError("视频任务已完成但未解析到 video_url")
+                    raw, ct = fetch_url_bytes(vid_url, max_bytes=80 * 1024 * 1024)
+                    saved = save_local_media_bytes(
+                        user_id=u.pk,
+                        kind=LocalMediaAsset.Kind.VIDEO,
+                        data=raw,
+                        mime=ct or "video/mp4",
+                        original_name="generated.mp4",
+                        source_url=vid_url,
+                    )
+                    assistant_text = (
+                        f"已生成视频（{entry.label}）。\n"
+                        f"预览链接：{saved['public_url']}\n"
+                        f"下载链接：{saved['proxy_url']}\n"
+                    )
+                elif ak == AIModelCatalogEntry.ApiKind.OPEN_SPEECH:
+                    audio, ct = openai_tts_bytes(text=user_prompt, voice="alloy", response_format="mp3")
+                    saved = save_local_media_bytes(
+                        user_id=u.pk,
+                        kind=LocalMediaAsset.Kind.AUDIO,
+                        data=audio,
+                        mime=ct or "audio/mpeg",
+                        original_name="tts.mp3",
+                        source_url="",
+                    )
+                    assistant_text = (
+                        "已生成音频（TTS）。\n"
+                        f"预览链接：{saved['public_url']}\n"
+                        f"下载链接：{saved['proxy_url']}\n"
+                    )
+                else:
+                    raise ValueError(f"暂不支持的 api_kind: {ak}")
+            except Exception as exc:
+                assistant_text = f"错误: {exc}"
+
+            try:
+                chat_persist.record_assistant_reply(session_id=sess.pk, content=assistant_text)
+            except Exception:
+                pass
+            row = (
+                ConversationMessage.objects.filter(session=sess, role=ConversationMessage.Role.ASSISTANT)
+                .order_by("-created_at")
+                .first()
+            )
+            if row is None:
+                return ChatSendOutSchema(ok=True, assistant_message=None, error=None)
+            return ChatSendOutSchema(
+                ok=True,
+                assistant_message=ChatMessageOutSchema(
+                    id=row.pk,
+                    role=row.role,
+                    content=row.content or "",
+                    created_at=row.created_at.isoformat() if row.created_at else "",
+                ),
+                error=None,
+            )
+
         from ai_engine.ai_model_catalog import get_user_preset_llm_overrides, resolve_route_and_model_id
 
         route, model_id, cat_key = resolve_route_and_model_id({"modelKey": model_key}, user_id=u.pk)

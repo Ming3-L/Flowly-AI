@@ -1,8 +1,7 @@
 """
-Basic LangGraph Workflow Definition
+基础 LangGraph 工作流定义
 
-A simple workflow graph demonstrating routing between a chat node
-and a tool node based on the LLM's output.
+一个示例工作流图：根据 LLM 输出在 chat 节点与 tool 节点之间路由。
 """
 
 from typing import Annotated, Literal, TypedDict
@@ -12,22 +11,22 @@ from langgraph.graph import END, StateGraph
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# State Schema
+# State 结构（Schema）
 # ─────────────────────────────────────────────────────────────────────────────
 
 class WorkflowState(TypedDict):
-    """State schema shared across all workflow nodes.
+    """所有工作流节点共享的 State 结构（Schema）。
 
-    Fields:
-        query:        Original user query.
-        context:      Additional context passed by the caller.
-        messages:     Full message history (HumanMessage + AIMessage chain).
-        status:       Current workflow status for frontend display.
-                      Values: thinking | calling_tool | finished | pending_approval | failed
-        current_node: Name of the node currently executing.
-        result:       Final output after workflow completes.
-        error:        Error message if workflow fails.
-        resume_value: User-supplied value when resuming from a human-in-the-loop interrupt.
+    字段：
+        query：原始用户问题。
+        context：调用方透传的额外上下文。
+        messages：完整消息历史（HumanMessage + AIMessage 链）。
+        status：用于前端展示的工作流状态。
+               可选值：thinking | calling_tool | finished | pending_approval | failed
+        current_node：当前正在执行的节点名称。
+        result：工作流完成后的最终输出。
+        error：失败时的错误信息。
+        resume_value：人审（human-in-the-loop）中断后恢复时由用户提供的值。
     """
     query: str
     context: dict
@@ -40,19 +39,19 @@ class WorkflowState(TypedDict):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Node Functions
+# 节点函数（Node Functions）
 # ─────────────────────────────────────────────────────────────────────────────
 
 def chat_node(state: WorkflowState) -> WorkflowState:
     """
-    LLM chat node. Analyses the query and decides whether a tool must be called.
+    LLM chat 节点：分析 query，并决定是否需要调用工具。
 
-    The LLM returns a structured JSON with:
-        action: "respond" | "call_tool" | "need_approval"
-        reasoning: why this action was chosen
-        tool_name: name of the tool to call (if action == call_tool)
-        tool_params: parameters for the tool (if action == call_tool)
-        response: text response to show to the user (if action == respond)
+    LLM 返回一个结构化 JSON，包含：
+        action："respond" | "call_tool" | "need_approval"
+        reasoning：为何选择该 action
+        tool_name：要调用的工具名（当 action == call_tool）
+        tool_params：工具入参（当 action == call_tool）
+        response：要展示给用户的文本回复（当 action == respond）
     """
     llm = _build_llm()
 
@@ -68,7 +67,7 @@ def chat_node(state: WorkflowState) -> WorkflowState:
         ("system", system_prompt),
         ("human", state["query"]),
     ]
-    # langchain uses (role, content) tuples
+    # langchain 使用 (role, content) 形式的元组/对象
     ai_msg = llm.invoke([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": state["query"]},
@@ -101,7 +100,7 @@ def chat_node(state: WorkflowState) -> WorkflowState:
             "status": "calling_tool",
             "current_node": "chat",
         }
-        # store tool call in context for the tool node to pick up
+        # 将工具调用信息写入 context，供 tool 节点读取
         state["context"] = {
             **state.get("context", {}),
             "tool_name": decision.get("tool_name", "unknown"),
@@ -125,16 +124,15 @@ def chat_node(state: WorkflowState) -> WorkflowState:
 
 def tool_node(state: WorkflowState) -> WorkflowState:
     """
-    Tool execution node. Runs a tool using the parameters provided
-    by the chat node's decision, then appends the result to the message
-    history and returns control to the chat node for final response.
+    工具执行节点：使用 chat 节点决策给出的参数调用工具，
+    将结果追加到消息历史后，再返回给 chat 节点生成最终回复。
     """
     tool_name = state.get("context", {}).get("tool_name", "unknown")
     tool_params = state.get("context", {}).get("tool_params", {})
 
-    # Placeholder tool executor — replace with actual tool bindings
-    # e.g. from langchain_core.tools import tool
-    # and call: result = await bound_tool.invoke(tool_params)
+    # 占位工具执行器：需替换为真实的 tool 绑定
+    # 例如：from langchain_core.tools import tool
+    # 然后调用：result = await bound_tool.invoke(tool_params)
     result_content = f"[Tool: {tool_name}] Executed with params: {tool_params}"
 
     tool_msg = AIMessage(content=result_content)
@@ -152,13 +150,12 @@ def tool_node(state: WorkflowState) -> WorkflowState:
 
 def format_response_node(state: WorkflowState) -> WorkflowState:
     """
-    Final node. Formats the accumulated messages into a clean user-facing
-    response and sets the workflow status to finished.
+    最终节点：将累积的消息整理为面向用户的回复，并将状态置为 finished。
     """
     last_message = state["messages"][-1] if state["messages"] else None
 
     response_text = (
-        last_message.content if last_message else "Workflow completed with no output."
+        last_message.content if last_message else "工作流已完成，但没有输出。"
     )
 
     return {
@@ -175,18 +172,18 @@ def format_response_node(state: WorkflowState) -> WorkflowState:
 
 def approval_node(state: WorkflowState) -> WorkflowState:
     """
-    Human-in-the-loop node. When the workflow reaches this node it pauses
-    (via LangGraph interrupt) waiting for the user to call the resume endpoint.
+    人审（human-in-the-loop）节点：当工作流运行到此节点时会暂停
+    （通过 LangGraph interrupt），等待用户调用 resume 接口继续执行。
 
-    The resume_value injected by the resume endpoint controls the flow:
-      - If approved: continue to format_response.
-      - If rejected: jump to the failed terminal.
+    resume 接口注入的 resume_value 决定走向：
+      - 通过：继续进入 format_response
+      - 拒绝：跳转到失败终态
     """
     resume_value = state.get("resume_value")
 
     if resume_value is None:
-        # Interrupted — the workflow runner should have called interrupt() here.
-        # We set a sentinel so the API consumer knows to prompt the user.
+        # 已中断：工作流 runner 理应在此调用 interrupt()
+        # 这里设置一个哨兵状态，便于 API 侧提示用户
         return {
             **state,
             "status": "pending_approval",
@@ -199,41 +196,41 @@ def approval_node(state: WorkflowState) -> WorkflowState:
             **state,
             "status": "finished",
             "current_node": "approval",
-            "result": {"approval": True, "message": "User approved."},
+            "result": {"approval": True, "message": "用户已通过。"},
         }
     else:
         return {
             **state,
             "status": "failed",
             "current_node": "approval",
-            "error": "User rejected the pending action.",
-            "result": {"approval": False, "message": "User rejected."},
+            "error": "用户拒绝了待执行的操作。",
+            "result": {"approval": False, "message": "用户已拒绝。"},
         }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Routing Logic
+# 路由逻辑（Routing）
 # ─────────────────────────────────────────────────────────────────────────────
 
 def should_use_tool(state: WorkflowState) -> Literal["tool_node", "format_response"]:
-    """Route after chat_node: go to tool_node if status is calling_tool, else format_response."""
+    """chat_node 之后的路由：status=calling_tool 则走 tool_node，否则走 format_response。"""
     if state.get("status") == "calling_tool":
         return "tool_node"
     return "format_response"
 
 
 def should_format_or_retry(state: WorkflowState) -> Literal["format_response", "chat_node"]:
-    """Route after tool_node: always format_response (retry is handled by the chat node)."""
+    """tool_node 之后的路由：固定走 format_response（重试由 chat 节点处理）。"""
     return "format_response"
 
 
 def should_continue_or_end(state: WorkflowState) -> Literal["format_response", "__end__"]:
-    """Route after format_response: always end."""
+    """format_response 之后的路由：固定结束。"""
     return "__end__"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Graph Builder
+# 图构建（Graph Builder）
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _build_llm():
@@ -244,26 +241,26 @@ def _build_llm():
 
 def build_basic_workflow() -> StateGraph:
     """
-    Builds and compiles the basic workflow graph.
+    构建并编译基础工作流图。
 
-    Graph structure:
+    图结构：
         chat_node ──┬── [calling_tool] ──→ tool_node ──→ format_response ── END
                     └── [otherwise] ───────→ format_response ── END
 
-    Returns the compiled StateGraph ready to be invoked with .ainvoke().
+    返回：可直接通过 .ainvoke() 调用的已编译 StateGraph。
     """
     workflow = StateGraph(WorkflowState)
 
-    # Add nodes
+    # 添加节点
     workflow.add_node("chat_node", chat_node)
     workflow.add_node("tool_node", tool_node)
     workflow.add_node("format_response", format_response_node)
     workflow.add_node("approval_node", approval_node)
 
-    # Set entry point
+    # 设置入口
     workflow.set_entry_point("chat_node")
 
-    # Edges
+    # 连线（Edges）
     workflow.add_conditional_edges(
         "chat_node",
         should_use_tool,
@@ -275,7 +272,7 @@ def build_basic_workflow() -> StateGraph:
     workflow.add_edge("tool_node", "format_response")
     workflow.add_edge("format_response", END)
 
-    # Approval subgraph edge (triggered when chat_node sets pending_approval)
+    # 人审子路径（当 chat_node 将 status 置为 pending_approval 时触发）
     workflow.add_conditional_edges(
         "chat_node",
         lambda s: "approval_node" if s.get("status") == "pending_approval" else should_use_tool(s),
@@ -295,7 +292,7 @@ def build_basic_workflow() -> StateGraph:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Checkpointer (Django persistence)
+# Checkpointer（Django 持久化）
 # ─────────────────────────────────────────────────────────────────────────────
 
 _checkpointer: "DjangoSaver | None" = None
@@ -310,14 +307,14 @@ def get_checkpointer() -> "DjangoSaver":
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Compiled Graph Singleton
+# 已编译图单例（Singleton）
 # ─────────────────────────────────────────────────────────────────────────────
 
 _compiled: StateGraph | None = None
 
 
 def get_compiled_graph() -> StateGraph:
-    """Returns the compiled workflow graph (singleton)."""
+    """返回已编译的工作流图（单例）。"""
     global _compiled
     if _compiled is None:
         builder = build_basic_workflow()
@@ -326,7 +323,7 @@ def get_compiled_graph() -> StateGraph:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Public Invocation API
+# 对外调用 API
 # ─────────────────────────────────────────────────────────────────────────────
 
 def run_workflow(
@@ -335,15 +332,15 @@ def run_workflow(
     resume_value: str | None = None,
 ) -> dict:
     """
-    Synchronous entrypoint to run the basic workflow.
+    同步入口：运行基础工作流。
 
-    Args:
-        query:        User query string.
-        context:      Optional dict of additional context.
-        resume_value: Pass a value to resume from a pending_approval state.
+    参数：
+        query：用户问题。
+        context：可选额外上下文。
+        resume_value：当处于 pending_approval 状态时，用于恢复执行的值。
 
-    Returns:
-        The final WorkflowState dict.
+    返回：
+        最终 WorkflowState 字典。
     """
     from langgraph.checkpoint.memory import MemorySaver
 
@@ -361,11 +358,11 @@ def run_workflow(
         "resume_value": resume_value,
     }
 
-    # Run with a MemorySaver in-process when no DB checkpointer is configured
+    # 当未配置 DB checkpointer 时，使用进程内 MemorySaver 运行
     try:
         result = graph.invoke(initial_input, config=config)
     except Exception:
-        # Fallback to in-memory checkpointer if DB not ready
+        # 回退：DB 未就绪时使用内存 checkpointer
         mem = MemorySaver()
         builder = build_basic_workflow()
         mem_graph = builder.compile(checkpointer=mem)

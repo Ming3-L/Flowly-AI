@@ -35,6 +35,10 @@ class AIModelEntrySchema(Schema):
     label: str
     description: str
     route: str
+    modalities: list[str] = Field(
+        default_factory=list,
+        description="支持的输入模态：text/image/audio/video（用于前端控制附件发送）",
+    )
     source: str = Field(
         default="project",
         description="catalog=数据库目录；project=代码内置；user=当前用户自定义",

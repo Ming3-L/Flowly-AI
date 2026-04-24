@@ -5,9 +5,7 @@ from .models import (
     AutoReplyChatHistoryEntry,
     AutoReplyJob,
     AutoReplyKnowledgeEntry,
-    AutoReplyMonitorLogLine,
     AutoReplyRule,
-    AutoReplyScreenEvent,
     AutoReplyScreenProfile,
     ConversationMessage,
     ConversationSession,
@@ -49,7 +47,7 @@ class UILabelAdmin(admin.ModelAdmin):
 
 @admin.register(Workflow)
 class WorkflowAdmin(admin.ModelAdmin):
-    """Admin configuration for Workflow model."""
+    """Workflow 模型的后台管理配置。"""
     list_display = ["id", "name", "is_active", "created_at", "updated_at"]
     list_filter = ["is_active", "created_at"]
     search_fields = ["name", "description"]
@@ -65,7 +63,7 @@ class WorkflowAdmin(admin.ModelAdmin):
 
 @admin.register(Thread)
 class ThreadAdmin(admin.ModelAdmin):
-    """Admin configuration for Thread model."""
+    """Thread 模型的后台管理配置。"""
     list_display = ["id", "thread_id", "workflow", "user", "created_at", "updated_at"]
     list_filter = ["workflow", "created_at"]
     search_fields = ["thread_id"]
@@ -76,7 +74,7 @@ class ThreadAdmin(admin.ModelAdmin):
 
 @admin.register(WorkflowExecution)
 class WorkflowExecutionAdmin(admin.ModelAdmin):
-    """Admin configuration for WorkflowExecution model."""
+    """WorkflowExecution 模型的后台管理配置。"""
     list_display = [
         "id", "workflow", "status", "started_at", "completed_at"
     ]
@@ -95,7 +93,7 @@ class WorkflowExecutionAdmin(admin.ModelAdmin):
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
-    """Admin for knowledge base documents (Phase 8: RAG)."""
+    """知识库文档的后台管理（Phase 8：RAG）。"""
     list_display = ["id", "filename", "workflow", "file_type", "processing_status", "chunk_count", "created_at"]
     list_filter = ["processing_status", "file_type", "workflow"]
     search_fields = ["filename", "title"]
@@ -205,7 +203,7 @@ class UserChatModelPresetAdmin(admin.ModelAdmin):
 
 @admin.register(CostRecord)
 class CostRecordAdmin(admin.ModelAdmin):
-    """Admin for LLM cost tracking (Phase 10: Observability)."""
+    """LLM 成本追踪的后台管理（Phase 10：可观测性）。"""
     list_display = [
         "id",
         "model",
@@ -271,30 +269,4 @@ class AutoReplyChatHistoryEntryAdmin(admin.ModelAdmin):
     list_filter = ["role"]
     search_fields = ["content", "user__username"]
     raw_id_fields = ["user"]
-
-
-@admin.register(AutoReplyMonitorLogLine)
-class AutoReplyMonitorLogLineAdmin(admin.ModelAdmin):
-    list_display = ["id", "user", "level", "line_preview", "created_at"]
-    list_filter = ["level"]
-    search_fields = ["line", "user__username"]
-    raw_id_fields = ["user"]
-
-    @admin.display(description="内容")
-    def line_preview(self, obj: AutoReplyMonitorLogLine) -> str:
-        return (obj.line or "")[:100]
-
-
-@admin.register(AutoReplyScreenEvent)
-class AutoReplyScreenEventAdmin(admin.ModelAdmin):
-    list_display = ["id", "user", "event_type", "message_preview", "created_at"]
-    list_filter = ["event_type"]
-    search_fields = ["message", "user__username"]
-    raw_id_fields = ["user"]
-    readonly_fields = ["created_at"]
-
-    @admin.display(description="说明")
-    def message_preview(self, obj: AutoReplyScreenEvent) -> str:
-        t = (obj.message or "")[:80]
-        return t + ("…" if len(obj.message or "") > 80 else "")
 

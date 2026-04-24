@@ -1,6 +1,6 @@
 <template>
   <div class="chat-page">
-    <!-- Sidebar: session list -->
+    <!-- 侧边栏：会话列表 -->
     <aside class="chat-sidebar">
       <div class="sidebar-header">
         <span class="sidebar-title">对话历史</span>
@@ -63,9 +63,9 @@
       </div>
     </aside>
 
-    <!-- Main chat area -->
+    <!-- 主聊天区域 -->
     <main class="chat-main">
-      <!-- Messages -->
+      <!-- 消息列表 -->
       <div class="messages-area" ref="messagesAreaRef">
         <div v-if="messages.length === 0" class="empty-state">
           <el-icon class="empty-icon"><ChatDotRound /></el-icon>
@@ -96,7 +96,7 @@
           </div>
         </div>
 
-        <!-- Streaming indicator -->
+        <!-- 流式输出提示 -->
         <div v-if="streaming" class="message-wrapper assistant">
           <div class="message-avatar">
             <el-icon class="avatar-icon"><MagicStick /></el-icon>
@@ -107,9 +107,22 @@
         </div>
       </div>
 
-      <!-- Input area -->
+      <!-- 输入区 -->
       <div class="chat-input-area">
         <div class="chat-input-wrapper">
+          <div class="attach-row">
+            <el-upload
+              v-model:file-list="chatFileList"
+              :auto-upload="false"
+              :multiple="true"
+              :limit="4"
+              :disabled="streaming"
+              accept="image/*,audio/*,video/*"
+            >
+              <el-button size="small" :disabled="streaming">选择附件</el-button>
+            </el-upload>
+            <span class="attach-tip">可选：图片/音频/视频（图片将参与多模态理解，其它作为链接附带）</span>
+          </div>
           <el-input
             v-model="inputText"
             type="textarea"
@@ -183,6 +196,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/utils/api'
+import type { UploadUserFile } from 'element-plus'
 
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
@@ -209,19 +223,22 @@ const selectionMode = ref(false)
 const selectedSessionIds = ref<Set<number>>(new Set())
 const selectedCount = ref(0)
 
-let ws: WebSocket | null = null // legacy (workflow streaming); chat send API no longer uses WS
-useAuthStore() // ensure auth store initialized for JWT handling
+let ws: WebSocket | null = null // 兼容旧实现（工作流流式）；当前聊天发送接口已不再使用 WebSocket
+useAuthStore() // 确保认证状态管理初始化，用于 JWT 处理
 
 type AiModelRow = {
   key: string
   label: string
   route: string
+  modalities?: string[]
   api_kind?: string
   show_in_canvas_llm_nodes?: boolean
+  source?: string
 }
 
 const availableModels = ref<AiModelRow[]>([])
 const selectedModelKey = ref<string>('')
+const chatFileList = ref<UploadUserFile[]>([])
 
 function loadSavedModelKey() {
   const saved = localStorage.getItem('flowly_chat_model_key') || ''
@@ -236,12 +253,10 @@ async function fetchModelCatalog() {
   try {
     const { data } = await api.get<{ models: AiModelRow[] }>('/ai/models')
     const rows = Array.isArray(data?.models) ? data.models : []
-    // 仅展示对话类（ark_chat）与可用于画布 LLM 的模型；避免把 embedding/生图等混进来
+    // 显示全部模型目录（含生图/生视频/语音等），由后端按 api_kind 分流处理
     availableModels.value = rows
-      .filter((m) => (m.api_kind ?? 'ark_chat') === 'ark_chat')
-      .filter((m) => m.show_in_canvas_llm_nodes !== false)
     if (!selectedModelKey.value) {
-      // 默认优先 smart-router（更贴近豆包体验）；若账号无权限会在后端映射到默认接入点
+      // 默认优先“智能路由”（更贴近豆包体验）；若账号无权限会在后端映射到默认接入点
       const preferred =
         availableModels.value.find((m) => m.key === 'ark-doubao-smart-router')?.key ||
         availableModels.value.find((m) => m.key === 'doubao-default')?.key ||
@@ -270,21 +285,27 @@ function renderMarkdown(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 
-  // Code blocks (```language\ncode\n```)
+  // 简单链接化（http(s) / 站内 /api/...）
+  html = html.replace(
+    /((https?:\/\/[^\s<]+)|((\/api)\/[^\s<]+))/g,
+    (m) => `<a href="${m}" target="_blank" rel="noopener noreferrer">${m}</a>`
+  )
+
+  // 代码块（```语言标识\n代码\n```）
   html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _lang, code) => {
     return `<pre class="code-block"><code>${code.trim()}</code></pre>`
   })
 
-  // Inline code (`code`)
+  // 行内代码（`code`）
   html = html.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
 
-  // Bold (**text**)
+  // 粗体（**text**）
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
 
-  // Italic (*text*)
+  // 斜体（*text*）
   html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>')
 
-  // Line breaks
+  // 换行
   html = html.replace(/\n/g, '<br>')
 
   return html
@@ -400,11 +421,11 @@ function syncSidebarTitleFromMessages() {
 
 function retryLast() {
   if (messages.value.length === 0) return
-  // Find the last user message
+  // 找到最后一条用户消息
   const userMsgIdx = messages.value.map(m => m.role).lastIndexOf('user')
   if (userMsgIdx === -1) return
 
-  // Trim to user message
+  // 回退到该条用户消息之前，并将其内容放回输入框
   const userMsg = messages.value[userMsgIdx]
   messages.value = messages.value.slice(0, userMsgIdx)
   inputText.value = userMsg.content
@@ -446,22 +467,58 @@ function effectiveChatModelKey(): string {
   return raw || 'doubao-default'
 }
 
+function currentModel(): AiModelRow | null {
+  const key = effectiveChatModelKey()
+  return availableModels.value.find((m) => m.key === key) ?? null
+}
+
 async function streamResponse(query: string, sessionId: number) {
   streaming.value = true
   streamingContent.value = ''
 
   try {
+    const cm = currentModel()
+    const mods = new Set((cm?.modalities ?? []).map((x) => String(x).toLowerCase()))
+    const allowImageMm = (cm?.api_kind ?? 'ark_chat') === 'ark_chat' && mods.has('image')
+
+    // 先上传附件（得到 public_url 供多模态模型抓取）
+    const attachments: Array<{ type: string; url: string }> = []
+    for (const f of chatFileList.value) {
+      const raw = f.raw as File | undefined
+      if (!raw) continue
+      const fd = new FormData()
+      fd.append('file', raw)
+      const res = await api.post('/media/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      })
+      const mime = String(res.data?.mime || raw.type || '').toLowerCase()
+      const url = String(res.data?.public_url || res.data?.proxy_url || '')
+      const kind =
+        mime.startsWith('image/') ? 'image' :
+        mime.startsWith('audio/') ? 'audio' :
+        mime.startsWith('video/') ? 'video' : 'file'
+      if (!url) continue
+      // 若当前对话模型不支持图像多模态，图片降级为普通附件链接，避免 400 InvalidParameter
+      if (kind === 'image' && !allowImageMm) {
+        attachments.push({ type: 'file', url })
+      } else {
+        attachments.push({ type: kind, url })
+      }
+    }
+
     const { data } = await api.post<{ ok: boolean; assistant_message?: ChatMessage; error?: string }>(
       `/chat/sessions/${sessionId}/send`,
       {
         content: query,
         model_key: effectiveChatModelKey(),
-        attachments: [],
+        attachments,
       }
     )
 
     streaming.value = false
     streamingContent.value = ''
+    chatFileList.value = []
 
     if (!data?.ok) {
       messages.value.push({
@@ -586,7 +643,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-// ── Sidebar ──────────────────────────────────────────────────────────────────
+// ── 侧边栏 ──────────────────────────────────────────────────────────────────
 
 .chat-sidebar {
   width: 240px;
@@ -693,7 +750,7 @@ onUnmounted(() => {
   color: #999999;
 }
 
-// ── Chat Main ────────────────────────────────────────────────────────────────
+// ── 聊天主区域 ────────────────────────────────────────────────────────────────
 
 .chat-main {
   flex: 1;
@@ -829,7 +886,7 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-// ── Input Area ──────────────────────────────────────────────────────────────
+// ── 输入区 ──────────────────────────────────────────────────────────────
 
 .chat-input-area {
   padding: 12px 20px;
@@ -842,6 +899,20 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.attach-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.attach-tip {
+  font-size: 12px;
+  color: #888;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .input-actions {

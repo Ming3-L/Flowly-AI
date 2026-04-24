@@ -100,7 +100,7 @@ def run_workflow_task(
             runtime_uid = int(str(ru).strip())
 
         async def _run():
-            # Import here to avoid circular imports and to get fresh event loop
+            # 放在这里 import：避免循环依赖，同时确保拿到新的事件循环
             from ai_engine.api import _run_workflow_async
             await _run_workflow_async(
                 execution_id=execution_id,
@@ -123,7 +123,7 @@ def run_workflow_task(
         finally:
             loop.close()
 
-        # ── Mark complete ──────────────────────────────────────────────────
+        # ── 标记完成 ──────────────────────────────────────────────────────
         execution.refresh_from_db()
         execution.status = "completed"
         execution.completed_at = timezone.now()
@@ -187,11 +187,11 @@ def cancel_workflow_task(
     from ai_engine.models import WorkflowExecution
     from django.core.cache import cache
 
-    # Revoke the task
+    # 撤销任务
     if task_id:
         self.app.control.revoke(task_id, terminate=True)
 
-    # Mark execution cancelled
+    # 标记执行已取消
     try:
         WorkflowExecution.objects.filter(id=execution_id).update(
             status="cancelled",

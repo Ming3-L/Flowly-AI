@@ -40,6 +40,22 @@ class UserProfile(models.Model):
         default='zh',
         verbose_name='界面语言',
     )
+
+    # 昵称与头像（存本地文件路径，实际文件在 MEDIA_ROOT 下）
+    nickname = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name="昵称",
+        help_text="展示在右上角与各页面的用户昵称；留空则回退 username。",
+    )
+    avatar_path = models.CharField(
+        max_length=512,
+        blank=True,
+        default="",
+        verbose_name="头像路径",
+        help_text="相对 MEDIA_ROOT 的路径（如 avatars/u1/xxx.png）；留空表示未设置。",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

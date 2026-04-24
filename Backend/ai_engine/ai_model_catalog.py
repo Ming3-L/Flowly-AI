@@ -177,11 +177,21 @@ _BY_MODEL_ID: dict[str, ChatModelPreset] = {
 
 
 def _preset_to_api_row(p: ChatModelPreset, *, source: str) -> dict[str, Any]:
+    # 简单从 canvas_node_kinds 推断可发送的模态
+    kinds = set(p.canvas_node_kinds or ())
+    modalities = ["text"]
+    if "image" in kinds:
+        modalities.append("image")
+    if "audio" in kinds:
+        modalities.append("audio")
+    if "video" in kinds:
+        modalities.append("video")
     return {
         "key": p.key,
         "label": p.label,
         "description": p.description,
         "route": p.route,
+        "modalities": modalities,
         "source": source,
         "category": p.category,
         "category_label": p.category_label,
@@ -198,11 +208,20 @@ def _preset_to_api_row(p: ChatModelPreset, *, source: str) -> dict[str, Any]:
 
 def _db_entry_to_api_row(entry: Any, *, source: str = "catalog") -> dict[str, Any]:
     """``entry`` 为 ``AIModelCatalogEntry`` ORM 实例。"""
+    kinds = set(entry.canvas_node_kinds or [])
+    modalities = ["text"]
+    if "image" in kinds:
+        modalities.append("image")
+    if "audio" in kinds:
+        modalities.append("audio")
+    if "video" in kinds:
+        modalities.append("video")
     return {
         "key": entry.catalog_key,
         "label": entry.label,
         "description": (entry.description or "").strip(),
         "route": entry.normalized_route(),
+        "modalities": modalities,
         "source": source,
         "category": entry.category,
         "category_label": entry.category_label,
@@ -248,12 +267,21 @@ def list_models_merged_for_api(user: Any | None) -> list[dict[str, Any]]:
         from ai_engine.models import UserChatModelPreset
 
         for row in UserChatModelPreset.objects.filter(user=user, is_active=True).order_by("-updated_at"):
+            kinds = set(CANVAS_LLM_NODE_KINDS)
+            modalities = ["text"]
+            if "image" in kinds:
+                modalities.append("image")
+            if "audio" in kinds:
+                modalities.append("audio")
+            if "video" in kinds:
+                modalities.append("video")
             out.append(
                 {
                     "key": row.api_model_key,
                     "label": row.display_name,
                     "description": (row.description or "").strip() or "用户自定义模型",
                     "route": row.normalized_route(),
+                    "modalities": modalities,
                     "source": "user",
                     "category": row.category,
                     "category_label": row.category_label,

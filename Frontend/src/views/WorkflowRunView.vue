@@ -1,7 +1,7 @@
 <template>
   <div class="workflow-run-view">
     <el-container>
-      <!-- Header -->
+      <!-- 页头 -->
       <el-header>
         <div class="header-content">
             <el-button text @click="$router.back()">
@@ -12,15 +12,15 @@
         </div>
       </el-header>
 
-      <!-- Main Content -->
+      <!-- 主内容 -->
       <el-main>
         <el-row :gutter="20">
-          <!-- Left: Runner Form -->
+          <!-- 左侧：运行表单 -->
           <el-col :xs="24" :sm="24" :md="10" :lg="8">
             <WorkflowRunner />
           </el-col>
 
-          <!-- Right: Monitor (Chat + Node Status) -->
+          <!-- 右侧：监控区（聊天 + 节点状态） -->
           <el-col :xs="24" :sm="24" :md="14" :lg="16">
             <WorkflowMonitor @reset="onMonitorReset" />
           </el-col>
@@ -43,7 +43,7 @@ const route = useRoute()
 const store = useWorkflowStore()
 const ui = useUiLabelsStore()
 
-// ── Title ───────────────────────────────────────────────────────────────────
+// ── 标题 ───────────────────────────────────────────────────────────────────
 
 const pageTitle = computed(() => {
   if (store.currentWorkflow) {
@@ -55,15 +55,21 @@ const pageTitle = computed(() => {
   return ui.t('wf.run.titleRun')
 })
 
-// ── Lifecycle ────────────────────────────────────────────────────────────────
+// ── 生命周期 ────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
-  // Pre-load workflows if not already loaded
+  // 若未加载过工作流列表，则先预加载
   if (store.workflows.length === 0) {
     await store.fetchWorkflows()
   }
 
-  // If navigated with a workflow ID, pre-select it
+  // 若携带 thread（执行历史点击进入），则优先加载历史回放
+  const thread = String(route.query.thread ?? '').trim()
+  if (thread) {
+    await store.loadThread(thread)
+  }
+
+  // 若路由携带 workflowId，则预选中对应工作流
   const workflowId = Number(route.params.id)
   if (workflowId && !isNaN(workflowId)) {
     const wf = store.workflows.find((w) => w.id === workflowId)
@@ -72,11 +78,11 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  // Cleanup SSE connection on component unmount
-  // (store's resetExecutionState handles it, but we clean explicitly here)
+  // 组件卸载时清理 SSE 连接
+  //（store.resetExecutionState 已处理，但此处保留显式清理入口）
 })
 
-// ── Handlers ─────────────────────────────────────────────────────────────────
+// ── 事件处理 ─────────────────────────────────────────────────────────────────
 
 function onMonitorReset() {
   store.resetExecutionState()

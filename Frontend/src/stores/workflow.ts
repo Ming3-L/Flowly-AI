@@ -147,6 +147,92 @@ export const useWorkflowStore = defineStore('workflow', () => {
     }
   }
 
+  function _mapMessageRole(role: string): ChatMessage['role'] {
+    const r = String(role || '').toLowerCase()
+    if (r === 'human' || r === 'user') return 'user'
+    if (r === 'ai' || r === 'assistant') return 'assistant'
+    if (r === 'tool') return 'tool'
+    if (r === 'system') return 'system'
+    return 'assistant'
+  }
+
+  function _hydrateFromState(st: WorkflowStateResponse) {
+    const meta = (st?.metadata ?? {}) as Record<string, any>
+
+    // 基础状态
+    workflowStatus.value = (st?.status as WorkflowStatus) ?? 'pending'
+    executionId.value = typeof meta.execution_id === 'number' ? meta.execution_id : null
+
+    // 消息回放
+    const rawMsgs = Array.isArray(st?.messages) ? st.messages : []
+    messages.value = rawMsgs
+      .map((m: any) => {
+        const role = _mapMessageRole(m?.role ?? m?.type)
+        const content = String(m?.content ?? '').trim()
+        if (!content) return null
+        return {
+          id: makeId(),
+          role,
+          content,
+          timestamp: new Date(),
+        } as ChatMessage
+      })
+      .filter(Boolean) as ChatMessage[]
+
+    // 节点时间线（复用现有映射逻辑）
+    nodeStates.value.clear()
+    const steps = meta?.node_steps as Array<Record<string, any>> | undefined
+    if (steps?.length) {
+      for (const s of steps) {
+        const key = String(s.node_key ?? '')
+        if (!key) continue
+        nodeStates.value.set(key, {
+          node: key,
+          title: s.display_title,
+          activity: s.activity,
+          node_type: s.node_kind,
+          model_route: s.model_route,
+          status: _mapStepStatus(String(s.status ?? '')),
+          started_at: s.started_at ? new Date(s.started_at) : undefined,
+          finished_at: s.finished_at ? new Date(s.finished_at) : undefined,
+        })
+      }
+    }
+  }
+
+  /**
+   * 从 URL/历史进入：加载 thread 的历史对话与节点状态，并在需要时重连 WS。
+   */
+  async function loadThread(thread_id: string) {
+    const id = String(thread_id || '').trim()
+    if (!id) return
+
+    _cleanupWebSocket()
+    resetExecutionState()
+
+    threadId.value = id
+    isRunning.value = false
+    errorMessage.value = null
+
+    const st = await fetchThreadState(id)
+    if (!st) return
+
+    _hydrateFromState(st)
+
+    // 尝试同步当前工作流（用于标题/下拉默认值）
+    const meta = (st.metadata ?? {}) as Record<string, any>
+    const wfId = Number(meta.workflow_id)
+    if (!isNaN(wfId)) {
+      currentWorkflow.value = workflows.value.find((w) => w.id === wfId) ?? currentWorkflow.value
+    }
+
+    // 若仍在运行/等待审批，则连接 WS 获取后续事件
+    if (workflowStatus.value === 'running' || workflowStatus.value === 'pending') {
+      isRunning.value = workflowStatus.value === 'running'
+      _connectWebSocket(id)
+    }
+  }
+
   /**
    * Start a new workflow execution.
    * Resets state, calls POST /run, then opens the WebSocket stream.
@@ -653,6 +739,7 @@ export const useWorkflowStore = defineStore('workflow', () => {
     // Actions
     fetchWorkflows,
     fetchThreadState,
+    loadThread,
     startWorkflow,
     startCanvasWorkflow,
     runCanvasNode,

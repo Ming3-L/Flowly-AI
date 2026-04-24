@@ -1,5 +1,11 @@
 <template>
   <div class="observability-view">
+    <el-empty
+      v-if="!hasPermission"
+      description="当前账号无权限查看监控面板"
+      style="padding: 60px 0"
+    />
+    <template v-else>
     <div class="page-header">
       <h2 class="page-title">监控面板</h2>
       <div class="header-actions">
@@ -19,7 +25,7 @@
       </div>
     </div>
 
-    <!-- Summary Cards -->
+    <!-- 汇总卡片 -->
     <el-row :gutter="16" class="summary-row">
       <el-col :span="6">
         <el-card shadow="hover" class="summary-card">
@@ -60,9 +66,9 @@
       </el-col>
     </el-row>
 
-    <!-- Charts Row -->
+    <!-- 图表区 -->
     <el-row :gutter="16" class="charts-row">
-      <!-- Executions Over Time -->
+      <!-- 执行量趋势 -->
       <el-col :span="12">
         <el-card>
           <template #header>
@@ -80,7 +86,7 @@
         </el-card>
       </el-col>
 
-      <!-- Cost by Model -->
+      <!-- 按模型的成本分布 -->
       <el-col :span="12">
         <el-card>
           <template #header>
@@ -108,7 +114,7 @@
       </el-col>
     </el-row>
 
-    <!-- Workflows Performance Table -->
+    <!-- 工作流性能表 -->
     <el-card class="workflows-card">
       <template #header>
         <span>工作流性能排行</span>
@@ -135,6 +141,7 @@
         </el-table-column>
       </el-table>
     </el-card>
+    </template>
   </div>
 </template>
 
@@ -143,16 +150,23 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { useAuthStore } from '@/stores/auth'
 
-// ── State ──────────────────────────────────────────────────────────────────
+// ── 状态 ──────────────────────────────────────────────────────────────────
 const loading = ref(false)
 const dateRange = ref<[Date, Date] | null>(null)
 const usageData = ref<any>(null)
 const costData = ref<any>(null)
 const performanceData = ref<any>(null)
 const workflowStats = ref<any[]>([])
+const auth = useAuthStore()
 
-// ── Computed ──────────────────────────────────────────────────────────────
+const hasPermission = computed(() => {
+  const u = auth.user
+  return !!(u && (u.is_staff || u.is_superuser))
+})
+
+// ── 计算属性 ──────────────────────────────────────────────────────────────
 const stats = computed(() => ({
   totalExecutions: usageData.value?.total_executions ?? 0,
   completed: usageData.value?.completed ?? 0,
@@ -169,7 +183,7 @@ const stats = computed(() => ({
 
 const usageTimeSeries = computed(() =>
   (usageData.value?.time_series ?? []).map((p: any) => ({
-    date: p.date?.slice(5) || '',   // MM-DD
+    date: p.date?.slice(5) || '',   // 月-日
     executions: p.executions ?? 0,
   }))
 )
@@ -202,7 +216,7 @@ function providerColor(provider: string) {
   return map[provider] || '#333333'
 }
 
-// ── Methods ────────────────────────────────────────────────────────────────
+// ── 方法 ────────────────────────────────────────────────────────────────
 
 function buildParams() {
   if (!dateRange.value) return {}
@@ -212,6 +226,7 @@ function buildParams() {
 }
 
 async function fetchAll() {
+  if (!hasPermission.value) return
   loading.value = true
   const params = buildParams()
 
@@ -245,8 +260,9 @@ function formatDuration(seconds: number | null) {
   return `${m}m ${s}s`
 }
 
-// ── Lifecycle ──────────────────────────────────────────────────────────────
+// ── 生命周期 ──────────────────────────────────────────────────────────────
 onMounted(() => {
+  if (!hasPermission.value) return
   const now = new Date()
   const thirtyDaysAgo = new Date(now)
   thirtyDaysAgo.setDate(now.getDate() - 30)
