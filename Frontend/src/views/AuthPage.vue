@@ -12,13 +12,35 @@
         </div>
 
         <div class="brand-showcase">
-          <div class="brand-characters-panel" aria-hidden="true"></div>
-          <AuthAnimatedCharacters
-            class="brand-characters-layer"
-            :is-typing="charTyping"
-            :show-password="charShowPassword"
-            :password-length="charPasswordLength"
-          />
+          <!-- 文字内容在上 -->
+          <div class="brand-text-block">
+            <p class="brand-tagline">用自然语言，构建智能工作流</p>
+            <p class="brand-sub">AI 驱动的可视化自动化平台</p>
+            <div class="brand-features">
+              <div class="brand-feature-item">
+                <span class="feature-dot" />
+                <span>拖拽式流程编排</span>
+              </div>
+              <div class="brand-feature-item">
+                <span class="feature-dot" />
+                <span>多模型灵活切换</span>
+              </div>
+              <div class="brand-feature-item">
+                <span class="feature-dot" />
+                <span>实时执行监控</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 插画区域在下，卡通人物嵌入灰色方框内 -->
+          <div class="brand-characters-panel">
+            <AuthAnimatedCharacters
+              class="brand-characters-layer"
+              :is-typing="charTyping"
+              :show-password="charShowPassword"
+              :password-length="charPasswordLength"
+            />
+          </div>
         </div>
       </aside>
 
@@ -105,6 +127,46 @@
               </el-button>
             </el-form-item>
           </el-form>
+
+          <!-- 第三方登录 -->
+          <div class="social-login-section">
+            <div class="social-divider">
+              <span>或</span>
+            </div>
+            <div class="social-icons">
+              <button
+                class="social-btn"
+                title="GitHub"
+                :disabled="social.isLoggingIn.github"
+                @click="handleSocialLogin('github')"
+              >
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                  <path d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0 1 12 6.836a9.59 9.59 0 0 1 2.504.337c1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/>
+                </svg>
+              </button>
+              <button
+                class="social-btn"
+                title="Google"
+                :disabled="social.isLoggingIn.google"
+                @click="handleSocialLogin('google')"
+              >
+                <svg viewBox="0 0 24 24" width="22" height="22">
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+              </button>
+              <button
+                class="social-btn"
+                title="QQ"
+                :disabled="social.isLoggingIn.qq"
+                @click="handleSocialLogin('qq')"
+              >
+                <img src="@/assets/images/QQ.png" alt="QQ" width="22" height="22" />
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- 注册表单 -->
@@ -196,15 +258,10 @@
               <el-input
                 v-model="registerForm.admin_invite_code"
                 type="password"
-                placeholder="粘贴 .env 里「=」右侧的随机码，勿填 FLOWLY_… 变量名"
+                placeholder="由部署方配置 FLOWLY_ADMIN_REGISTER_INVITE 等环境变量后提供"
                 size="large"
                 show-password
               />
-              <p class="invite-tip">
-                在 <code>Backend/.env</code> 中找到
-                <code>FLOWLY_ADMIN_REGISTER_INVITE</code> 或
-                <code>FLOWLY_SUPERUSER_REGISTER_INVITE</code>，把<strong>等号后面</strong>整段复制到这里（与文件里完全一致，含大小写与符号）。
-              </p>
             </el-form-item>
 
             <el-form-item>
@@ -231,6 +288,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock, Message, ArrowLeft, View, Hide } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
+import { useSocialStore, type OAuthProvider } from '@/stores/social'
 import type { FormInstance, FormRules } from 'element-plus'
 import BgCubeCanvas from '@/components/BgCubeCanvas.vue'
 import AuthAnimatedCharacters from '@/components/auth-characters/AuthAnimatedCharacters.vue'
@@ -257,6 +315,7 @@ function onAuthFieldBlur() {
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const social = useSocialStore()
 
 // ── Tab 状态 ──────────────────────────────────────────────────────────────
 const activeTab = ref<'login' | 'register'>('login')
@@ -288,6 +347,18 @@ async function handleLogin() {
     ElMessage.error('用户名或密码错误')
   } finally {
     loginLoading.value = false
+  }
+}
+
+// ── 第三方登录 ────────────────────────────────────────────────────────────────
+
+async function handleSocialLogin(provider: OAuthProvider) {
+  try {
+    await social.loginWithPopup(provider)
+    const redirect = route.query.redirect as string
+    router.push(redirect || '/dashboard')
+  } catch {
+    // 错误消息已在 store 中显示
   }
 }
 
@@ -406,21 +477,40 @@ async function handleRegister() {
   flex: 1 1 380px;
   max-width: 460px;
   min-width: 280px;
-  min-height: 480px;
+  min-height: 580px;
   position: relative;
   padding: 36px 32px 40px;
   display: flex;
   flex-direction: column;
   justify-content: flex-start;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.13);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   box-shadow:
     0 12px 48px rgba(0, 0, 0, 0.45),
-    0 2px 12px rgba(0, 0, 0, 0.25);
+    0 2px 12px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
   overflow: hidden;
+
+  // Top gradient accent line
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(108, 63, 245, 0.7) 30%,
+      rgba(108, 63, 245, 0.9) 50%,
+      rgba(108, 63, 245, 0.7) 70%,
+      transparent 100%
+    );
+  }
 }
 
 .brand-logo {
@@ -450,32 +540,84 @@ async function handleRegister() {
   position: relative;
   flex: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 260px;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  min-height: 320px;
   margin-top: 8px;
 }
 
-.brand-characters-panel {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 100%;
-  max-width: 340px;
-  height: 90%;
-  min-height: 220px;
-  max-height: 300px;
-  background: rgba(255, 255, 255, 0.5);
-  border-radius: 18px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
-  pointer-events: none;
+.brand-text-block {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: 0 12px 16px;
+  flex-shrink: 0;
 }
 
-.brand-characters-layer {
+.brand-characters-panel {
   position: relative;
   z-index: 1;
   width: 100%;
+  aspect-ratio: 1 / 1;
+  background: rgba(255, 255, 255, 0.45);
+  border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.brand-characters-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-tagline {
+  font-size: 15px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+  margin: 0 0 6px;
+  letter-spacing: -0.2px;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
+}
+
+.brand-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
+  margin: 0 0 10px;
+  letter-spacing: 0.2px;
+}
+
+.brand-features {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+  width: 100%;
+}
+
+.brand-feature-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.72);
+  font-weight: 500;
+}
+
+.feature-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #6C3FF5;
+  flex-shrink: 0;
 }
 
 // ── 右侧表单独立白卡片 ─────────────────────────────────────────────────────
@@ -634,22 +776,61 @@ async function handleRegister() {
   }
 }
 
-.invite-tip {
-  margin: 8px 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #606266;
+// ── 第三方登录 ───────────────────────────────────────────────────────────
+.social-login-section {
+  margin-top: 24px;
+}
 
-  code {
-    font-size: 11px;
-    padding: 0 4px;
-    border-radius: 4px;
-    background: #f5f7fa;
-    color: #303133;
+.social-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.1);
   }
 
-  strong {
-    color: #303133;
+  span {
+    font-size: 12px;
+    color: rgba(0, 0, 0, 0.4);
+    white-space: nowrap;
+  }
+}
+
+.social-icons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.social-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #333;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.98);
+    border-color: rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    transform: translateY(0);
   }
 }
 
@@ -670,7 +851,11 @@ async function handleRegister() {
   }
 
   .brand-showcase {
-    min-height: 200px;
+    min-height: auto;
+  }
+
+  .brand-characters-panel {
+    aspect-ratio: 1 / 1;
   }
 
   .auth-form-card {
@@ -678,5 +863,126 @@ async function handleRegister() {
     flex: 1 1 auto;
     padding: 28px 24px;
   }
+}
+</style>
+
+/* 深色主题覆盖 - 必须放在 scoped 样式之外 */
+<style>
+/* 深色主题下 AuthPage 整体背景 */
+html.theme-dark .auth-page {
+  background: #0d0f14;
+}
+
+/* 深色主题下左侧品牌卡片 */
+html.theme-dark .auth-brand-card {
+  background: rgba(20, 23, 32, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.theme-dark .brand-logo span {
+  color: #f0f2f8;
+}
+
+html.theme-dark .brand-tagline {
+  color: rgba(240, 242, 248, 0.92);
+}
+
+html.theme-dark .brand-sub {
+  color: rgba(240, 242, 248, 0.55);
+}
+
+html.theme-dark .brand-feature-item {
+  color: rgba(240, 242, 248, 0.72);
+}
+
+html.theme-dark .brand-characters-panel {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.theme-dark .brand-characters-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(13, 15, 20, 0.3);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* 深色主题下右侧表单卡片 - 使用更高优先级 */
+html.theme-dark .auth-form-card {
+  background: rgba(20, 23, 32, 0.95) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.theme-dark .back-btn {
+  color: rgba(240, 242, 248, 0.5);
+}
+
+html.theme-dark .back-btn:hover {
+  color: #f0f2f8;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* Tab 切换 */
+html.theme-dark .auth-tabs {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.theme-dark .auth-tab {
+  color: rgba(240, 242, 248, 0.5) !important;
+}
+
+html.theme-dark .auth-tab.active {
+  color: #f0f2f8 !important;
+}
+
+html.theme-dark .tab-indicator {
+  background: #1c2030 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* 表单标题 */
+html.theme-dark .form-heading h2 {
+  color: #f0f2f8 !important;
+}
+
+html.theme-dark .form-heading p {
+  color: rgba(240, 242, 248, 0.55) !important;
+}
+
+/* 分隔线 - 使用最高优先级 */
+html.theme-dark .auth-page .social-divider::before,
+html.theme-dark .auth-page .social-divider::after {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+html.theme-dark .auth-page .social-divider span {
+  color: rgba(240, 242, 248, 0.5) !important;
+}
+
+/* 社交登录按钮 - 深色主题下用亮色背景 */
+html.theme-dark .auth-page .social-btn {
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: #f0f2f8 !important;
+}
+
+html.theme-dark .auth-page .social-btn:hover {
+  background: rgba(255, 255, 255, 0.25) !important;
+  border-color: rgba(255, 255, 255, 0.35) !important;
+}
+
+/* Element Plus 表单标签 */
+html.theme-dark .auth-form-card .el-form-item__label {
+  color: rgba(240, 242, 248, 0.7) !important;
+}
+
+/* 密码切换图标 */
+html.theme-dark .pwd-toggle {
+  color: rgba(240, 242, 248, 0.4) !important;
+}
+
+html.theme-dark .pwd-toggle:hover {
+  color: rgba(240, 242, 248, 0.7) !important;
 }
 </style>

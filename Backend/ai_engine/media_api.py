@@ -147,7 +147,6 @@ def upload_media(request: HttpRequest, file: UploadedFile):
 def proxy_media(
     request: HttpRequest,
     path: str = Query(..., min_length=1, max_length=1024),
-    download: int = Query(0, description="1 时以附件形式下载（Content-Disposition: attachment）"),
 ):
     """
     GET /api/media/proxy?path=...
@@ -171,11 +170,7 @@ def proxy_media(
 
     # 尽量设置 content-type
     mime = _guess_mime(abs_path)
-    resp = FileResponse(open(abs_path, "rb"), content_type=mime)
-    if int(download or 0) == 1:
-        fname = os.path.basename(abs_path) or "download"
-        resp["Content-Disposition"] = f'attachment; filename="{fname}"'
-    return resp
+    return FileResponse(open(abs_path, "rb"), content_type=mime)
 
 
 @media_router.get("/public", auth=None)
@@ -199,8 +194,7 @@ def public_media(
         return HttpResponse("Expired", status=410, content_type="text/plain; charset=utf-8")
 
     rel = (rel or "").strip().lstrip("/").replace("\\", "/")
-    _allowed_prefixes = ("uploads/", "generated/", "avatars/")
-    if not any(rel.startswith(p) for p in _allowed_prefixes):
+    if not rel.startswith("uploads/") and not rel.startswith("avatars/"):
         return HttpResponse("Forbidden", status=403, content_type="text/plain; charset=utf-8")
 
     media_root = str(getattr(settings, "MEDIA_ROOT", "media"))

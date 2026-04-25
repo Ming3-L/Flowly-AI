@@ -396,7 +396,6 @@ async function handleUpload() {
       formData.append('file', fileItem.raw)
 
       await api.post(`/documents/upload?workflow_id=${workflowId.value}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total) {
             queueItem.progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
@@ -610,6 +609,7 @@ onMounted(() => {
         text-overflow: ellipsis;
         display: -webkit-box;
         -webkit-line-clamp: 3;
+        line-clamp: 3;
         -webkit-box-orient: vertical;
       }
     }

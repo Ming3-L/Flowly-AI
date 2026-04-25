@@ -42,6 +42,7 @@ cryptography>=42.0.0
 pydantic>=2.0.0
 python-multipart>=0.0.9
 redis>=5.0.0
+requests>=2.31.0
 
 # --- Optional: Django AI Assistant ---
 # Provides pre-built Thread/Message models and built-in API views.

@@ -1,12 +1,12 @@
 <template>
-  <div class="ac-scale-wrap">
-    <div class="ac-stage" aria-hidden="true">
+  <div class="ac-scale-wrap" style="left: 5px; top: 67px;">
+    <div class="ac-stage" aria-hidden="true" ref="stageRef">
       <!-- Purple -->
       <div
         ref="purpleRef"
         class="ac-char ac-purple"
         :style="{
-          left: '70px',
+          left: '116px',
           width: '180px',
           height: purpleHeight,
           backgroundColor: '#6C3FF5',
@@ -14,6 +14,7 @@
           zIndex: 1,
           transform: purpleTransform,
           transformOrigin: 'bottom center',
+          top: '-256px',
         }"
       >
         <div
@@ -55,7 +56,7 @@
         ref="blackRef"
         class="ac-char ac-black"
         :style="{
-          left: '240px',
+          left: '242px',
           width: '120px',
           height: '310px',
           backgroundColor: '#2D2D2D',
@@ -63,6 +64,7 @@
           zIndex: 2,
           transform: blackTransform,
           transformOrigin: 'bottom center',
+          top: '-167px',
         }"
       >
         <div
@@ -104,7 +106,7 @@
         ref="orangeRef"
         class="ac-char ac-orange"
         :style="{
-          left: '0px',
+          left: '19px',
           width: '240px',
           height: '200px',
           zIndex: 3,
@@ -112,6 +114,7 @@
           borderRadius: '120px 120px 0 0',
           transform: orangeTransform,
           transformOrigin: 'bottom center',
+          top: '-56px',
         }"
       >
         <div
@@ -147,7 +150,7 @@
         ref="yellowRef"
         class="ac-char ac-yellow"
         :style="{
-          left: '310px',
+          left: '327px',
           width: '140px',
           height: '230px',
           backgroundColor: '#E8D754',
@@ -155,6 +158,7 @@
           zIndex: 4,
           transform: yellowTransform,
           transformOrigin: 'bottom center',
+          top: '-84px',
         }"
       >
         <div
@@ -220,11 +224,37 @@ const purpleRef = ref<HTMLElement | null>(null)
 const blackRef = ref<HTMLElement | null>(null)
 const yellowRef = ref<HTMLElement | null>(null)
 const orangeRef = ref<HTMLElement | null>(null)
+const stageRef = ref<HTMLElement | null>(null)
 
 const isPurpleBlinking = ref(false)
 const isBlackBlinking = ref(false)
 const isLookingAtEachOther = ref(false)
 const isPurplePeeking = ref(false)
+
+const stageWidth = ref(520)
+
+onMounted(() => {
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('resize', updateStageWidth)
+  schedulePurpleBlink()
+  scheduleBlackBlink()
+  updateStageWidth()
+})
+
+function updateStageWidth() {
+  if (stageRef.value) {
+    stageWidth.value = stageRef.value.offsetWidth
+  }
+}
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', onMouseMove)
+  window.removeEventListener('resize', updateStageWidth)
+  if (purpleBlinkTimer) clearTimeout(purpleBlinkTimer)
+  if (blackBlinkTimer) clearTimeout(blackBlinkTimer)
+  if (lookTimer) clearTimeout(lookTimer)
+  clearPeekChain()
+})
 
 function calculatePosition(elRef: Ref<HTMLElement | null>) {
   const el = elRef.value
@@ -422,20 +452,6 @@ function clearPeekChain() {
   }
 }
 
-onMounted(() => {
-  window.addEventListener('mousemove', onMouseMove)
-  schedulePurpleBlink()
-  scheduleBlackBlink()
-})
-
-onUnmounted(() => {
-  window.removeEventListener('mousemove', onMouseMove)
-  if (purpleBlinkTimer) clearTimeout(purpleBlinkTimer)
-  if (blackBlinkTimer) clearTimeout(blackBlinkTimer)
-  if (lookTimer) clearTimeout(lookTimer)
-  clearPeekChain()
-})
-
 watch(
   () => props.isTyping,
   (v) => {
@@ -475,34 +491,22 @@ watch(
 <style scoped lang="scss">
 .ac-scale-wrap {
   width: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 220px;
-  /* 原 flex-end + bottom 锚点会让视觉重心贴底，在半透明白框里显偏下 */
-  transform: translateY(-28px);
-
-  @media (max-width: 520px) {
-    transform: translateY(-18px);
-  }
+  height: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
 .ac-stage {
-  position: relative;
-  width: 550px;
-  height: 400px;
-  transform: scale(0.58);
-  transform-origin: center 78%;
-
-  @media (max-width: 520px) {
-    transform: scale(0.42);
-    transform-origin: center 78%;
-  }
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) scale(0.68);
+  transform-origin: center center;
+  width: 520px;
 }
 
 .ac-char {
   position: absolute;
-  bottom: 0;
+  top: 0;
   transition: transform 0.7s ease-in-out, height 0.7s ease-in-out;
 }
 
@@ -529,6 +533,122 @@ watch(
   transition: left 0.2s ease-out, top 0.2s ease-out;
 }
 
+// ── Stats Dashboard Panel ─────────────────────────────────────────────────────
+.ac-stats-panel {
+  width: 100%;
+  max-width: 360px;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 14px;
+  padding: 14px 18px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.ac-stats-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.ac-stats-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+  animation: pulse-green 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; box-shadow: 0 0 6px rgba(34, 197, 94, 0.6); }
+  50% { opacity: 0.6; box-shadow: 0 0 2px rgba(34, 197, 94, 0.3); }
+}
+
+.ac-stats-live-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.ac-stats-grid {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 12px;
+}
+
+.ac-stat-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.ac-stat-divider {
+  width: 1px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ac-stat-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35);
+}
+
+.ac-stat-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.45);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+.ac-stats-footer {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.ac-mini-chart {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 28px;
+}
+
+.ac-chart-bar {
+  flex: 1;
+  background: linear-gradient(to top, #6C3FF5, #a78bfa);
+  border-radius: 3px 3px 0 0;
+  min-height: 4px;
+  transition: height 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 0.75;
+}
+
+.ac-stats-update {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+  font-weight: 400;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ac-char {
     transition: none;
@@ -538,6 +658,12 @@ watch(
   }
   .ac-mouth {
     transition: none;
+  }
+  .ac-chart-bar {
+    transition: none;
+  }
+  .ac-stats-live-dot {
+    animation: none;
   }
 }
 </style>

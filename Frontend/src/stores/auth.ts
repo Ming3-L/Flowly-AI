@@ -100,6 +100,46 @@ export const useAuthStore = defineStore('auth', () => {
     return res.data
   }
 
+  // ── Upload Avatar ────────────────────────────────────────────────────
+  async function uploadAvatar(file: File): Promise<{ avatar_path: string; avatar_public_url: string }> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await api.post('/auth/profile/avatar', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+    await fetchCurrentUser()
+    return res.data
+  }
+
+  // ── Avatar History ───────────────────────────────────────────────────
+  interface AvatarHistoryItem {
+    asset_id: number
+    avatar_path: string
+    avatar_public_url: string
+    created_at: string
+  }
+
+  interface AvatarHistory {
+    current_avatar_path: string
+    items: AvatarHistoryItem[]
+  }
+
+  async function fetchAvatarHistory(): Promise<AvatarHistory> {
+    const res = await api.get<AvatarHistory>('/auth/profile/avatars')
+    return res.data
+  }
+
+  async function selectAvatar(assetId: number): Promise<void> {
+    await api.post('/auth/profile/avatars/select', { asset_id: assetId })
+    await fetchCurrentUser()
+  }
+
+  async function deleteAvatar(assetId: number): Promise<void> {
+    await api.delete(`/auth/profile/avatars/${assetId}`)
+    await fetchCurrentUser()
+  }
+
   return {
     accessToken,
     refreshToken,
@@ -111,5 +151,9 @@ export const useAuthStore = defineStore('auth', () => {
     fetchCurrentUser,
     updateProfile,
     setApiKey,
+    uploadAvatar,
+    fetchAvatarHistory,
+    selectAvatar,
+    deleteAvatar,
   }
 })

@@ -420,7 +420,9 @@ async function onAvatarPicked(file: any) {
   try {
     const fd = new FormData()
     fd.append('file', raw)
-    await api.post('/auth/profile/avatar', fd, { timeout: 120000 })
+    await api.post('/auth/profile/avatar', fd, {
+      timeout: 120000,
+    })
     await auth.fetchCurrentUser()
     ElMessage.success('头像已更新')
   } catch (e: any) {

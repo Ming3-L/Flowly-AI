@@ -1,5 +1,4 @@
-from ninja import Field, ModelSchema, Router, Schema
-from ninja.files import UploadedFile  # pyright: ignore[reportMissingImports]
+from ninja import Field, ModelSchema, Router, Schema  # pyright: ignore[reportMissingImports]
 
 from .models import UserProfile
 from ai_engine.auth import JWTAuth
@@ -84,21 +83,33 @@ def delete_api_key(request):
 
 
 @router.post("/profile/avatar", response=AvatarUploadOut)
-def upload_avatar(request, file: UploadedFile):
+def upload_avatar(request):
     """
     POST /api/auth/profile/avatar (multipart/form-data)
     字段：file
     """
     from django.conf import settings
     from django.utils.text import get_valid_filename
+    from django.core.files.uploadedfile import UploadedFile
     import os, uuid
     from ai_engine.local_media_store import build_public_url
     from ai_engine.models import LocalMediaAsset
 
-    if not isinstance(file, UploadedFile):
-        # ninja 会自动解析，但这里兜底
+    # Django Ninja 文件上传需要从 request.FILES 获取
+    files = getattr(request, 'FILES', {})
+    uploaded_file = files.get('file') if hasattr(request, 'FILES') else None
+    
+    # 兼容 Ninja 1.x 的 Form 解析方式
+    if uploaded_file is None:
+        try:
+            uploaded_file = request.resolve_param(UploadedFile, 'file', None)
+        except Exception:
+            uploaded_file = None
+    
+    if uploaded_file is None:
         raise ValueError("file required")
-
+    
+    file = uploaded_file
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
     orig = get_valid_filename(getattr(file, "name", "") or "avatar.png")
     ext = os.path.splitext(orig)[1][:16] or ".png"

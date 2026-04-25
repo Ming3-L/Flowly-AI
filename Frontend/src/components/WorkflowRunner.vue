@@ -219,7 +219,9 @@ async function handleSubmit() {
       if (!raw) continue
       const fd = new FormData()
       fd.append('file', raw)
-      const res = await api.post('/media/upload', fd, { timeout: 120000 })
+      const res = await api.post('/media/upload', fd, {
+        timeout: 120000,
+      })
       attachments.push(res.data)
     }
 

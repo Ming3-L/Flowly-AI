@@ -2,6 +2,77 @@ from django.contrib.auth.models import User
 from django.db import models
 
 
+class SocialAccount(models.Model):
+    """第三方账号关联表，存储用户的 OAuth 账号绑定信息"""
+
+    PROVIDER_CHOICES = [
+        ('github', 'GitHub'),
+        ('google', 'Google'),
+        ('qq', 'QQ'),
+    ]
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='social_accounts',
+        verbose_name='关联用户',
+    )
+    provider = models.CharField(
+        max_length=20,
+        choices=PROVIDER_CHOICES,
+        verbose_name='OAuth 提供商',
+    )
+    provider_user_id = models.CharField(
+        max_length=255,
+        verbose_name='第三方用户 ID',
+    )
+    provider_username = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        verbose_name='第三方用户名',
+    )
+    provider_email = models.EmailField(
+        blank=True,
+        default='',
+        verbose_name='第三方邮箱',
+    )
+    provider_avatar_url = models.URLField(
+        blank=True,
+        default='',
+        verbose_name='第三方头像 URL',
+    )
+    access_token = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Access Token（加密存储）',
+    )
+    refresh_token = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Refresh Token（加密存储）',
+    )
+    token_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Token 过期时间',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = [['provider', 'provider_user_id']]
+        verbose_name = '第三方账号'
+        verbose_name_plural = '第三方账号'
+        indexes = [
+            models.Index(fields=['provider', 'provider_user_id']),
+            models.Index(fields=['user', 'provider']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} - {self.get_provider_display()}'
+
+
 class UserProfile(models.Model):
     """扩展用户资料，存储 AI 模型偏好和 API Key"""
 

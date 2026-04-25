@@ -23,4 +23,5 @@ from .ninja_conf import *
 from .ai_providers import *
 from .langsmith_conf import *
 from .screen_agent import *
+from .social_auth import *
 from .logging_conf import LOGGING

@@ -79,37 +79,6 @@
             <el-icon v-else class="avatar-icon"><MagicStick /></el-icon>
           </div>
           <div class="message-bubble">
-            <div v-if="msg.attachments?.length" class="msg-attachments">
-              <template v-for="(a, ai) in msg.attachments" :key="ai">
-                <img
-                  v-if="attachmentIsImage(a)"
-                  class="att-thumb"
-                  :src="absMediaUrl(attachmentUrl(a))"
-                  alt=""
-                />
-                <video
-                  v-else-if="attachmentIsVideo(a)"
-                  class="att-thumb"
-                  :src="absMediaUrl(attachmentUrl(a))"
-                  controls
-                />
-                <audio
-                  v-else-if="attachmentIsAudio(a)"
-                  class="att-audio"
-                  :src="absMediaUrl(attachmentUrl(a))"
-                  controls
-                />
-                <el-button
-                  v-if="attachmentDownloadUrl(a)"
-                  size="small"
-                  text
-                  type="primary"
-                  @click.prevent="downloadToLocal(attachmentDownloadUrl(a)!)"
-                >
-                  下载到本地
-                </el-button>
-              </template>
-            </div>
             <div class="message-content" v-html="renderMarkdown(msg.content)"></div>
             <div class="message-meta">
               <span class="message-time">{{ formatTime(msg.created_at) }}</span>
@@ -176,18 +145,17 @@
                 placeholder="选择模型"
               >
                 <el-option
-                  v-for="m in chatSelectableModels"
+                  v-for="m in availableModels"
                   :key="m.key"
                   :label="m.label"
                   :value="m.key"
                 >
-                  <div class="model-option">
-                    <div class="model-option-title">
-                      <span class="model-option-name">{{ m.label }}</span>
-                      <span class="model-option-route">{{ m.route }}</span>
-                    </div>
-                    <div class="model-option-desc">{{ modelCapabilityText(m) }}</div>
-                  </div>
+                  <span style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                    <span style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      {{ m.label }}
+                    </span>
+                    <span style="font-size:11px;color:#999">{{ m.route }}</span>
+                  </span>
                 </el-option>
               </el-select>
             </div>
@@ -220,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   ChatLineSquare, Delete, Plus, ChatDotRound,
@@ -230,21 +198,11 @@ import { useAuthStore } from '@/stores/auth'
 import api from '@/utils/api'
 import type { UploadUserFile } from 'element-plus'
 
-interface ChatAttachment {
-  kind?: string
-  type?: string
-  url?: string
-  public_url?: string
-  proxy_url?: string
-  download_url?: string
-}
-
 interface ChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   created_at?: string
   id?: number
-  attachments?: ChatAttachment[]
 }
 
 interface Session {
@@ -276,87 +234,11 @@ type AiModelRow = {
   api_kind?: string
   show_in_canvas_llm_nodes?: boolean
   source?: string
-  description?: string
-  scope_summary?: string
 }
 
 const availableModels = ref<AiModelRow[]>([])
 const selectedModelKey = ref<string>('')
 const chatFileList = ref<UploadUserFile[]>([])
-
-/** 对话页排除向量嵌入等不可聊天模型 */
-const chatSelectableModels = computed(() =>
-  availableModels.value.filter((m) => (m.api_kind ?? 'ark_chat') !== 'ark_embedding')
-)
-
-function modelCapabilityText(m: AiModelRow): string {
-  const extra = (m.scope_summary || m.description || '').trim()
-  if (extra) return extra
-  const mods = (m.modalities ?? []).length ? (m.modalities ?? []).join('、') : 'text'
-  const ak = m.api_kind ?? 'ark_chat'
-  if (ak === 'ark_chat') return `对话/补全；建议输入模态：${mods}`
-  if (ak === 'ark_image_gen') return '图像生成；输入：文本（+可选参考图由工作流传）；输出：图片'
-  if (ak === 'ark_video_gen') return '视频生成；输入：文本（+可选参考图 URL）；输出：视频'
-  if (ak === 'openspeech') return '语音合成 TTS；输入：文本；输出：音频'
-  return `api_kind=${ak}；输入模态参考：${mods}`
-}
-
-function absMediaUrl(pathOrUrl: string): string {
-  const u = (pathOrUrl || '').trim()
-  if (!u) return ''
-  if (u.startsWith('http://') || u.startsWith('https://')) return u
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  return `${origin}${u.startsWith('/') ? '' : '/'}${u}`
-}
-
-function attachmentUrl(a: ChatAttachment): string {
-  return (a.public_url || a.url || a.proxy_url || '').trim()
-}
-
-function attachmentDownloadUrl(a: ChatAttachment): string | null {
-  const d = (a.download_url || '').trim()
-  if (d) return d
-  const p = (a.proxy_url || '').trim()
-  if (!p) return null
-  return p.includes('?') ? `${p}&download=1` : `${p}?download=1`
-}
-
-function attachmentIsImage(a: ChatAttachment): boolean {
-  const k = (a.kind || a.type || '').toLowerCase()
-  return k === 'image' || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(attachmentUrl(a))
-}
-
-function attachmentIsVideo(a: ChatAttachment): boolean {
-  const k = (a.kind || a.type || '').toLowerCase()
-  return k === 'video' || /\.(mp4|webm|mov)(\?|$)/i.test(attachmentUrl(a))
-}
-
-function attachmentIsAudio(a: ChatAttachment): boolean {
-  const k = (a.kind || a.type || '').toLowerCase()
-  return k === 'audio' || /\.(mp3|wav|m4a|ogg)(\?|$)/i.test(attachmentUrl(a))
-}
-
-async function downloadToLocal(urlPath: string) {
-  const token = localStorage.getItem('flowly_access_token')
-  const url = absMediaUrl(urlPath)
-  try {
-    const res = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    if (!res.ok) throw new Error(String(res.status))
-    const blob = await res.blob()
-    const cd = res.headers.get('Content-Disposition') || ''
-    const m = cd.match(/filename="?([^";]+)"?/i)
-    const name = m?.[1]?.trim() || 'download'
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
-    a.download = name
-    a.click()
-    URL.revokeObjectURL(a.href)
-  } catch {
-    ElMessage.error('下载失败（请确认已登录且链接有效）')
-  }
-}
 
 function loadSavedModelKey() {
   const saved = localStorage.getItem('flowly_chat_model_key') || ''
@@ -376,17 +258,17 @@ async function fetchModelCatalog() {
     if (!selectedModelKey.value) {
       // 默认优先“智能路由”（更贴近豆包体验）；若账号无权限会在后端映射到默认接入点
       const preferred =
-        chatSelectableModels.value.find((m) => m.key === 'ark-doubao-smart-router')?.key ||
-        chatSelectableModels.value.find((m) => m.key === 'doubao-default')?.key ||
-        chatSelectableModels.value[0]?.key ||
+        availableModels.value.find((m) => m.key === 'ark-doubao-smart-router')?.key ||
+        availableModels.value.find((m) => m.key === 'doubao-default')?.key ||
+        availableModels.value[0]?.key ||
         ''
       selectedModelKey.value = preferred
       saveModelKey()
     } else {
       // 若已保存但列表中不存在，回退到第一个可用项
-      const ok = chatSelectableModels.value.some((m) => m.key === selectedModelKey.value)
+      const ok = availableModels.value.some((m) => m.key === selectedModelKey.value)
       if (!ok) {
-        selectedModelKey.value = chatSelectableModels.value[0]?.key || ''
+        selectedModelKey.value = availableModels.value[0]?.key || ''
         saveModelKey()
       }
     }
@@ -459,15 +341,14 @@ async function fetchSessionList() {
 }
 
 async function fetchMessagesForSession(sessionId: number) {
-  const { data } = await api.get<{
-    messages: { id: number; role: string; content: string; created_at: string; attachments?: ChatAttachment[] }[]
-  }>(`/chat/sessions/${sessionId}/messages`)
+  const { data } = await api.get<{ messages: { id: number; role: string; content: string; created_at: string }[] }>(
+    `/chat/sessions/${sessionId}/messages`
+  )
   return (data.messages || []).map((m) => ({
     id: m.id,
     role: m.role as ChatMessage['role'],
     content: m.content || '',
     created_at: m.created_at,
-    attachments: Array.isArray(m.attachments) ? m.attachments : [],
   }))
 }
 
@@ -588,11 +469,7 @@ function effectiveChatModelKey(): string {
 
 function currentModel(): AiModelRow | null {
   const key = effectiveChatModelKey()
-  return (
-    chatSelectableModels.value.find((m) => m.key === key) ??
-    availableModels.value.find((m) => m.key === key) ??
-    null
-  )
+  return availableModels.value.find((m) => m.key === key) ?? null
 }
 
 async function streamResponse(query: string, sessionId: number) {
@@ -611,7 +488,9 @@ async function streamResponse(query: string, sessionId: number) {
       if (!raw) continue
       const fd = new FormData()
       fd.append('file', raw)
-      const res = await api.post('/media/upload', fd, { timeout: 120000 })
+      const res = await api.post('/media/upload', fd, {
+        timeout: 120000,
+      })
       const mime = String(res.data?.mime || raw.type || '').toLowerCase()
       const url = String(res.data?.public_url || res.data?.proxy_url || '')
       const kind =
@@ -839,15 +718,32 @@ onUnmounted(() => {
   }
 
   &.active {
-    background: var(--app-text);
-    color: var(--app-surface);
+    background: var(--app-surface);
+    color: var(--app-text);
     font-weight: 500;
+
+    .el-icon svg path {
+      fill: var(--app-text) !important;
+    }
+    .session-icon {
+      color: var(--app-text) !important;
+    }
   }
 }
 
 .session-icon {
   font-size: 16px;
   flex-shrink: 0;
+  color: var(--app-text-3);
+}
+
+.session-item.active .delete-btn {
+  :deep(.el-icon) {
+    color: var(--app-text) !important;
+  }
+  :deep(.el-icon svg path) {
+    fill: var(--app-text) !important;
+  }
 }
 
 .session-title {
@@ -930,27 +826,6 @@ onUnmounted(() => {
     background: var(--app-surface);
     color: var(--app-text);
     border-bottom-left-radius: 4px;
-  }
-
-  .msg-attachments {
-    margin-bottom: 10px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .att-thumb {
-    max-width: 220px;
-    max-height: 160px;
-    border-radius: 6px;
-    object-fit: cover;
-    vertical-align: top;
-  }
-
-  .att-audio {
-    width: 220px;
-    height: 36px;
   }
 }
 
@@ -1074,34 +949,22 @@ onUnmounted(() => {
 }
 </style>
 
-<style lang="scss">
-/* 模型下拉挂载在 body */
-.model-option {
-  padding: 4px 0;
-  line-height: 1.35;
-  max-width: 420px;
+<style>
+/* 深色主题下激活会话项：背景深色，文字/图标白色 */
+html.theme-dark .session-item.active {
+  background: var(--app-surface);
+  color: var(--app-text);
 }
-.model-option-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+html.theme-dark .session-item.active .el-icon svg path {
+  fill: var(--app-text) !important;
 }
-.model-option-name {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+html.theme-dark .session-item.active .el-icon {
+  color: var(--app-text) !important;
 }
-.model-option-route {
-  font-size: 11px;
-  color: #909399;
-  flex-shrink: 0;
+html.theme-dark .session-item.active .delete-btn .el-icon {
+  color: var(--app-text) !important;
 }
-.model-option-desc {
-  font-size: 11px;
-  color: #606266;
-  margin-top: 2px;
-  white-space: normal;
+html.theme-dark .session-item.active .delete-btn .el-icon svg path {
+  fill: var(--app-text) !important;
 }
 </style>

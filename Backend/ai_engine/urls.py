@@ -20,7 +20,7 @@ from .media_api import media_router
 from .ui_labels_api import router as ui_labels_router
 from accounts.views import router as accounts_router
 from accounts.api import router as profile_router
-from .admin_portal_api import admin_router
+from accounts.social_views import router as social_router
 
 api = NinjaAPI(
     title="Flowly AI API",
@@ -43,6 +43,7 @@ api.add_router("/ui-labels", ui_labels_router)
 # /api/auth/* — JWT auth, register, profile
 api.add_router("/auth", accounts_router)
 api.add_router("/auth", profile_router)
+api.add_router("/auth", social_router)
 
 # /api/documents/* — RAG knowledge base (Phase 8)
 api.add_router("/documents", rag_router)
@@ -73,6 +74,3 @@ api.add_router("/auto-reply", auto_reply_router)
 
 # /api/media/* — 上传与受保护下载（工作流多模态输入）
 api.add_router("/media", media_router)
-
-# /api/admin/* — 平台后台（用户列表、资源元数据等，需 staff）
-api.add_router("/admin", admin_router)

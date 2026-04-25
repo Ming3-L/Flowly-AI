@@ -79,32 +79,31 @@ body {
 
 // 鈹€鈹€ Dark theme overrides 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 html.theme-dark {
-  --app-bg: #0d0f14;
-  --app-surface: #141720;
-  --app-surface-2: #1c2030;
-  --app-text: #f0f2f8;
-  --app-text-2: #c8cdd8;
-  --app-text-3: #8b93a8;
-  --app-border: rgba(255, 255, 255, 0.1);
+  // 纯黑色主题 - 主背景
+  --app-bg: #000000;
+  --app-surface: #0a0a0a;
+  --app-surface-2: #141414;
+  --app-text: #ffffff;
+  --app-text-2: #e0e0e0;
+  --app-text-3: #888888;
+  --app-border: rgba(255, 255, 255, 0.12);
 
-  // 鈹€鈹€ Accent colors (semantic, visible against dark bg) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-  --app-accent-success:  #4ade80;  // green 鈥?success, active, online
-  --app-accent-warning:  #fbbf24;  // amber 鈥?warning, pending
-  --app-accent-danger:   #f87171;  // red  鈥?danger, error, delete
-  --app-accent-info:    #60a5fa;  // blue 鈥?info (sparingly used)
-  --app-accent-muted:   rgba(255, 255, 255, 0.08);  // subtle surface
+  // 强调色
+  --app-accent-success:  #4ade80;
+  --app-accent-warning:  #fbbf24;
+  --app-accent-danger:   #f87171;
+  --app-accent-info:    #60a5fa;
+  --app-accent-muted:   rgba(255, 255, 255, 0.06);
 
-  // Element Plus tokens 鈥?re-thought for dark mode
-  // Primary: white border/text on dark 鈥?subtle highlight, not overwhelming
-  --el-color-primary:         #e2e4ec;
-  --el-color-primary-light-3: rgba(226, 228, 236, 0.88);
-  --el-color-primary-light-5: rgba(226, 228, 236, 0.68);
-  --el-color-primary-light-7: rgba(226, 228, 236, 0.48);
-  --el-color-primary-light-8: rgba(226, 228, 236, 0.32);
-  --el-color-primary-light-9: rgba(226, 228, 236, 0.18);
-  --el-color-primary-dark-2:  #0d0f14;
+  // Element Plus tokens - 纯黑主题
+  --el-color-primary:         #ffffff;
+  --el-color-primary-light-3: rgba(255, 255, 255, 0.9);
+  --el-color-primary-light-5: rgba(255, 255, 255, 0.7);
+  --el-color-primary-light-7: rgba(255, 255, 255, 0.5);
+  --el-color-primary-light-8: rgba(255, 255, 255, 0.3);
+  --el-color-primary-light-9: rgba(255, 255, 255, 0.15);
+  --el-color-primary-dark-2:  #000000;
 
-  // Semantic colors 鈥?vivid against dark
   --el-color-success:   var(--app-accent-success);
   --el-color-warning:   var(--app-accent-warning);
   --el-color-danger:    var(--app-accent-danger);
@@ -113,28 +112,28 @@ html.theme-dark {
   --el-text-color-primary:    var(--app-text);
   --el-text-color-regular:    var(--app-text-2);
   --el-text-color-secondary:  var(--app-text-3);
-  --el-text-color-placeholder: rgba(240, 242, 248, 0.38);
-  --el-text-color-disabled:   rgba(240, 242, 248, 0.28);
+  --el-text-color-placeholder: rgba(255, 255, 255, 0.35);
+  --el-text-color-disabled:   rgba(255, 255, 255, 0.25);
 
   --el-bg-color:           var(--app-surface);
   --el-bg-color-page:      var(--app-bg);
   --el-bg-color-overlay:   var(--app-surface);
-  --el-fill-color:         rgba(255, 255, 255, 0.07);
+  --el-fill-color:         rgba(255, 255, 255, 0.08);
   --el-fill-color-light:   rgba(255, 255, 255, 0.05);
-  --el-fill-color-lighter: rgba(255, 255, 255, 0.04);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
   --el-fill-color-blank:   var(--app-surface);
 
   --el-border-color:          var(--app-border);
-  --el-border-color-light:    rgba(255, 255, 255, 0.13);
-  --el-border-color-lighter:  rgba(255, 255, 255, 0.09);
+  --el-border-color-light:    rgba(255, 255, 255, 0.15);
+  --el-border-color-lighter:  rgba(255, 255, 255, 0.1);
   --el-border-color-extra-light: rgba(255, 255, 255, 0.06);
-  --el-border-color-dark:     rgba(255, 255, 255, 0.17);
-  --el-border-color-darker:   rgba(255, 255, 255, 0.22);
+  --el-border-color-dark:     rgba(255, 255, 255, 0.2);
+  --el-border-color-darker:   rgba(255, 255, 255, 0.25);
 
-  --el-box-shadow:        0px 1px 3px rgba(0, 0, 0, 0.55);
-  --el-box-shadow-light:  0px 1px 2px rgba(0, 0, 0, 0.45);
-  --el-box-shadow-lighter:0px 0px 0px rgba(0, 0, 0, 0.30);
-  --el-box-shadow-dark:   0px 10px 40px rgba(0, 0, 0, 0.65);
+  --el-box-shadow:        0px 1px 3px rgba(0, 0, 0, 0.8);
+  --el-box-shadow-light:  0px 1px 2px rgba(0, 0, 0, 0.7);
+  --el-box-shadow-lighter:0px 0px 0px rgba(0, 0, 0, 0.5);
+  --el-box-shadow-dark:   0px 10px 40px rgba(0, 0, 0, 0.8);
 
   // 鈹€鈹€ Component-level overrides 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
@@ -145,6 +144,186 @@ html.theme-dark {
 
   // Element Plus icons — make fills visible on dark bg
   .el-icon, .el-icon svg { color: var(--app-text) !important; fill: var(--app-text) !important; }
+
+  // ── WorkflowRunView 深色主题覆盖 ──────────────────────────────────────────
+  .workflow-run-view {
+    background: var(--app-bg) !important;
+
+    .el-header {
+      background: var(--app-surface) !important;
+      border-bottom-color: var(--app-border) !important;
+
+      .header-content h1 {
+        color: var(--app-text) !important;
+      }
+    }
+
+    .el-main {
+      background: var(--app-bg) !important;
+    }
+  }
+
+  // WorkflowRunner 深色主题
+  .workflow-runner {
+    background: var(--app-surface) !important;
+    border-color: var(--app-border) !important;
+
+    .runner-header {
+      color: var(--app-text) !important;
+    }
+
+    .workflow-option {
+      .workflow-name {
+        color: var(--app-text) !important;
+      }
+      .workflow-desc {
+        color: var(--app-text-3) !important;
+      }
+    }
+  }
+
+  // WorkflowMonitor 深色主题
+  .workflow-monitor {
+    .chat-card {
+      background: var(--app-surface) !important;
+      border-color: var(--app-border) !important;
+
+      .el-card__header {
+        background: var(--app-surface-2) !important;
+        border-bottom-color: var(--app-border) !important;
+      }
+
+      .chat-header {
+        color: var(--app-text) !important;
+      }
+    }
+
+    .status-card {
+      background: var(--app-surface) !important;
+      border-color: var(--app-border) !important;
+
+      .el-card__header {
+        background: var(--app-surface-2) !important;
+        border-bottom-color: var(--app-border) !important;
+        color: var(--app-text) !important;
+      }
+    }
+
+    // 消息气泡
+    .message-wrapper.role-user .message-bubble {
+      background: var(--app-text) !important;
+      color: var(--app-bg) !important;
+    }
+
+    .message-wrapper.role-assistant .message-bubble {
+      background: var(--el-fill-color) !important;
+      color: var(--app-text) !important;
+    }
+
+    .message-wrapper.role-tool .message-bubble,
+    .message-wrapper.role-system .message-bubble {
+      background: var(--el-fill-color-light) !important;
+      color: var(--app-text-2) !important;
+    }
+
+    .message-bubble {
+      .message-role-icon {
+        color: var(--app-text) !important;
+      }
+
+      .message-time {
+        color: var(--app-text-3) !important;
+      }
+    }
+
+    .cursor-blink {
+      color: var(--app-text) !important;
+    }
+
+    .streaming-text {
+      color: var(--app-text) !important;
+    }
+
+    // 审批横幅
+    .approval-banner {
+      background: var(--el-fill-color) !important;
+      border-top-color: var(--app-border) !important;
+
+      .approval-icon {
+        color: var(--app-text) !important;
+      }
+
+      .approval-text {
+        strong {
+          color: var(--app-text) !important;
+        }
+        p {
+          color: var(--app-text-2) !important;
+        }
+      }
+    }
+
+    // 节点时间线
+    .node-timeline {
+      .node-dot {
+        &.status-running {
+          background: var(--el-fill-color) !important;
+          color: var(--app-text) !important;
+        }
+        &.status-completed {
+          background: var(--el-color-success) !important;
+          color: var(--app-bg) !important;
+        }
+        &.status-failed {
+          background: var(--el-color-danger) !important;
+          color: var(--app-bg) !important;
+        }
+        &.status-idle {
+          background: var(--el-fill-color-light) !important;
+          color: var(--app-text-3) !important;
+        }
+      }
+    }
+
+    .timeline-node {
+      .node-name {
+        color: var(--app-text) !important;
+      }
+      .node-activity {
+        color: var(--app-text-2) !important;
+      }
+      .node-model-route {
+        color: var(--app-text-3) !important;
+      }
+      .node-meta .node-time {
+        color: var(--app-text-3) !important;
+      }
+    }
+
+    .progress-section .progress-label {
+      color: var(--app-text-3) !important;
+    }
+
+    // 完成结果
+    .completion-result {
+      :deep(.el-result__title) {
+        color: var(--app-text) !important;
+      }
+      :deep(.el-result__subtitle) {
+        color: var(--app-text-2) !important;
+      }
+    }
+
+    // 导出面板
+    .export-panel {
+      background: var(--app-surface) !important;
+      border-top-color: var(--app-border) !important;
+
+      .export-panel-title {
+        color: var(--app-text) !important;
+      }
+    }
+  }
 
   // Dashboard specific overrides
   html.theme-dark.theme-dark .stat-value { color: var(--app-text) !important; }
@@ -186,10 +365,31 @@ html.theme-dark {
     font-weight: 600 !important;
   }
 
-  // Active menu item — fix white bg in dark mode
-  html.theme-dark .el-menu-item.is-active {
-    background: var(--el-fill-color) !important;
-    color: var(--app-text) !important;
+  // Active menu item — 白底黑字
+  html.theme-dark nav.el-menu .el-menu-item.is-active {
+    background: #ffffff !important;
+    color: #000000 !important;
+    border-bottom-color: #000000 !important;
+  }
+
+  // Menu item hover — 灰色背景
+  html.theme-dark nav.el-menu .el-menu-item:not(.is-active):hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    color: #ffffff !important;
+  }
+
+  // Normal menu item — 白色文字
+  html.theme-dark nav.el-menu .el-menu-item {
+    color: rgba(255, 255, 255, 0.7) !important;
+  }
+
+  // Submenu dropdown — 深色背景
+  html.theme-dark nav.el-menu .el-sub-menu__title {
+    color: rgba(255, 255, 255, 0.7) !important;
+    &:hover {
+      background: rgba(255, 255, 255, 0.1) !important;
+      color: #ffffff !important;
+    }
   }
 
   // Dialog override
@@ -636,18 +836,42 @@ html.theme-light {
     --el-timeline-node-color: var(--app-text-3);
   }
 
-  // Upload drag
-  .el-upload-dragger {
-    border: 1px dashed var(--app-border);
-    background: var(--el-fill-color-light);
+  // Upload drag - 使用更强的选择器覆盖 Element Plus 默认白色背景
+  .el-upload {
+    .el-upload-dragger,
+    .el-upload__dragger {
+      border: 1px dashed var(--app-border) !important;
+      border-radius: 6px;
+      background-color: var(--el-fill-color) !important;
+      background-image: none !important;
 
-    &:hover {
-      border-color: var(--app-text-3);
+      &:hover {
+        border-color: var(--app-text) !important;
+        background-color: var(--el-fill-color-light) !important;
+      }
+
+      .el-icon {
+        color: var(--app-text-3) !important;
+        fill: var(--app-text-3) !important;
+      }
+
+      .el-upload__text {
+        color: var(--app-text-2) !important;
+        background-color: transparent !important;
+        em { color: var(--app-text) !important; }
+      }
     }
 
+    // 覆盖可能的内部白色背景
+    .el-icon {
+      color: var(--app-text-3) !important;
+    }
+  }
+
+  // 确保拖拽区域的文字和图标也是深色
+  .el-upload-dragger {
     .el-upload__text {
-      color: var(--app-text-2);
-      em { color: var(--app-text); }
+      background-color: transparent !important;
     }
   }
 
@@ -912,9 +1136,39 @@ html.theme-dark .workflow-detail-page,
 html.theme-dark .workflow-list-page,
 html.theme-dark .knowledge-base-view,
 html.theme-dark .observability-view,
-html.theme-dark .editor-view {
-  background: var(--app-bg) !important;
+html.theme-dark .editor-view,
+html.theme-dark .auth-page {
+  background: #000000 !important;
   color: var(--app-text) !important;
+}
+
+// 深色首页纯黑背景覆盖
+html.theme-dark .home-page,
+html.theme-dark .home-nav,
+html.theme-dark .hero,
+html.theme-dark .demo-section,
+html.theme-dark .features-section,
+html.theme-dark .pricing-section,
+html.theme-dark .testimonials-section {
+  background: #000000 !important;
+}
+
+html.theme-dark .demo-header,
+html.theme-dark .demo-toolbar,
+html.theme-dark .demo-content,
+html.theme-dark .feature-card,
+html.theme-dark .pricing-card,
+html.theme-dark .testimonial-card {
+  background: #0a0a0a !important;
+}
+
+html.theme-dark .demo-palette {
+  background: #141414 !important;
+}
+
+html.theme-dark .demo-canvas {
+  background-color: #000000 !important;
+  background-image: radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px) !important;
 }
 
 // Select
