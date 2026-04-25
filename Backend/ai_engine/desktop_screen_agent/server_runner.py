@@ -46,6 +46,20 @@ def _log(level: str, msg: str, extra: dict[str, Any] | None = None) -> None:
     else:
         log.info(msg, extra=payload)
 
+def _log_key_event(event: str, extra: dict[str, Any] | None = None, *, level: str = "info") -> None:
+    """
+    控制台关键事件日志（AI 自动回复）：
+    - 只保留高价值字段：识别到的用户名、最后一条消息与归属、AI 回复信息、发送结果/失败原因
+    - 其它中间过程日志统一降级为 debug 或移除，避免刷屏
+    """
+    ev = (event or "").strip() or "auto_reply_event"
+    payload = extra or {}
+    # 强制截断，避免意外把长 OCR/大段文本刷满控制台
+    for k in ("friend_name", "last_other_text", "reply_text", "error", "verify", "send_action"):
+        if k in payload and payload[k] is not None:
+            payload[k] = str(payload[k]).strip()[:1200]
+    _log(level, ev, payload)
+
 
 def _try_screenshot_png() -> str | None:
     try:
@@ -511,7 +525,8 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     uid = int(user_id)
-    _log("info", "本机屏幕代理已启动", {"pid": os.getpid(), "user_id": uid})
+    # 启动信息降级，避免频繁重启刷屏
+    _log("debug", "screen_agent_started", {"pid": os.getpid(), "user_id": uid})
 
     last_chat_signature = ""
     last_auto_reply_at = 0.0
@@ -555,7 +570,7 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
             )
             if p is None:
                 # 没配置就休眠
-                _log("info", "未找到屏幕配置（AutoReplyScreenProfile），等待中", {"user_id": uid})
+                _log("debug", "screen_profile_missing", {"user_id": uid})
                 time.sleep(10)
                 continue
             prof = _profile_to_dict(p)
@@ -579,12 +594,12 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                         region_detect_ack_nonce=int(nonce),
                         agent_runtime_snapshot=snap2,
                     )
-                    _log("info", f"区域识别完成（仅写入运行快照，不落库坐标）：{msg2}", {"nonce": nonce, "user_id": uid})
+                    _log("debug", "region_detect_done", {"nonce": nonce, "user_id": uid})
                 else:
-                    _log("warn", f"区域识别未成功：{msg2}", {"nonce": nonce, "user_id": uid})
+                    _log("debug", "region_detect_failed", {"nonce": nonce, "user_id": uid, "reason": str(msg2 or "")[:200]})
 
             if not prof.get("monitoring_active"):
-                _log("info", "monitoring_active=false，代理暂不监控", {"user_id": uid})
+                _log("debug", "monitoring_inactive", {"user_id": uid})
                 time.sleep(max(12, interval * 4))
                 continue
 
@@ -593,7 +608,7 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                 yolo_weights_path=str(getattr(settings, "FLOWLY_SCREEN_YOLO_WEIGHTS", "") or "").strip() or None,
             )
             if not areas:
-                _log("info", f"区域识别未返回 areas：{msg}", {"user_id": uid})
+                _log("debug", "areas_empty", {"user_id": uid, "source": str(msg or "")[:120]})
             flags = {
                 "detected_chat_area": bool(areas and areas.get("chat_area")),
                 "detected_user": bool(areas and areas.get("user_object")),
@@ -604,7 +619,7 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
             flags_sig = "|".join(f"{k}={1 if v else 0}" for k, v in sorted(flags.items()))
             if flags_sig != last_flags_sig:
                 last_flags_sig = flags_sig
-                _log("info", "区域识别状态变化", {"user_id": uid, "flags": flags, "source": msg})
+                _log("debug", "area_flags_changed", {"user_id": uid, "flags": flags, "source": str(msg or "")[:120]})
             # 优先用 OCR 的“最后一条对方消息”做触发签名（更贴近自动回复场景）。
             ocr_info: dict[str, Any] | None = None
             chat_sig = "0"
@@ -630,8 +645,8 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                             else:
                                 chat_sig = "self_or_empty"
                             _log(
-                            "debug",
-                            "OCR 完成",
+                                "debug",
+                                "ocr_done",
                                 {
                                     "user_id": uid,
                                     "ms": ocr_ms,
@@ -642,7 +657,7 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                         else:
                             # OCR 失败时不应触发“消息变化”，否则会出现你现在看到的假触发链路
                             err_txt = str(ocr_info.get("error") or "ocr_failed")
-                            _log("warn", f"OCR 失败：{err_txt[:500]}", {"user_id": uid})
+                            _log("debug", "ocr_failed", {"user_id": uid, "error": err_txt[:200]})
                             chat_sig = last_chat_signature or "ocr_failed"
                     finally:
                         try:
@@ -651,20 +666,19 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                             pass
                 else:
                     chat_sig = "1"
-                    _log("warn", "截图失败，无法 OCR", {"user_id": uid})
+                    _log("debug", "screenshot_failed_for_ocr", {"user_id": uid})
             message_detected = bool(chat_sig and chat_sig != last_chat_signature and flags["detected_chat_area"])
             last_chat_signature = chat_sig
 
             if message_detected:
-                _log(
-                    "info",
-                    "检测到疑似新消息变化",
+                # 关键日志：最后一条消息与归属
+                _log_key_event(
+                    "auto_reply_detected_message",
                     {
                         "user_id": uid,
-                        "friend_name": (friend_name or "").strip()[:128],
+                        "friend_name": (last_friend_name or "").strip()[:128],
                         "last_from_me": last_from_me_pos,
-                        "last_other_text": (last_other_text or "").strip()[:300],
-                        "sig": chat_sig[:80],
+                        "last_other_text": (last_other_text or "").strip()[:500],
                     },
                 )
 
@@ -698,7 +712,11 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                 friend_name = last_friend_name
             if friend_name != last_friend_name:
                 last_friend_name = friend_name
-                _log("info", "识别到会话用户变化", {"user_id": uid, "friend_name": friend_name})
+                # 关键日志：识别到的用户名
+                _log_key_event(
+                    "auto_reply_friend_name",
+                    {"user_id": uid, "friend_name": friend_name},
+                )
 
             snap_payload: dict[str, Any] = {
                 "updated_at": django_timezone.now().isoformat(),
@@ -738,7 +756,7 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                 last_snapshot_sig = snap_sig
                 _log(
                     "debug",
-                    "快照变化",
+                    "snapshot_changed",
                     {
                         "user_id": uid,
                         "detected_message_change": bool(message_detected),
@@ -764,7 +782,7 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
 
                 last_line = (last_other_text or "").strip()
                 if not last_line:
-                    _log("warn", "检测到变化，但 OCR 未取到最后一句文本，跳过自动回复", {"user_id": uid})
+                    _log("debug", "auto_reply_skip_empty_last_line", {"user_id": uid})
                     continue
 
                 # 此处复用循环中节流得到的 friend_name（避免重复截图+OCR）
@@ -773,7 +791,7 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                 # 如果配置了监听好友列表，则仅对命中的好友触发
                 mf = prof.get("monitored_friends") if isinstance(prof.get("monitored_friends"), list) else []
                 if mf and friend_name and friend_name not in {str(x) for x in mf}:
-                    _log("info", "好友不在监听列表，跳过自动回复", {"user_id": uid, "friend_name": friend_name})
+                    _log("debug", "auto_reply_skip_not_in_monitored_list", {"user_id": uid, "friend_name": friend_name})
                     continue
 
                 rule = None
@@ -799,23 +817,39 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                     friend_name=friend_name,
                     status=AutoReplyJob.Status.PENDING,
                 )
-                _log("info", f"检测到新消息，已创建回复任务 #{job.pk}", {"job_id": job.pk, "user_id": uid})
+                _log("debug", "auto_reply_job_created", {"job_id": job.pk, "user_id": uid})
 
                 from ai_engine.auto_reply.runner import run_auto_reply_job_sync
 
                 run_auto_reply_job_sync(int(job.pk))
                 job.refresh_from_db()
                 if job.status != AutoReplyJob.Status.COMPLETED or not (job.reply_text or "").strip():
-                    _log("error", f"回复生成失败：{job.error_message or 'unknown_error'}", {"job_id": job.pk, "user_id": uid})
+                    _log_key_event(
+                        "auto_reply_generate_failed",
+                        {
+                            "job_id": job.pk,
+                            "user_id": uid,
+                            "friend_name": (friend_name or "").strip()[:128],
+                            "last_other_text": (last_line or "").strip()[:500],
+                            "error": (job.error_message or "unknown_error")[:800],
+                        },
+                        level="error",
+                    )
                     continue
 
                 raw_reply_text = str(job.reply_text)
                 reply_text = _postprocess_reply_text(raw_reply_text)
                 if not reply_text.strip():
-                    _log(
-                        "error",
-                        "回复文本处理后为空，已跳过发送",
-                        {"job_id": job.pk, "user_id": uid, "raw_reply_text": raw_reply_text.strip()[:800]},
+                    _log_key_event(
+                        "auto_reply_empty_after_postprocess",
+                        {
+                            "job_id": job.pk,
+                            "user_id": uid,
+                            "friend_name": (friend_name or "").strip()[:128],
+                            "last_other_text": (last_line or "").strip()[:500],
+                            "error": "empty_reply_after_postprocess",
+                        },
+                        level="error",
                     )
                     continue
                 input_box = tuple(int(x) for x in areas["input_box"])
@@ -834,77 +868,54 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
                         input_box=input_box,
                     )
                     if ok2:
-                        _log(
-                            "info",
-                            "已发送回复",
+                        _log_key_event(
+                            "auto_reply_sent",
                             {
                                 "job_id": job.pk,
                                 "user_id": uid,
                                 "friend_name": (friend_name or "").strip()[:128],
-                                "detected_last_other_text": (last_line or "").strip()[:500],
+                                "last_other_text": (last_line or "").strip()[:500],
                                 "reply_text": reply_text.strip()[:1200],
-                                "raw_reply_text": raw_reply_text.strip()[:1200],
                                 "send_action": detail,
                                 "verify": vdetail,
-                                "boxes": {
-                                    "chat_area": list(chat_box) if chat_box else None,
-                                    "input_box": list(input_box) if input_box else None,
-                                },
                             },
                         )
                     else:
-                        _log(
-                            "error",
-                            "发送动作已执行，但未能确认已发送（可能未聚焦窗口/发送热键不匹配/坐标偏移）",
+                        _log_key_event(
+                            "auto_reply_send_unverified",
                             {
                                 "job_id": job.pk,
                                 "user_id": uid,
                                 "friend_name": (friend_name or "").strip()[:128],
-                                "detected_last_other_text": (last_line or "").strip()[:500],
+                                "last_other_text": (last_line or "").strip()[:500],
                                 "reply_text": reply_text.strip()[:1200],
-                                "raw_reply_text": raw_reply_text.strip()[:1200],
                                 "send_action": detail,
                                 "verify": vdetail,
-                                "boxes": {
-                                    "chat_area": list(chat_box) if chat_box else None,
-                                    "input_box": list(input_box) if input_box else None,
-                                },
+                                "error": "send_action_done_but_not_verified",
                             },
+                            level="error",
                         )
                 else:
-                    _log(
-                        "error",
-                        f"发送失败：{detail}",
+                    _log_key_event(
+                        "auto_reply_send_failed",
                         {
                             "job_id": job.pk,
                             "user_id": uid,
                             "friend_name": (friend_name or "").strip()[:128],
-                            "detected_last_other_text": (last_line or "").strip()[:500],
+                            "last_other_text": (last_line or "").strip()[:500],
                             "reply_text": reply_text.strip()[:1200],
-                            "raw_reply_text": raw_reply_text.strip()[:1200],
-                            "boxes": {"input_box": list(input_box) if input_box else None},
+                            "error": str(detail)[:800],
                         },
+                        level="error",
                     )
             elif message_detected and last_from_me is True:
-                _log("info", "检测到变化但最后一句为自己，跳过自动回复", {"user_id": uid})
+                _log("debug", "auto_reply_skip_last_from_me", {"user_id": uid})
             elif message_detected and last_from_me is None:
-                _log("info", "检测到变化但无法判定归属，跳过自动回复", {"user_id": uid})
+                _log("debug", "auto_reply_skip_unknown_owner", {"user_id": uid})
             elif message_detected:
-                # 兜底：有变化但未进入发送分支，打印一条可读的原因提示（不刷屏，只在 message_detected 时出现）
-                _log(
-                    "info",
-                    "检测到变化但未触发发送",
-                    {
-                        "user_id": uid,
-                        "friend_name": (last_friend_name or "").strip()[:128],
-                        "last_other_text": (last_other_text or "").strip()[:300],
-                        "last_from_me": last_from_me,
-                        "has_input_box": bool(areas and areas.get("input_box")),
-                        "monitoring_active": bool(prof.get("monitoring_active")),
-                    },
-                )
+                _log("debug", "auto_reply_detected_but_not_triggered", {"user_id": uid})
         except Exception as e:
-            _log("error", f"屏幕代理异常：{e}", {"user_id": uid})
+            _log("error", "screen_agent_error", {"user_id": uid, "error": f"{type(e).__name__}: {e}"[:500]})
             interval = 10
         time.sleep(interval)
 

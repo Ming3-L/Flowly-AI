@@ -2,7 +2,7 @@
 
 与参考桌面项目一致：周期性截屏，可选 **Ultralytics YOLO** 识别聊天窗口子区域；将检测结果以 **heartbeat** 上报到 Flowly `POST /api/auto-reply/screen-events`。
 
-可选：通过**子进程**调用仓库内参考快照里的 **`src/core/ocr.py`**（OpenOCR），在同一轮心跳的 payload 里附带 `ocr` 字段（用户名、聊天区预览、输入框预览等），失败时额外上报 **`ocr_error`** 事件。
+可选：通过**子进程**调用 OpenOCR（见 `ai_engine/desktop_screen_agent/ocr_reference_worker.py`），在同一轮心跳的 payload 里附带 `ocr` 字段（用户名、聊天区预览、输入框预览等），失败时额外上报 **`ocr_error`** 事件。
 
 ## 依赖
 
@@ -13,9 +13,10 @@
 # 若需 CUDA 12.4 轮子：加参数 -Cuda cu124
 ```
 
-`torch` 需从 `https://download.pytorch.org/whl/cu118|cu121|cu124` 安装才能用 GPU；其余包走清华镜像。仅 CPU 时可自行 `pip install torch` 后 `pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r Backend/requirements-desktop-agent.txt`。
+`torch` 需从 `https://download.pytorch.org/whl/cu118|cu121|cu124` 安装才能用 GPU；其余包走清华镜像。
+桌面屏幕代理依赖现已并入 `Backend/requirements.txt` 的可选分组（Desktop Screen Agent）。
 
-若启用 OCR 子进程，请再安装与参考实现一致的 OpenOCR（见 `desktop_screen_agent/ocr_reference_bundle/requirements.txt` 中的 `openocr-python`）。
+若启用 OCR 子进程，请确保当前后端虚拟环境已安装 `openocr-python`（见 `Backend/requirements.txt`）。
 
 ## 环境变量
 
@@ -26,7 +27,6 @@
 | `FLOWLY_SCREEN_YOLO_WEIGHTS` | （可选）`best.pt` 等权重绝对路径；不填时默认使用 `Backend/ai_engine/desktop_screen_agent/weights/best.pt`（若存在） |
 | `FLOWLY_SCREEN_YOLO_TOLERANCE_PX` | （可选）坐标容差，默认 20 |
 | `FLOWLY_SCREEN_OCR_SUBPROCESS` | 设为 `1` / `true` 时，每轮在子进程中跑参考 OCR（需已安装 openocr，且参考根有效） |
-| `FLOWLY_OCR_REFERENCE_ROOT` | 参考项目根（含 `src/`）。默认：`Backend/ai_engine/desktop_screen_agent/ocr_reference_bundle` |
 | `FLOWLY_OCR_PYTHON` | 子进程 Python（默认当前解释器）；可为单独 venv 的 `python.exe` |
 | `FLOWLY_OCR_SUBPROCESS_TIMEOUT` | OCR 子进程超时秒数，默认 120 |
 | `FLOWLY_SCREEN_SEND_KEY` | （仅后端内置屏幕代理发送）发送快捷键：`enter`（默认）或 `ctrl_enter`（微信设置为 Ctrl+Enter 发送时用） |
@@ -50,8 +50,6 @@ D:\project\Flowly-AI\.venv\Scripts\python.exe -m ai_engine.desktop_screen_agent
 
 ```powershell
 $env:FLOWLY_SCREEN_OCR_SUBPROCESS="1"
-# 若参考目录不在仓库默认路径：
-# $env:FLOWLY_OCR_REFERENCE_ROOT="E:\桌面\project\AI自动回复"
 D:\project\Flowly-AI\.venv\Scripts\python.exe -m ai_engine.desktop_screen_agent
 ```
 

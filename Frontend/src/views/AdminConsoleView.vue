@@ -17,8 +17,9 @@
           <el-button type="primary" size="small" :icon="Refresh" :loading="modelsLoading" @click="loadModels">
             刷新
           </el-button>
+          <el-button size="small" type="success" @click="openCatalogEditorForCreate">新增模型</el-button>
         </div>
-        <el-table :data="catalogRows" v-loading="modelsLoading" stripe max-height="560">
+        <el-table :data="catalogRows" v-loading="modelsLoading" stripe max-height="560" @row-click="onCatalogRowClick">
           <el-table-column prop="catalog_key" label="Key" min-width="140" show-overflow-tooltip />
           <el-table-column prop="label" label="名称" min-width="120" />
           <el-table-column prop="route" label="接入路由" width="100" />
@@ -35,10 +36,114 @@
           </el-table-column>
           <el-table-column label="操作" width="100" align="center" fixed="right">
             <template #default="{ row }">
+              <el-button link size="small" @click.stop="openCatalogEditorForEdit(row)">编辑</el-button>
               <el-button type="danger" link size="small" @click="deleteCatalog(row)">删除</el-button>
             </template>
           </el-table-column>
         </el-table>
+
+        <el-dialog v-model="catalogEditorOpen" :title="catalogEditorTitle" width="640px">
+          <el-form label-width="120px">
+            <el-form-item label="catalog_key">
+              <el-input v-model="catalogDraft.catalog_key" :disabled="!!catalogDraft.id" placeholder="如 ark-doubao-seed-2-0-pro" />
+            </el-form-item>
+            <el-form-item label="名称(label)">
+              <el-input v-model="catalogDraft.label" placeholder="展示名" />
+            </el-form-item>
+            <el-form-item label="接入路由(route)">
+              <el-select v-model="catalogDraft.route" style="width: 100%">
+                <el-option label="doubao" value="doubao" />
+                <el-option label="openai" value="openai" />
+                <el-option label="claude" value="claude" />
+                <el-option label="ollama" value="ollama" />
+                <el-option label="vectorengine" value="vectorengine" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="model_id">
+              <el-input v-model="catalogDraft.model_id" placeholder="如 Doubao-Seed-2.0-pro 或 ep-xxx" />
+            </el-form-item>
+            <el-form-item label="api_kind">
+              <el-select v-model="catalogDraft.api_kind" style="width: 100%">
+                <el-option label="ark_chat" value="ark_chat" />
+                <el-option label="openspeech" value="openspeech" />
+                <el-option label="ark_embedding" value="ark_embedding" />
+                <el-option label="ark_rerank" value="ark_rerank" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="显示到画布模型下拉">
+              <el-switch v-model="catalogDraft.show_in_canvas_llm_nodes" />
+            </el-form-item>
+            <el-form-item label="启用">
+              <el-switch v-model="catalogDraft.is_active" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="catalogEditorOpen=false">取消</el-button>
+            <el-button type="primary" :loading="catalogSaving" @click="saveCatalogDraft">保存</el-button>
+          </template>
+        </el-dialog>
+
+        <el-drawer v-model="variantsDrawerOpen" title="二级选项（音色/能力）" size="520px">
+          <div v-if="!selectedCatalogRow" class="muted" style="padding: 12px 0">请选择一个模型目录项</div>
+          <template v-else>
+            <div class="toolbar" style="padding: 0 0 10px 0">
+              <el-tag size="small">{{ selectedCatalogRow.catalog_key }}</el-tag>
+              <span class="muted" style="margin-left: 8px">{{ selectedCatalogRow.label }}</span>
+              <div style="flex:1"></div>
+              <el-button size="small" type="primary" :loading="variantsLoading" @click="loadVariants(selectedCatalogRow.id)">
+                刷新
+              </el-button>
+              <el-button size="small" @click="addVariantRow">新增</el-button>
+            </div>
+
+            <el-table :data="variantRows" v-loading="variantsLoading" stripe size="small" max-height="480">
+              <el-table-column prop="kind" label="kind" width="90" />
+              <el-table-column prop="variant_id" label="id" min-width="140" show-overflow-tooltip />
+              <el-table-column prop="label" label="名称" min-width="140" show-overflow-tooltip />
+              <el-table-column prop="value" label="value" min-width="160" show-overflow-tooltip />
+              <el-table-column prop="sort_order" label="排序" width="70" align="right" />
+              <el-table-column label="操作" width="120" fixed="right">
+                <template #default="{ row }">
+                  <el-button link size="small" @click="editVariantRow(row)">编辑</el-button>
+                  <el-button link size="small" type="danger" @click="deleteVariantRow(row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <el-dialog v-model="variantEditorOpen" title="编辑二级选项" width="560px">
+              <el-form label-width="110px">
+                <el-form-item label="kind">
+                  <el-select v-model="variantDraft.kind" style="width: 100%">
+                    <el-option label="voice" value="voice" />
+                    <el-option label="capability" value="capability" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="variant_id">
+                  <el-input v-model="variantDraft.variant_id" placeholder="如 zh_female_vv_uranus_bigtts" />
+                </el-form-item>
+                <el-form-item label="label">
+                  <el-input v-model="variantDraft.label" placeholder="展示名" />
+                </el-form-item>
+                <el-form-item label="value">
+                  <el-input v-model="variantDraft.value" placeholder="实际传给接口的值（speaker/voice_type/resource_id 等）" />
+                </el-form-item>
+                <el-form-item label="sort_order">
+                  <el-input-number v-model="variantDraft.sort_order" :min="-9999" :max="9999" />
+                </el-form-item>
+                <el-form-item label="config(JSON)">
+                  <el-input v-model="variantDraft.config_json" type="textarea" :rows="6" placeholder='{"resource_id":"seed-tts-2.0"}' />
+                </el-form-item>
+                <el-form-item label="启用">
+                  <el-switch v-model="variantDraft.is_active" />
+                </el-form-item>
+              </el-form>
+              <template #footer>
+                <el-button @click="variantEditorOpen=false">取消</el-button>
+                <el-button type="primary" :loading="variantSaving" @click="saveVariantDraft">保存</el-button>
+              </template>
+            </el-dialog>
+          </template>
+        </el-drawer>
       </el-tab-pane>
 
       <el-tab-pane label="接入配置 (密钥)" name="secrets">
@@ -157,6 +262,35 @@ const activeTab = ref<string>('models')
 
 const modelsLoading = ref(false)
 const catalogRows = ref<any[]>([])
+const selectedCatalogRow = ref<any | null>(null)
+const variantsDrawerOpen = ref(false)
+const variantsLoading = ref(false)
+const variantRows = ref<any[]>([])
+const variantEditorOpen = ref(false)
+const variantSaving = ref(false)
+const catalogEditorOpen = ref(false)
+const catalogSaving = ref(false)
+const catalogDraft = reactive<any>({
+  id: 0,
+  catalog_key: '',
+  label: '',
+  route: 'doubao',
+  model_id: '',
+  api_kind: 'ark_chat',
+  show_in_canvas_llm_nodes: true,
+  is_active: true,
+})
+const catalogEditorTitle = computed(() => (catalogDraft.id ? '编辑模型目录项' : '新增模型目录项'))
+const variantDraft = reactive<any>({
+  pk: 0,
+  kind: 'voice',
+  variant_id: '',
+  label: '',
+  value: '',
+  sort_order: 0,
+  config_json: '{}',
+  is_active: true,
+})
 
 const usersLoading = ref(false)
 const userRows = ref<any[]>([])
@@ -287,6 +421,177 @@ async function loadModels() {
     ElMessage.error('加载模型目录失败')
   } finally {
     modelsLoading.value = false
+  }
+}
+
+function openCatalogEditorForCreate() {
+  catalogDraft.id = 0
+  catalogDraft.catalog_key = ''
+  catalogDraft.label = ''
+  catalogDraft.route = 'doubao'
+  catalogDraft.model_id = ''
+  catalogDraft.api_kind = 'ark_chat'
+  catalogDraft.show_in_canvas_llm_nodes = true
+  catalogDraft.is_active = true
+  catalogEditorOpen.value = true
+}
+
+function openCatalogEditorForEdit(row: any) {
+  catalogDraft.id = row.id
+  catalogDraft.catalog_key = row.catalog_key || ''
+  catalogDraft.label = row.label || ''
+  catalogDraft.route = row.route || 'doubao'
+  catalogDraft.model_id = row.model_id || ''
+  catalogDraft.api_kind = row.api_kind || 'ark_chat'
+  catalogDraft.show_in_canvas_llm_nodes = row.show_in_canvas_llm_nodes !== false
+  catalogDraft.is_active = row.is_active !== false
+  catalogEditorOpen.value = true
+}
+
+async function saveCatalogDraft() {
+  const ck = String(catalogDraft.catalog_key || '').trim()
+  const label = String(catalogDraft.label || '').trim()
+  if (!ck) {
+    ElMessage.error('catalog_key 不能为空')
+    return
+  }
+  if (!label) {
+    ElMessage.error('名称(label) 不能为空')
+    return
+  }
+  catalogSaving.value = true
+  try {
+    if (!catalogDraft.id) {
+      await api.post('/ai/catalog-entries', {
+        catalog_key: ck,
+        label,
+        route: String(catalogDraft.route || 'doubao').trim(),
+        model_id: String(catalogDraft.model_id || '').trim(),
+        api_kind: String(catalogDraft.api_kind || 'ark_chat').trim(),
+        show_in_canvas_llm_nodes: !!catalogDraft.show_in_canvas_llm_nodes,
+        is_active: !!catalogDraft.is_active,
+      })
+    } else {
+      await api.patch(`/ai/catalog-entries/${catalogDraft.id}`, {
+        label,
+        route: String(catalogDraft.route || 'doubao').trim(),
+        model_id: String(catalogDraft.model_id || '').trim(),
+        api_kind: String(catalogDraft.api_kind || 'ark_chat').trim(),
+        show_in_canvas_llm_nodes: !!catalogDraft.show_in_canvas_llm_nodes,
+        is_active: !!catalogDraft.is_active,
+      })
+    }
+    catalogEditorOpen.value = false
+    await loadModels()
+    ElMessage.success('已保存')
+  } catch {
+    ElMessage.error('保存失败')
+  } finally {
+    catalogSaving.value = false
+  }
+}
+
+function onCatalogRowClick(row: any) {
+  selectedCatalogRow.value = row
+  variantsDrawerOpen.value = true
+  loadVariants(row.id)
+}
+
+async function loadVariants(entryId: number) {
+  if (!isStaff.value) return
+  variantsLoading.value = true
+  try {
+    const res = await api.get(`/ai/catalog-entries/${entryId}/variants`)
+    variantRows.value = res.data ?? []
+  } catch {
+    variantRows.value = []
+    ElMessage.error('加载二级选项失败')
+  } finally {
+    variantsLoading.value = false
+  }
+}
+
+function addVariantRow() {
+  variantDraft.pk = 0
+  variantDraft.kind = 'voice'
+  variantDraft.variant_id = ''
+  variantDraft.label = ''
+  variantDraft.value = ''
+  variantDraft.sort_order = 0
+  variantDraft.config_json = '{}'
+  variantDraft.is_active = true
+  variantEditorOpen.value = true
+}
+
+function editVariantRow(row: any) {
+  variantDraft.pk = row.id
+  variantDraft.kind = row.kind || 'voice'
+  variantDraft.variant_id = row.variant_id || ''
+  variantDraft.label = row.label || ''
+  variantDraft.value = row.value || ''
+  variantDraft.sort_order = row.sort_order ?? 0
+  variantDraft.is_active = !!row.is_active
+  variantDraft.config_json = JSON.stringify(row.config ?? {}, null, 2)
+  variantEditorOpen.value = true
+}
+
+async function saveVariantDraft() {
+  const entry = selectedCatalogRow.value
+  if (!entry) return
+  let cfg: any = {}
+  try {
+    cfg = JSON.parse(String(variantDraft.config_json || '{}'))
+  } catch {
+    ElMessage.error('config JSON 解析失败')
+    return
+  }
+  variantSaving.value = true
+  try {
+    if (!variantDraft.pk) {
+      await api.post(`/ai/catalog-entries/${entry.id}/variants`, {
+        kind: variantDraft.kind,
+        variant_id: variantDraft.variant_id,
+        label: variantDraft.label,
+        value: variantDraft.value,
+        sort_order: variantDraft.sort_order,
+        config: cfg,
+        is_active: variantDraft.is_active,
+      })
+    } else {
+      await api.patch(`/ai/catalog-entries/${entry.id}/variants/${variantDraft.pk}`, {
+        kind: variantDraft.kind,
+        variant_id: variantDraft.variant_id,
+        label: variantDraft.label,
+        value: variantDraft.value,
+        sort_order: variantDraft.sort_order,
+        config: cfg,
+        is_active: variantDraft.is_active,
+      })
+    }
+    variantEditorOpen.value = false
+    await loadVariants(entry.id)
+    ElMessage.success('已保存')
+  } catch {
+    ElMessage.error('保存失败')
+  } finally {
+    variantSaving.value = false
+  }
+}
+
+async function deleteVariantRow(row: any) {
+  const entry = selectedCatalogRow.value
+  if (!entry) return
+  try {
+    await ElMessageBox.confirm(`确认删除二级选项「${row.label || row.variant_id}」？`, '提示', { type: 'warning' })
+  } catch {
+    return
+  }
+  try {
+    await api.delete(`/ai/catalog-entries/${entry.id}/variants/${row.id}`)
+    await loadVariants(entry.id)
+    ElMessage.success('已删除')
+  } catch {
+    ElMessage.error('删除失败')
   }
 }
 

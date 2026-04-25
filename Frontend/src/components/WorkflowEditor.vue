@@ -206,6 +206,26 @@
               </el-select>
               <div class="field-hint">按分类查看适用范围；清空表示沿用旧版 provider/model。</div>
             </div>
+            <div v-if="selectedTtsVariants().length" class="inspector-field">
+              <label>音色/能力</label>
+              <el-select
+                v-model="inspectorConfig.tts_voice_id"
+                filterable
+                clearable
+                size="small"
+                placeholder="默认（平台配置）"
+                @change="updateNodeConfig"
+              >
+                <el-option label="默认（平台配置）" value="" />
+                <el-option
+                  v-for="v in selectedTtsVariants()"
+                  :key="`tts-${v.id}`"
+                  :label="v.label"
+                  :value="v.id"
+                />
+              </el-select>
+              <div class="field-hint">仅对 OpenSpeech TTS 模型生效；不选则使用平台默认音色。</div>
+            </div>
             <div class="inspector-field">
               <label>温度</label>
               <el-slider
@@ -846,6 +866,8 @@ interface CatalogModelRow {
   api_kind?: string
   /** false：仅出现在模型总表，不出现在画布 LLM 节点下拉（向量/生图/语音等） */
   show_in_canvas_llm_nodes?: boolean
+  /** 二级选项（如语音音色 variants） */
+  variants?: Array<{ id: string; label: string; voice_type: string }>
 }
 
 interface ModelOptionGroup {
@@ -857,6 +879,20 @@ interface ModelOptionGroup {
 const CANVAS_MODEL_NODE_TYPES = ['chat', 'text', 'image', 'audio', 'video'] as const
 
 const aiModelsCatalog = ref<{ models: CatalogModelRow[] } | null>(null)
+
+function selectedCatalogModelRow(): CatalogModelRow | null {
+  const mk = String(inspectorConfig.value?.modelKey ?? '').trim()
+  if (!mk) return null
+  return (aiModelsCatalog.value?.models ?? []).find((r) => r.key === mk) ?? null
+}
+
+function selectedTtsVariants(): Array<{ id: string; label: string; voice_type: string }> {
+  const row = selectedCatalogModelRow()
+  const ak = String(row?.api_kind ?? '').toLowerCase()
+  const scopes = new Set((row?.scopes ?? []).map((x) => String(x || '').toUpperCase()))
+  if (ak !== 'openspeech' || !scopes.has('TTS')) return []
+  return Array.isArray(row?.variants) ? (row!.variants as any) : []
+}
 
 function catalogRowVisibleOnCanvasNode(row: CatalogModelRow, nodeType: string): boolean {
   if (row.show_in_canvas_llm_nodes === false) return false

@@ -41,6 +41,14 @@ def _safe_user_prefix(user_id: int) -> str:
     return f"uploads/u{int(user_id)}/"
 
 
+def _allowed_user_prefixes(user_id: int) -> tuple[str, ...]:
+    uid = int(user_id)
+    # uploads: 用户手动上传
+    # generated: 系统/模型生成（chat_sessions_api、executions 等）
+    # avatars: 头像
+    return (f"uploads/u{uid}/", f"generated/u{uid}/", f"avatars/u{uid}/")
+
+
 def _guess_mime(name: str) -> str:
     mt, _ = mimetypes.guess_type(name)
     return mt or "application/octet-stream"
@@ -158,7 +166,7 @@ def proxy_media(
         return HttpResponse("Authentication required", status=401, content_type="text/plain; charset=utf-8")
 
     rel = (path or "").strip().lstrip("/").replace("\\", "/")
-    if not rel.startswith(_safe_user_prefix(int(u.id))):
+    if not rel.startswith(_allowed_user_prefixes(int(u.id))):
         return HttpResponse("Forbidden", status=403, content_type="text/plain; charset=utf-8")
 
     from django.conf import settings
@@ -170,7 +178,15 @@ def proxy_media(
 
     # 尽量设置 content-type
     mime = _guess_mime(abs_path)
-    return FileResponse(open(abs_path, "rb"), content_type=mime)
+    resp = FileResponse(open(abs_path, "rb"), content_type=mime)
+    # 支持下载：/api/media/proxy?path=...&download=1
+    try:
+        download = str(getattr(request, "GET", {}).get("download") or "").strip()
+    except Exception:
+        download = ""
+    if download in ("1", "true", "yes"):
+        resp["Content-Disposition"] = f'attachment; filename="{os.path.basename(abs_path)}"'
+    return resp
 
 
 @media_router.get("/public", auth=None)
@@ -194,7 +210,12 @@ def public_media(
         return HttpResponse("Expired", status=410, content_type="text/plain; charset=utf-8")
 
     rel = (rel or "").strip().lstrip("/").replace("\\", "/")
-    if not rel.startswith("uploads/") and not rel.startswith("avatars/"):
+    if not (
+        rel.startswith("uploads/")
+        or rel.startswith("avatars/")
+        or rel.startswith("generated/")
+        or rel.startswith("workflow_guides/")
+    ):
         return HttpResponse("Forbidden", status=403, content_type="text/plain; charset=utf-8")
 
     media_root = str(getattr(settings, "MEDIA_ROOT", "media"))
@@ -202,5 +223,13 @@ def public_media(
     if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
         return HttpResponse("Not found", status=404, content_type="text/plain; charset=utf-8")
     mime = _guess_mime(abs_path)
-    return FileResponse(open(abs_path, "rb"), content_type=mime)
+    resp = FileResponse(open(abs_path, "rb"), content_type=mime)
+    # 支持下载：/api/media/public?token=...&download=1
+    try:
+        download = str(getattr(request, "GET", {}).get("download") or "").strip()
+    except Exception:
+        download = ""
+    if download in ("1", "true", "yes"):
+        resp["Content-Disposition"] = f'attachment; filename="{os.path.basename(abs_path)}"'
+    return resp
 

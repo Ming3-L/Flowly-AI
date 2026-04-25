@@ -38,9 +38,12 @@
           </el-upload>
         </div>
 
-        <div v-if="avatarHistory.items.length" style="margin-top: 14px">
-          <div style="font-size: 12px; color: #666; margin-bottom: 8px">历史头像（点击切换）</div>
-          <div class="avatar-grid">
+        <div style="margin-top: 14px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px">
+            <div style="font-size: 12px; color: #666">历史头像（点击切换）</div>
+            <el-button size="small" text :loading="avatarHistoryLoading" @click="fetchAvatarHistory">刷新</el-button>
+          </div>
+          <div v-if="avatarHistory.items.length" class="avatar-grid">
             <div
               v-for="it in avatarHistory.items"
               :key="it.asset_id"
@@ -57,6 +60,9 @@
                 删除
               </el-button>
             </div>
+          </div>
+          <div v-else style="font-size:12px;color:#999">
+            暂无历史头像。上传头像后会自动在此处显示可切换的历史记录。
           </div>
         </div>
       </el-card>
@@ -424,6 +430,7 @@ async function onAvatarPicked(file: any) {
       timeout: 120000,
     })
     await auth.fetchCurrentUser()
+    await fetchAvatarHistory()
     ElMessage.success('头像已更新')
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || e?.response?.data?.message || '上传失败')

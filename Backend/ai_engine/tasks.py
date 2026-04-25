@@ -315,6 +315,83 @@ def warm_workflow_cache() -> str:
         return f"Failed: {exc}"
 
 
+@shared_task(name="ai_engine.tasks.cleanup_generated_media_assets")
+def cleanup_generated_media_assets(days: int = 90, dry_run: bool = False) -> dict[str, Any]:
+    """
+    清理本地生成资源（MEDIA_ROOT/generated/...）的生命周期任务。
+
+    规则（默认 3 个月 = 90 天）：
+    - 仅清理 LocalMediaAsset.rel_path 以 "generated/" 开头的记录
+    - 且 created_at 早于 cutoff（now - days）
+    - 同时尝试删除磁盘文件；文件不存在不视为失败
+    """
+    from ai_engine.models import LocalMediaAsset
+    import os
+
+    now = timezone.now()
+    cutoff = now - timedelta(days=int(days or 90))
+    media_root = str(getattr(settings, "MEDIA_ROOT", "media"))
+
+    qs = (
+        LocalMediaAsset.objects.filter(rel_path__startswith="generated/", created_at__lt=cutoff)
+        .only("id", "rel_path", "created_at")
+        .order_by("id")
+    )
+
+    total = int(qs.count())
+    deleted_rows = 0
+    deleted_files = 0
+    missing_files = 0
+    errors: list[str] = []
+
+    # 用 iterator 避免一次性加载过多
+    for row in qs.iterator(chunk_size=300):
+        rel = (row.rel_path or "").strip().lstrip("/").replace("\\", "/")
+        if not rel.startswith("generated/"):
+            continue
+        abs_path = os.path.join(media_root, rel.replace("/", os.sep))
+
+        if not dry_run:
+            try:
+                if os.path.exists(abs_path) and os.path.isfile(abs_path):
+                    os.remove(abs_path)
+                    deleted_files += 1
+                else:
+                    missing_files += 1
+            except Exception as exc:
+                errors.append(f"file:{row.id}:{rel}:{type(exc).__name__}:{exc}")
+                continue
+
+            try:
+                row.delete()
+                deleted_rows += 1
+            except Exception as exc:
+                errors.append(f"db:{row.id}:{rel}:{type(exc).__name__}:{exc}")
+        else:
+            # dry-run：只统计，不执行删除
+            pass
+
+    logger.info(
+        "cleanup_generated_media_assets done: total=%s deleted_rows=%s deleted_files=%s missing_files=%s cutoff=%s dry_run=%s errors=%s",
+        total,
+        deleted_rows,
+        deleted_files,
+        missing_files,
+        cutoff.isoformat(),
+        bool(dry_run),
+        len(errors),
+    )
+    return {
+        "total_candidates": total,
+        "deleted_rows": deleted_rows,
+        "deleted_files": deleted_files,
+        "missing_files": missing_files,
+        "cutoff": cutoff.isoformat(),
+        "dry_run": bool(dry_run),
+        "errors": errors[:50],  # 避免返回过长
+    }
+
+
 # ─── Progress helpers ─────────────────────────────────────────────────────────
 
 @shared_task(name="ai_engine.tasks.update_progress")

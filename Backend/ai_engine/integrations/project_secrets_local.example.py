@@ -98,7 +98,6 @@ ASSEMBLYAI_API_KEY = ""
 
 # Whisper 等；通常与 OPENAI_API_KEY 共用
 OPENAI_WHISPER_MODEL = ""
-OPENAI_TTS_MODEL = ""
 
 # =============================================================================
 # 四、视频类（生成 / 编辑 / 理解占位）

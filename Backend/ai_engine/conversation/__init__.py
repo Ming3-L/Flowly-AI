@@ -9,7 +9,7 @@ conversation 包：AI 对话会话、自动回复编排的**业务入口**（当
 
 参考实现（仅注释说明，不引入外部依赖）
 ----------------------------------------
-仓库内与本功能对齐的参考实现见 ``ai_engine/desktop_screen_agent/ocr_reference_bundle``。
+仓库内曾包含屏幕 OCR 的参考快照（已移除）。当前实现位于 ``ai_engine/desktop_screen_agent/openocr_runtime.py``。
 若你本地另有「渠道消息 → LLM → 回写」项目，可自行对照（勿把本地路径或密钥提交仓库）。
 
 将其中与渠道耦合的适配器放在未来子模块（如 ``conversation.channels``），

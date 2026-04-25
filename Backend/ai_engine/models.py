@@ -701,6 +701,71 @@ class AIModelCatalogEntry(models.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 模型二级选项（音色/能力等；由管理员维护，关联 AIModelCatalogEntry）
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class AIModelVariant(models.Model):
+    """
+    关联到 AI 模型目录项的二级选项：
+    - 语音模型：音色（speaker / voice_type）列表
+    - 其它能力：模式/资源ID/版本等
+
+    前端统一按 ``variants: [{id,label,voice_type,...}]`` 结构展示；
+    具体参数通过 ``value`` + ``config`` 扩展。
+    """
+
+    class Kind(models.TextChoices):
+        VOICE = "voice", "音色"
+        CAPABILITY = "capability", "能力/模式"
+
+    model_entry = models.ForeignKey(
+        AIModelCatalogEntry,
+        on_delete=models.CASCADE,
+        related_name="variants",
+        verbose_name="所属模型目录项",
+    )
+    kind = models.CharField(max_length=24, choices=Kind.choices, default=Kind.VOICE, db_index=True)
+    variant_id = models.CharField(
+        "二级选项 ID",
+        max_length=96,
+        help_text="前端二级下拉保存的值（稳定 id）。如 voice_001 / zh_female_vv_uranus_bigtts。",
+    )
+    label = models.CharField("展示名", max_length=160, default="", blank=True)
+    value = models.CharField(
+        "值",
+        max_length=256,
+        default="",
+        blank=True,
+        help_text="实际传给下游接口的值。如 speaker / voice_type / resource_id 等（按 config 约定）。",
+    )
+    sort_order = models.IntegerField("排序", default=0)
+    config = models.JSONField(
+        "扩展配置",
+        default=dict,
+        blank=True,
+        help_text="用于存放额外参数，如 resource_id、sample_rate、explicit_language 等。",
+    )
+    is_active = models.BooleanField("启用", default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "AI 模型二级选项"
+        verbose_name_plural = "AI 模型二级选项"
+        ordering = ["model_entry_id", "sort_order", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["model_entry", "variant_id"],
+                name="uniq_aimodel_variant_model_entry_and_variant_id",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.model_entry_id}:{self.variant_id}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 本地媒体资源（用户上传/生成的图片、音频、视频等，路径存库）
 # ─────────────────────────────────────────────────────────────────────────────
 class LocalMediaAsset(models.Model):

@@ -1,12 +1,17 @@
-# Task Plan: Flowly AI — Complete Implementation
+# Task Plan：Flowly AI（历史计划 + 当前维护项）
 
-## Goal
+## 说明
 
-全面完善 Flowly AI 项目，从当前的**骨架状态**（有基础结构但功能大量 stubbed）进化为**功能完整的生产级 AI 工作流系统**。
+本文档最初用于分阶段落地功能。当前仓库已经实现了大量能力，但仍会持续演进。
+建议把它作为“历史记录 + 未来 TODO”，不要把里面的时间点当作真实状态。
 
 ---
 
-## Project Status Summary (as of 2026-04-20)
+## 当前维护项（建议）
+
+- **依赖与文档对齐**：以 `Backend/requirements.txt` 为后端依赖源；根目录 `requirements.txt` 作为安装入口（`-r Backend/requirements.txt`）。
+- **生命周期清理**：已加入 `cleanup_generated_media_assets`（90 天 generated 资源清理），确保生产环境启用 Celery Beat。
+- **桌面屏幕代理**：业务配置与数据只存数据库；OCR 不再依赖仓库内文件 bundle。
 
 | Layer | Status | Notes |
 |-------|--------|-------|
@@ -22,7 +27,10 @@
 
 ## Phases
 
-### Phase 1: Backend Core — LangGraph Real Integration
+### 备注：LangGraph Django Checkpointer
+
+当前运行时若缺少 `langgraph.checkpoint.django` 会回退为内存 checkpointer（重启不持久化）。
+如需持久化，请在后端环境补齐对应依赖并按项目配置启用。
 - [x] Replace simulated `_run_workflow_async` in `api.py` with real `get_workflow_graph()` calls
 - [x] Implement actual LangGraph node functions: `process_query`, `execute_workflow`, `format_response`
 - [x] Add LangGraph Tool nodes for: DB query, API call, notification

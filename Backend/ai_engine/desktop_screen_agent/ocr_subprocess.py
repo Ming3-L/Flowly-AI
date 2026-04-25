@@ -8,8 +8,6 @@
 --------
 FLOWLY_OCR_USE_SUBPROCESS
     设为 ``1`` / ``true`` 时改为**独立子进程**调用（旧行为，用于隔离崩溃/依赖；需 ``FLOWLY_OCR_PYTHON`` 环境一致）。
-FLOWLY_OCR_REFERENCE_ROOT
-    参考项目根（含 ``src/``），默认 ``ocr_reference_bundle``。
 FLOWLY_OCR_PYTHON
     仅子进程模式：Python 可执行文件，默认 ``sys.executable``。
 FLOWLY_OCR_SUBPROCESS_TIMEOUT
@@ -35,15 +33,8 @@ def _truthy_env(name: str) -> bool:
 
 
 def default_reference_root() -> Path:
-    """OCR 参考实现根目录（含 ``src/``），与 ``desktop_screen_agent`` 包同级。"""
-    return Path(__file__).resolve().parent / "ocr_reference_bundle"
-
-
-def reference_root() -> Path:
-    override = (os.environ.get("FLOWLY_OCR_REFERENCE_ROOT") or "").strip()
-    if override:
-        return Path(override)
-    return default_reference_root()
+    """兼容旧配置：已不再需要 reference bundle，保留函数名避免外部脚本引用报错。"""
+    return Path(__file__).resolve().parent
 
 
 def worker_script_path() -> Path:
@@ -64,17 +55,13 @@ def run_ocr_subprocess(
     :param op: user_area | chat_window | input_area | friend_list | all_area
     :return: 至少含 ``ok`` 键。
     """
-    ref = reference_root()
-    if not ref.is_dir():
-        return {"ok": False, "error": f"参考项目目录不存在: {ref}"}
-
     req: dict[str, Any] = {"op": op, "image_path": str(Path(image_path).resolve()), "box": list(box)}
 
     if not _truthy_env("FLOWLY_OCR_USE_SUBPROCESS"):
         from ai_engine.desktop_screen_agent.ocr_reference_worker import run_reference_ocr_request
 
         try:
-            return run_reference_ocr_request(req, ref_root=str(ref.resolve()))
+            return run_reference_ocr_request(req)
         except Exception as e:
             log.exception("参考 OCR 同进程执行失败")
             return {"ok": False, "error": str(e)}
@@ -97,12 +84,11 @@ def run_ocr_subprocess(
     out_path = req_path.replace(".req.json", ".out.json")
 
     env = os.environ.copy()
-    env["FLOWLY_OCR_REFERENCE_ROOT"] = str(ref)
 
     try:
         proc = subprocess.run(
             [exe, str(worker), req_path, out_path],
-            cwd=str(ref),
+            cwd=str(Path(__file__).resolve().parent),
             env=env,
             capture_output=True,
             text=True,

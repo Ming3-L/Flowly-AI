@@ -14,8 +14,9 @@ from ai_engine.conversation import persist as chat_persist
 from ai_engine.models import ConversationMessage, ConversationSession
 from ai_engine.models import AIModelCatalogEntry, LocalMediaAsset
 from ai_engine.local_media_store import absolutize_public_url, save_local_media_bytes
+from ai_engine.integrations import get_ai_provider_settings
 from ai_engine.integrations.ark_generative import ark_images_generate_url, ark_video_generate_poll
-from ai_engine.execution_media_services import fetch_url_bytes, openai_tts_bytes
+from ai_engine.execution_media_services import fetch_url_bytes, openspeech_tts_bytes, openspeech_v3_tts_bytes
 
 chat_sessions_router = Router(tags=["Chat Sessions"], auth=JWTAuth())
 
@@ -60,6 +61,7 @@ class ChatSendInSchema(Schema):
     content: str = Field(..., description="用户输入文本")
     model_key: str = Field(default="", description="可选：模型目录 key，如 ark-doubao-smart-router")
     attachments: list[ChatAttachmentInSchema] = Field(default_factory=list, description="可选：附件列表（目前仅图片参与多模态）")
+    tts_voice_type: str = Field(default="", description="可选：TTS 音色（OpenSpeech voice_type）")
 
 
 class ChatSendOutSchema(Schema):
@@ -68,13 +70,34 @@ class ChatSendOutSchema(Schema):
     error: str | None = None
 
 
+def _finalize_doubao_model_for_generation(model_id: str) -> str:
+    """
+    方舟生成类（图/视频）也常要求传 `ep-...` 接入点。
+
+    注意：**不能**把任意生成模型的 model_id 强行映射到环境默认的 `DOUBAO_ARK_MODEL`：
+    - `DOUBAO_ARK_MODEL` 往往是“对话/补全”的接入点（chat endpoint）
+    - 文生图/文生视频需要各自开通的生成模型（以及对应的生成接入点）
+    - 若这里误把生成模型映射成聊天接入点，会触发 `InvalidParameter`（model 不支持 content generation）
+
+    因此这里仅做基础清洗：如果用户/目录项明确填了 `ep-...` 就原样返回；否则返回原 model_id。
+    若你的账号只允许通过接入点调用生成模型，请在后台目录项把 model_id 直接填为该生成模型的 `ep-...`。
+    """
+    mid = (model_id or "").strip()
+    if not mid:
+        return ""
+    if mid.startswith("ep-"):
+        return mid
+    return mid
+
+
 def _attachment_row_from_saved(*, saved: dict[str, Any], kind: str) -> dict[str, Any]:
+    pub = str(saved.get("public_url") or "").strip()
+    sep = "&" if "?" in pub else "?"
+    dl = f"{pub}{sep}download=1" if pub else ""
     prox = str(saved.get("proxy_url") or "").strip()
-    sep = "&" if "?" in prox else "?"
-    dl = f"{prox}{sep}download=1" if prox else ""
     return {
         "kind": kind,
-        "public_url": str(saved.get("public_url") or "").strip(),
+        "public_url": pub,
         "proxy_url": prox,
         "download_url": dl,
     }
@@ -207,10 +230,10 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
     user_attachments: list[dict[str, Any]] = []
     for a in payload.attachments or []:
         t = str(a.type or "").strip().lower()
-        u = str(a.url or "").strip()
-        if not u:
+        url = str(a.url or "").strip()
+        if not url:
             continue
-        user_attachments.append({"type": t, "url": u})
+        user_attachments.append({"type": t, "url": url})
 
     # 写入用户消息，并生成对话上下文（滚动摘要 + 近期对话）
     ctx_extra, latest_query = chat_persist.append_user_and_prepare_context(
@@ -284,6 +307,7 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
             if ak == AIModelCatalogEntry.ApiKind.ARK_IMAGE_GEN:
                 if not mid:
                     raise ValueError(f"目录项「{entry.label}」未配置 model_id")
+                mid = _finalize_doubao_model_for_generation(mid)
                 gen_url = ark_images_generate_url(model_id=mid, prompt=user_prompt, size="2K", watermark=False)
                 raw, ct = fetch_url_bytes(gen_url)
                 saved = save_local_media_bytes(
@@ -299,6 +323,7 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
             elif ak == AIModelCatalogEntry.ApiKind.ARK_VIDEO_GEN:
                 if not mid:
                     raise ValueError(f"目录项「{entry.label}」未配置 model_id")
+                mid = _finalize_doubao_model_for_generation(mid)
                 ref_img = ""
                 for a in payload.attachments or []:
                     if str(a.type or "").strip().lower() == "image" and str(a.url or "").strip():
@@ -329,8 +354,37 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
                 assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="video")]
                 mode_hint = "图生视频" if ref_img else "文生视频"
                 assistant_text = f"已生成视频（{entry.label}，{mode_hint}）。"
+            elif ak == AIModelCatalogEntry.ApiKind.ARK_3D_GEN:
+                # 3D 生成：当前仓库未集成方舟 3D SDK 调用（不同产品线返回结构也不统一），
+                # 先给出明确指导与可落库的错误消息，避免前端“看起来支持但必失败”。
+                raise ValueError(
+                    "文生 3D 当前尚未在后端接入。"
+                    "请提供方舟 3D 的具体 API/SDK 调用方式（或你控制台里可用的示例代码/文档片段），"
+                    "我可以按 ark_image_gen/ark_video_gen 同样方式补齐调用并把生成物保存为附件返回。"
+                )
             elif ak == AIModelCatalogEntry.ApiKind.OPEN_SPEECH:
-                audio, ct = openai_tts_bytes(text=user_prompt, voice="alloy", response_format="mp3")
+                # 当前聊天页仅接入「文本转语音（TTS）」。
+                # 目录里也包含 ASR/同传/播客等 openspeech 项，但尚未在聊天页实现对应链路。
+                scopes = set([str(x).strip().upper() for x in (entry.scopes or []) if str(x).strip()])
+                if "TTS" not in scopes:
+                    raise ValueError(
+                        f"模型「{entry.label}」不是 TTS 语音合成模型，聊天页暂不支持。"
+                        "请在模型下拉里选择「豆包 · 语音合成」或「豆包 · 语音合成 2.0」。"
+                    )
+                vt = (payload.tts_voice_type or "").strip() or None
+                # v1（/api/v1/tts）不支持 2.0 大模型音色；2.0 走 v3。
+                if str(getattr(entry, "catalog_key", "") or "") == "speech-doubao-tts-2":
+                    audio, ct = openspeech_v3_tts_bytes(
+                        text=user_prompt,
+                        encoding="mp3",
+                        uid=str(u.pk),
+                        speaker=(vt or None),
+                        resource_id="seed-tts-2.0",
+                    )
+                else:
+                    audio, ct = openspeech_tts_bytes(
+                        text=user_prompt, encoding="mp3", uid=str(u.pk), voice_type=vt
+                    )
                 saved = save_local_media_bytes(
                     user_id=u.pk,
                     kind=LocalMediaAsset.Kind.AUDIO,
@@ -340,11 +394,40 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
                     source_url="",
                 )
                 assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="audio")]
-                assistant_text = "已生成音频（TTS）。"
+                assistant_text = f"已生成音频（{entry.label}）。"
             else:
                 raise ValueError(f"暂不支持的 api_kind: {ak}")
         except Exception as exc:
-            assistant_text = f"错误: {exc}"
+            msg = str(exc)
+            low = msg.lower()
+            if ak == AIModelCatalogEntry.ApiKind.OPEN_SPEECH:
+                assistant_text = (
+                    "错误: 豆包语音合成失败。\n"
+                    "排查建议：\n"
+                    "- 配置 `OPENSPEECH_APPID` 与 `OPENSPEECH_ACCESS_TOKEN`\n"
+                    "- （可选）配置 `OPENSPEECH_VOICE_TYPE`、`OPENSPEECH_CLUSTER`、`OPENSPEECH_TTS_URL`\n"
+                    f"\n原始错误: {msg}"
+                )
+            elif "modelnotopen" in low or "invalidendpointormodel" in low:
+                assistant_text = (
+                    "错误: 模型未开通或 endpoint/model 不可用（方舟返回 ModelNotOpen/InvalidEndpointOrModel）。\n"
+                    "排查建议：\n"
+                    "- 到火山方舟控制台开通对应模型，或改用你账号已开通的模型\n"
+                    "- 若你使用的是 `ep-...` 接入点，请在后台把该目录项的 model_id 填成 `ep-...`\n"
+                    f"\n原始错误: {msg}"
+                )
+            elif "does not support content generation" in low or "content generation is only supported" in low:
+                assistant_text = (
+                    "错误: 当前选择的 model 不支持内容生成（方舟返回 InvalidParameter）。\n"
+                    "常见原因：后台目录项的 `api_kind=ark_video_gen/ark_image_gen` 但 `model_id` 填成了对话模型；"
+                    "或账号地区/白名单未开通该生成模型。\n"
+                    "排查建议：\n"
+                    "- 在后台「AI 模型目录」找到该条目，确认 `api_kind` 与能力匹配，并把 `model_id` 改为方舟生成模型或对应 `ep-...` 接入点\n"
+                    "- 换用你账号已开通的生成模型（视频/图像专用）\n"
+                    f"\n原始错误: {msg}"
+                )
+            else:
+                assistant_text = f"错误: {exc}"
             assistant_attachments = []
 
         try:

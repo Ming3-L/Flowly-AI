@@ -62,7 +62,6 @@ _LOCAL_ENV_KEYS: Final[tuple[str, ...]] = (
     "ELEVENLABS_DEFAULT_VOICE_ID",
     "ASSEMBLYAI_API_KEY",
     "OPENAI_WHISPER_MODEL",
-    "OPENAI_TTS_MODEL",
     "RUNWAY_API_KEY",
     "RUNWAY_BASE_URL",
     "OPENAI_EMBEDDING_MODEL",
@@ -73,6 +72,21 @@ _LOCAL_ENV_KEYS: Final[tuple[str, ...]] = (
     "VOYAGE_EMBEDDING_MODEL",
     # 行为开关（与 workflow 中 openai 默认走方舟一致）
     "FLOWLY_USE_DOUBAO_DEFAULT",
+    # ── 豆包语音（OpenSpeech，独立鉴权）─────────────────────────────────────
+    "OPENSPEECH_APPID",
+    "OPENSPEECH_ACCESS_TOKEN",
+    "OPENSPEECH_API_KEY",
+    "OPENSPEECH_TTS_URL",
+    "OPENSPEECH_CLUSTER",
+    "OPENSPEECH_VOICE_TYPE",
+    # 管理员可维护的 TTS 音色列表（JSON 字符串）
+    "OPENSPEECH_TTS_VOICES_JSON",
+    # v3 / seed-tts-2.0 默认 speaker 与音色列表（JSON 字符串）
+    "OPENSPEECH_TTS2_SPEAKER",
+    "OPENSPEECH_TTS2_VOICES_JSON",
+    # ASR（当前仅存储，后续接入）
+    "OPENSPEECH_ASR_STREAM_CLUSTER",
+    "OPENSPEECH_ASR_FILE_CLUSTER",
 )
 
 _local_overrides_cache: dict[str, str] | None = None
@@ -235,7 +249,39 @@ class AudioModelSettings:
     elevenlabs_default_voice_id: str
     assemblyai_api_key: str
     openai_whisper_model: str
-    openai_tts_model: str
+
+
+@dataclass(frozen=True, slots=True)
+class OpenSpeechSettings:
+    """豆包语音（OpenSpeech）独立鉴权与默认参数。"""
+
+    appid: str
+    access_token: str
+    api_key: str
+    tts_url: str
+    tts_cluster: str
+    tts_voice_type: str
+    tts_voices_json: str
+    tts2_speaker: str
+    tts2_voices_json: str
+    asr_stream_cluster: str
+    asr_file_cluster: str
+
+
+def get_openspeech_settings() -> OpenSpeechSettings:
+    return OpenSpeechSettings(
+        appid=_resolve("OPENSPEECH_APPID", default=""),
+        access_token=_resolve("OPENSPEECH_ACCESS_TOKEN", default=""),
+        api_key=_resolve("OPENSPEECH_API_KEY", default=""),
+        tts_url=_resolve("OPENSPEECH_TTS_URL", default="https://openspeech.bytedance.com/api/v1/tts"),
+        tts_cluster=_resolve("OPENSPEECH_CLUSTER", default="volcano_tts"),
+        tts_voice_type=_resolve("OPENSPEECH_VOICE_TYPE", default="zh_male_M392_conversation_wvae_bigtts"),
+        tts_voices_json=_resolve("OPENSPEECH_TTS_VOICES_JSON", default=""),
+        tts2_speaker=_resolve("OPENSPEECH_TTS2_SPEAKER", default="zh_female_vv_uranus_bigtts"),
+        tts2_voices_json=_resolve("OPENSPEECH_TTS2_VOICES_JSON", default=""),
+        asr_stream_cluster=_resolve("OPENSPEECH_ASR_STREAM_CLUSTER", default="volc_streaming_asr"),
+        asr_file_cluster=_resolve("OPENSPEECH_ASR_FILE_CLUSTER", default="volc_asr"),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,7 +375,6 @@ def get_ai_provider_settings() -> AIProviderSettings:
         elevenlabs_default_voice_id=_resolve("ELEVENLABS_DEFAULT_VOICE_ID"),
         assemblyai_api_key=_resolve("ASSEMBLYAI_API_KEY"),
         openai_whisper_model=_resolve("OPENAI_WHISPER_MODEL", default="whisper-1"),
-        openai_tts_model=_resolve("OPENAI_TTS_MODEL", default="tts-1"),
     )
     video = VideoModelSettings(
         runway_api_key=_resolve("RUNWAY_API_KEY"),

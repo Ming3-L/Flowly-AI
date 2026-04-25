@@ -55,15 +55,26 @@ requests>=2.31.0
 # --- Phase 8: RAG - Vector Retrieval ---
 chromadb>=0.4.0
 langchain-chroma>=0.1.0
-langchain-openai>=0.2.0
 PyMuPDF>=1.23.0            # PDF text extraction
 python-docx>=1.0.0          # Word document extraction
 Pillow>=10.0.0              # Image format conversion for execution artifacts
 
-# 桌面屏幕代理：参考 OCR（ocr_reference_bundle / OpenOCR），默认同 Django 进程加载
+# 桌面屏幕代理（OCR）：当前实现不再依赖仓库内的 ocr_reference_bundle，
+# 直接使用 openocr-python 在后端进程/子进程内执行 OCR（见 ai_engine/desktop_screen_agent/openocr_runtime.py）。
+# 注意：屏幕代理（截图/YOLO/自动发送）属于**可选能力**，依赖见下方「Desktop Screen Agent」分组。
 openocr-python==0.1.5
 beautifulsoup4>=4.12.0      # HTML parsing
 lxml>=4.9.0                  # XML/HTML parser for BeautifulSoup
 
 # --- Phase 9: Celery - Async Task Queue ---
 celery>=5.3.0
+
+# --- Optional: Desktop Screen Agent (Windows) ---
+# 仅当你要在 Windows 机器上运行“桌面屏幕代理”（截图 + YOLO 区域识别 + 可选自动发送）时才需要。
+#
+# 重要：torch（尤其 GPU 版）请按你的 CUDA 版本从 PyTorch 官方源安装，避免镜像源拿到不匹配/CPU 轮子。
+# 推荐脚本：Backend/scripts/install_desktop_agent_gpu_cn.ps1
+#
+# 运行桌面屏幕代理常见依赖：
+pyautogui>=0.9.54
+ultralytics>=8.0.0

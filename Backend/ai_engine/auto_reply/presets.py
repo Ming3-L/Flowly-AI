@@ -1,5 +1,5 @@
 """
-参考桌面端「人格 + 情景」键值（与 ``desktop_screen_agent/ocr_reference_bundle`` 内历史实现对齐），供 Web 端规则与 API 使用。
+参考桌面端「人格 + 情景」键值（与历史桌面端实现对齐），供 Web 端规则与 API 使用。
 """
 
 from __future__ import annotations

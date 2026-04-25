@@ -55,6 +55,12 @@ app.conf.beat_schedule = {
         "task": "ai_engine.tasks.warm_workflow_cache",
         "schedule": 1800.0,
     },
+    # Clean up generated local media older than 90 days — runs daily at 4:10 AM
+    "cleanup-generated-media-assets": {
+        "task": "ai_engine.tasks.cleanup_generated_media_assets",
+        "schedule": crontab(hour=4, minute=10),
+        "args": (90, False),
+    },
 }
 
 # ─── Task routing ─────────────────────────────────────────────────────────────
@@ -67,6 +73,7 @@ app.conf.task_routes = {
     "ai_engine.tasks.cleanup_failed_executions": {"queue": "maintenance"},
     "ai_engine.tasks.retry_stale_executions": {"queue": "maintenance"},
     "ai_engine.tasks.warm_workflow_cache": {"queue": "maintenance"},
+    "ai_engine.tasks.cleanup_generated_media_assets": {"queue": "maintenance"},
 }
 
 # ─── Task settings ───────────────────────────────────────────────────────────

@@ -21,7 +21,7 @@ from .execution_media_services import (
     convert_image_bytes,
     fetch_url_bytes,
     openai_text_to_image_bytes,
-    openai_tts_bytes,
+    openspeech_tts_bytes,
 )
 from .models import Workflow, WorkflowExecution, Thread
 
@@ -339,7 +339,7 @@ def synthesize_speech_from_execution_text(
     execution_id: int,
     body: TtsRequestIn,
 ):
-    """将合并正文前 4096 字转为语音（OpenAI TTS，需 ``OPENAI_API_KEY``）。"""
+    """将合并正文前 4096 字转为语音（豆包 OpenSpeech TTS）。"""
     exec_obj = get_object_or_404(_execution_qs(request), id=execution_id)
     if exec_obj.status != "completed":
         return HttpResponse("仅已完成执行可合成语音", status=409, content_type="text/plain; charset=utf-8")
@@ -347,10 +347,10 @@ def synthesize_speech_from_execution_text(
     if not text.strip():
         return HttpResponse("无可朗读文本", status=400, content_type="text/plain; charset=utf-8")
     try:
-        audio, mime = openai_tts_bytes(
+        audio, mime = openspeech_tts_bytes(
             text=text,
-            voice=body.voice,
-            response_format=(body.format or "mp3").lower(),
+            encoding=(body.format or "mp3").lower(),
+            uid=str(getattr(getattr(request, "auth", None), "pk", "") or "flowly"),
         )
     except ValueError as ve:
         return HttpResponse(str(ve), status=400, content_type="text/plain; charset=utf-8")

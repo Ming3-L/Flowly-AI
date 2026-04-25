@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from .models import (
     AIModelCatalogEntry,
+    AIModelVariant,
     AutoReplyChatHistoryEntry,
     AutoReplyJob,
     AutoReplyKnowledgeEntry,
@@ -174,6 +175,15 @@ class AIModelCatalogEntryAdmin(admin.ModelAdmin):
     list_filter = ["api_kind", "is_active", "category", "show_in_canvas_llm_nodes"]
     search_fields = ["catalog_key", "label", "model_id", "description", "scope_summary"]
     ordering = ["category_order", "sort_order", "catalog_key"]
+
+
+@admin.register(AIModelVariant)
+class AIModelVariantAdmin(admin.ModelAdmin):
+    list_display = ["id", "model_entry", "kind", "variant_id", "label", "value", "sort_order", "is_active", "updated_at"]
+    list_filter = ["kind", "is_active"]
+    search_fields = ["variant_id", "label", "value"]
+    raw_id_fields = ["model_entry"]
+    ordering = ["model_entry_id", "sort_order", "id"]
 
 
 @admin.register(UserChatModelPreset)

@@ -15,6 +15,102 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from ai_engine.integrations import get_ai_provider_settings
+from ai_engine.integrations.secrets_loader import get_openspeech_settings
+from ai_engine.models import AIModelVariant
+
+
+def _openspeech_tts_variants() -> list[dict[str, str]]:
+    """
+    二级选项：音色/能力 variants（供前端下拉二级选择）。
+    来源：PlatformAIProviderSecrets / 环境变量中的 OPENSPEECH_TTS_VOICES_JSON（JSON 字符串）。
+    形态：[{ "id": "xxx", "label": "xxx", "voice_type": "xxx" }, ...]
+    """
+    import json
+
+    cfg = get_openspeech_settings()
+    raw = (cfg.tts_voices_json or "").strip()
+    if not raw:
+        # 至少提供一个默认项，避免前端无二级可选
+        vt = (cfg.tts_voice_type or "").strip()
+        if not vt:
+            return []
+        return [{"id": vt, "label": vt, "voice_type": vt}]
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        return []
+    out: list[dict[str, str]] = []
+    if isinstance(obj, list):
+        for it in obj:
+            if isinstance(it, str) and it.strip():
+                vt = it.strip()
+                out.append({"id": vt, "label": vt, "voice_type": vt})
+                continue
+            if not isinstance(it, dict):
+                continue
+            vt = str(it.get("voice_type") or it.get("id") or "").strip()
+            if not vt:
+                continue
+            label = str(it.get("label") or vt).strip()
+            vid = str(it.get("id") or vt).strip()
+            out.append({"id": vid, "label": label, "voice_type": vt})
+    return out
+
+
+def _openspeech_tts2_variants() -> list[dict[str, str]]:
+    """
+    v3 / seed-tts-2.0 的 speaker variants（供语音合成2.0 二级下拉）。
+    来源：OPENSPEECH_TTS2_VOICES_JSON；否则回退到 OPENSPEECH_TTS2_SPEAKER。
+    形态：[{ "id": "xxx", "label": "xxx", "voice_type": "xxx" }, ...]
+    其中 voice_type 对 v3 实际等同 speaker（为了与前端字段兼容）。
+    """
+    import json
+
+    cfg = get_openspeech_settings()
+    raw = (cfg.tts2_voices_json or "").strip()
+    if not raw:
+        spk = (cfg.tts2_speaker or "").strip()
+        if not spk:
+            return []
+        return [{"id": spk, "label": spk, "voice_type": spk}]
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        return []
+    out: list[dict[str, str]] = []
+    if isinstance(obj, list):
+        for it in obj:
+            if isinstance(it, str) and it.strip():
+                spk = it.strip()
+                out.append({"id": spk, "label": spk, "voice_type": spk})
+                continue
+            if not isinstance(it, dict):
+                continue
+            spk = str(it.get("speaker") or it.get("voice_type") or it.get("id") or "").strip()
+            if not spk:
+                continue
+            label = str(it.get("label") or spk).strip()
+            vid = str(it.get("id") or spk).strip()
+            out.append({"id": vid, "label": label, "voice_type": spk})
+    return out
+
+
+def _variants_from_db(entry_id: int) -> list[dict[str, str]]:
+    qs = (
+        AIModelVariant.objects.filter(model_entry_id=int(entry_id), is_active=True)
+        .order_by("sort_order", "id")
+        .only("variant_id", "label", "value", "config", "kind")
+    )
+    out: list[dict[str, str]] = []
+    for v in qs:
+        vid = str(v.variant_id or "").strip()
+        if not vid:
+            continue
+        label = str(v.label or "").strip() or vid
+        # voice_type 字段兼容前端：对语音模型，value 存 speaker/voice_type；为空时回退到 variant_id
+        voice_type = str(v.value or "").strip() or vid
+        out.append({"id": vid, "label": label, "voice_type": voice_type})
+    return out
 
 
 # 画布带「模型」下拉的节点类型（与 WorkflowEditor inspector 一致）
@@ -203,6 +299,7 @@ def _preset_to_api_row(p: ChatModelPreset, *, source: str) -> dict[str, Any]:
         "canvas_universal": bool(p.canvas_universal),
         "api_kind": "ark_chat",
         "show_in_canvas_llm_nodes": True,
+        "variants": [],
     }
 
 
@@ -216,7 +313,7 @@ def _db_entry_to_api_row(entry: Any, *, source: str = "catalog") -> dict[str, An
         modalities.append("audio")
     if "video" in kinds:
         modalities.append("video")
-    return {
+    row = {
         "key": entry.catalog_key,
         "label": entry.label,
         "description": (entry.description or "").strip(),
@@ -233,7 +330,22 @@ def _db_entry_to_api_row(entry: Any, *, source: str = "catalog") -> dict[str, An
         "canvas_universal": bool(entry.canvas_universal),
         "api_kind": str(entry.api_kind or "ark_chat"),
         "show_in_canvas_llm_nodes": bool(entry.show_in_canvas_llm_nodes),
+        "variants": [],
     }
+    if str(entry.api_kind or "") == "openspeech":
+        # variants（音色/能力）优先从数据库表 AIModelVariant 读取。
+        # 注意：不要强依赖 entry.scopes 是否包含 "TTS" —— 管理后台可能漏配 scopes，
+        # 但 variants 已存在时前端仍应展示二级选项。
+        dbv = _variants_from_db(int(entry.pk))
+        if dbv:
+            row["variants"] = dbv
+        else:
+            # 兼容旧方案：未配置 variants 表时回退到平台密钥 JSON/默认
+            if str(getattr(entry, "catalog_key", "") or "") == "speech-doubao-tts-2":
+                row["variants"] = _openspeech_tts2_variants()
+            else:
+                row["variants"] = _openspeech_tts_variants()
+    return row
 
 
 def list_presets_for_api() -> list[dict[str, str]]:

@@ -1,5 +1,5 @@
 """
-参考项目 ``src.core.ocr``（OpenOCR）入口。
+OpenOCR 入口（不依赖 ocr_reference_bundle）。
 
 - **默认**：由 ``ocr_subprocess.run_ocr_subprocess`` 在**当前后端 Python 进程**内调用
   ``run_reference_ocr_request``（与 runserver / 屏幕代理同环境，无需单独子解释器装包）。
@@ -19,7 +19,6 @@ request.json::
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -44,15 +43,10 @@ def _serialize_chat_lines(lines) -> list[dict]:
     return out
 
 
-def run_reference_ocr_request(req: dict[str, Any], *, ref_root: str) -> dict[str, Any]:
+def run_reference_ocr_request(req: dict[str, Any]) -> dict[str, Any]:
     """
-    在**当前进程**内执行参考 OCR（临时 chdir + 插入 sys.path，结束后恢复）。
-    ``ref_root`` 须为含 ``src/`` 的目录（通常为 ``ocr_reference_bundle``）。
+    在**当前进程**内执行 OCR（不依赖 ocr_reference_bundle）。
     """
-    ref_raw = (ref_root or "").strip()
-    if not ref_raw or not Path(ref_raw).is_dir():
-        return {"ok": False, "error": f"参考 OCR 根目录无效: {ref_raw!r}"}
-    ref = str(Path(ref_raw).resolve())
     try:
         import openocr  # noqa: F401
     except ImportError:
@@ -74,58 +68,39 @@ def run_reference_ocr_request(req: dict[str, Any], *, ref_root: str) -> dict[str
     except Exception:
         return {"ok": False, "error": "box 须为四个整数"}
 
-    old_cwd = os.getcwd()
-    path_inserted = False
+    from PIL import Image
+    from ai_engine.desktop_screen_agent.openocr_runtime import (
+        ocr_all_area,
+        ocr_chat_window,
+        ocr_friend_list_area,
+        ocr_input_area,
+        ocr_user_area,
+    )
+
     try:
-        os.chdir(ref)
-        if ref not in sys.path:
-            sys.path.insert(0, ref)
-            path_inserted = True
+        img = Image.open(str(image_path))
+    except Exception as e:
+        return {"ok": False, "error": f"打开图片失败: {e}"}
 
-        from PIL import Image
-
-        from src.core.ocr import (  # type: ignore[import-untyped]
-            ocr_all_area,
-            ocr_chat_window,
-            ocr_friend_list_area,
-            ocr_input_area,
-            ocr_user_area,
-        )
-
-        try:
-            img = Image.open(str(image_path))
-        except Exception as e:
-            return {"ok": False, "error": f"打开图片失败: {e}"}
-
-        try:
-            if op == "user_area":
-                text = ocr_user_area(box_t, img)
-                return {"ok": True, "op": op, "text": str(text or "")}
-            if op == "chat_window":
-                lines = ocr_chat_window(box_t, img)
-                return {"ok": True, "op": op, "lines": _serialize_chat_lines(lines)}
-            if op == "input_area":
-                text = ocr_input_area(box_t, img)
-                return {"ok": True, "op": op, "text": str(text or "")}
-            if op == "friend_list":
-                text = ocr_friend_list_area(box_t, img)
-                return {"ok": True, "op": op, "text": str(text or "")}
-            if op == "all_area":
-                text = ocr_all_area(box_t, img)
-                return {"ok": True, "op": op, "text": str(text or "")}
-            return {"ok": False, "error": f"未知 op: {op}"}
-        except Exception as e:
-            return {"ok": False, "error": str(e), "op": op}
-    finally:
-        try:
-            os.chdir(old_cwd)
-        except OSError:
-            pass
-        if path_inserted:
-            try:
-                sys.path.remove(ref)
-            except ValueError:
-                pass
+    try:
+        if op == "user_area":
+            text = ocr_user_area(box_t, img)
+            return {"ok": True, "op": op, "text": str(text or "")}
+        if op == "chat_window":
+            lines = ocr_chat_window(box_t, img)
+            return {"ok": True, "op": op, "lines": _serialize_chat_lines(lines)}
+        if op == "input_area":
+            text = ocr_input_area(box_t, img)
+            return {"ok": True, "op": op, "text": str(text or "")}
+        if op == "friend_list":
+            text = ocr_friend_list_area(box_t, img)
+            return {"ok": True, "op": op, "text": str(text or "")}
+        if op == "all_area":
+            text = ocr_all_area(box_t, img)
+            return {"ok": True, "op": op, "text": str(text or "")}
+        return {"ok": False, "error": f"未知 op: {op}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e), "op": op}
 
 
 def main() -> None:
@@ -134,13 +109,6 @@ def main() -> None:
         sys.exit(2)
     req_path = Path(sys.argv[1])
     out_path = Path(sys.argv[2])
-    ref_root = (os.environ.get("FLOWLY_OCR_REFERENCE_ROOT") or "").strip()
-    if not ref_root or not Path(ref_root).is_dir():
-        out_path.write_text(
-            json.dumps({"ok": False, "error": "缺少或无效的环境变量 FLOWLY_OCR_REFERENCE_ROOT"}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        sys.exit(1)
 
     try:
         req = json.loads(req_path.read_text(encoding="utf-8"))
@@ -148,7 +116,7 @@ def main() -> None:
         out_path.write_text(json.dumps({"ok": False, "error": f"请求 JSON 无效: {e}"}, ensure_ascii=False), encoding="utf-8")
         sys.exit(1)
 
-    payload = run_reference_ocr_request(req, ref_root=ref_root)
+    payload = run_reference_ocr_request(req)
     out_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     if not payload.get("ok"):
         sys.exit(1)

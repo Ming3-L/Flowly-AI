@@ -97,7 +97,8 @@ def agent_start(request: HttpRequest):
     force_thread = (os.getenv("FLOWLY_SCREEN_AGENT_FORCE_THREAD") or "").strip().lower() in ("1", "true", "yes")
     is_windows = sys.platform.startswith("win")
     if is_windows or force_thread:
-        logger.info("screen agent start: using thread mode", extra={"extra": {"user_id": uid, "force_thread": force_thread}})
+        # 启停属高频操作，默认不刷屏；需要排查启动问题时再看 error/warn
+        logger.debug("screen agent start: using thread mode", extra={"extra": {"user_id": uid, "force_thread": force_thread}})
         try:
             stop_evt2 = threading.Event()
 
@@ -154,7 +155,11 @@ def agent_start(request: HttpRequest):
         return {"ok": True, "running": True, "pid": p.pid}
     except Exception as exc:
         # 回退到线程模式（无法返回子进程 pid）
-        logger.warning("screen agent start: process mode failed, falling back to thread", exc_info=True, extra={"extra": {"user_id": uid}})
+        logger.debug(
+            "screen agent start: process mode failed, falling back to thread",
+            exc_info=True,
+            extra={"extra": {"user_id": uid}},
+        )
         try:
             stop_evt2 = threading.Event()
 
@@ -198,6 +203,11 @@ def agent_stop(request: HttpRequest):
         pass
     _agent_handle_by_user.pop(uid, None)
     _agent_last_error_by_user.pop(uid, None)
+    # 停止后清空运行快照，避免前端在“已暂停”时仍展示旧的检测结果
+    try:
+        AutoReplyScreenProfile.objects.filter(user=u).update(agent_runtime_snapshot={})
+    except Exception:
+        pass
     return {"ok": True, "running": False}
 
 
@@ -505,6 +515,9 @@ def put_screen_profile(request: HttpRequest, payload: AutoReplyScreenProfileWrit
     p.use_yolo = bool(payload.use_yolo)
     p.knowledge_reply_enabled = bool(payload.knowledge_reply_enabled)
     p.monitoring_active = bool(payload.monitoring_active)
+    if not p.monitoring_active:
+        # 暂停监控时清空运行态快照，前端应展示为“未检测/无数据”
+        p.agent_runtime_snapshot = {}
     # 项目约定：权重由 settings.FLOWLY_SCREEN_YOLO_WEIGHTS 统一提供（可用环境变量覆盖；默认在后端模块 weights 下）
     # 前端仍保留字段显示，但保存时由服务端统一落为 settings.FLOWLY_SCREEN_YOLO_WEIGHTS
     p.yolo_weights_path = str(getattr(settings, "FLOWLY_SCREEN_YOLO_WEIGHTS", "") or "").strip()[:512]
@@ -896,7 +909,11 @@ def _enqueue_job(job_id: int) -> None:
 
         run_auto_reply_job_task.delay(job_id)
     except Exception:
-        logger.warning("Celery enqueue failed for auto_reply job %s; falling back to thread", job_id, exc_info=True)
+        # 仅在失败时保留 warning（关键）；避免每次都带堆栈刷屏
+        logger.warning(
+            "auto_reply enqueue failed; falling back to thread",
+            extra={"extra": {"job_id": int(job_id)}},
+        )
         from ai_engine.auto_reply.runner import run_auto_reply_job_sync
 
         threading.Thread(target=lambda: run_auto_reply_job_sync(job_id), daemon=True).start()

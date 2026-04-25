@@ -3,24 +3,10 @@
     <header class="page-head">
       <h1>AI 自动回复</h1>
       <div v-if="whoami" class="whoami">当前用户：{{ whoami }}</div>
-      <p class="sub">
-        Vue 页面 + 服务端入库；规则支持自定义系统提示或「人格 / 情景」预设（与参考项目键一致）。任务在后台执行，数据存数据库。
-      </p>
-      <p class="sub sub2">
-        原 Tk 四页（配置 / 好友风格 / 资料库 / 监控）已并入下方标签；<code>config.json</code>、聊天记录、资料与日志均入库。权重
-        <code>best.pt</code> 由后端默认路径或环境变量 <code>FLOWLY_SCREEN_YOLO_WEIGHTS</code> 提供。导入旧配置：
-        <code>python manage.py import_auto_reply_config path/to/config.json</code>。
-      </p>
     </header>
 
     <el-tabs v-model="mainTab" class="main-tabs" @tab-change="onMainTabChange">
       <el-tab-pane label="总览" name="overview">
-        <el-alert type="info" :closable="false" show-icon class="mb8">
-          <template #title>总览页做什么</template>
-          <div class="overview-hint">
-            <strong>回复规则</strong>：定义模型、人格/情景与系统提示，供自动任务与手动试跑共用。<strong>生成回复</strong>：不截屏、不跑监控，用于快速验证某条消息在当前规则下会怎么答。<strong>最近记录</strong>：查看后台异步任务历史。真正的「截图 → YOLO → OCR → 是否自动发」在「监控界面」由<strong>开始监控</strong>开关统一控制。
-          </div>
-        </el-alert>
     <el-row :gutter="20">
       <el-col :xs="24" :md="9">
         <el-card shadow="never" class="card">
@@ -157,10 +143,6 @@
             <el-form-item label="启用 YOLO 区域检测">
               <el-switch v-model="screenForm.use_yolo" />
             </el-form-item>
-            <el-alert type="warning" :closable="false" show-icon class="mb8">
-              <template #title>何时用本页坐标</template>
-              关闭「启用 YOLO」或 YOLO 无法加载/识别不完整时，本页四个框作为<strong>唯一回退</strong>（必须填合规的 x1,y1,x2,y2）。开启 YOLO 且模型正常时，坐标一般由识别自动写回，也可手动微调后保存。
-            </el-alert>
             <p class="box-hint">各区域为 x1, y1, x2, y2，与参考「更新聊天窗口」/ config.json 字段一致。</p>
             <el-form-item label="聊天区域 chat_window_box">
               <div class="coord-row">

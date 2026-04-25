@@ -19,6 +19,7 @@ from ai_engine.auth import JWTAuth
 from ai_engine.integrations import get_ai_provider_settings
 from ai_engine.models import (
     AIModelCatalogEntry,
+    AIModelVariant,
     PromptEnhancementRecord,
     UserChatModelPreset,
     Workflow,
@@ -129,6 +130,53 @@ class AIModelCatalogEntryCreateSchema(Schema):
     api_kind: str = Field(default="ark_chat", max_length=32)
     show_in_canvas_llm_nodes: bool = True
     is_active: bool = True
+    variants: list[dict[str, str]] = Field(default_factory=list, description="二级选项（如语音音色 variants）")
+
+
+class AIModelVariantOutSchema(Schema):
+    id: int
+    model_entry_id: int
+    kind: str
+    variant_id: str
+    label: str
+    value: str
+    sort_order: int
+    config: dict = Field(default_factory=dict)
+    is_active: bool
+
+
+class AIModelVariantCreateSchema(Schema):
+    kind: str = Field(default="voice", max_length=24)
+    variant_id: str = Field(..., max_length=96)
+    label: str = Field(default="", max_length=160)
+    value: str = Field(default="", max_length=256)
+    sort_order: int = 0
+    config: dict = Field(default_factory=dict)
+    is_active: bool = True
+
+
+class AIModelVariantPatchSchema(Schema):
+    kind: str | None = Field(default=None, max_length=24)
+    variant_id: str | None = Field(default=None, max_length=96)
+    label: str | None = Field(default=None, max_length=160)
+    value: str | None = Field(default=None, max_length=256)
+    sort_order: int | None = None
+    config: dict | None = None
+    is_active: bool | None = None
+
+
+def _variant_to_out(v: AIModelVariant) -> AIModelVariantOutSchema:
+    return AIModelVariantOutSchema(
+        id=int(v.pk),
+        model_entry_id=int(v.model_entry_id),
+        kind=str(v.kind or ""),
+        variant_id=str(v.variant_id or ""),
+        label=str(v.label or ""),
+        value=str(v.value or ""),
+        sort_order=int(v.sort_order or 0),
+        config=dict(v.config or {}),
+        is_active=bool(v.is_active),
+    )
 
 
 class AIModelCatalogEntryPatchSchema(Schema):
@@ -174,6 +222,85 @@ def list_aimodel_catalog_entries(request: HttpRequest, active_only: bool = False
     if active_only:
         qs = qs.filter(is_active=True)
     return [_catalog_entry_to_out(x) for x in qs]
+
+
+@ai_router.get("/catalog-entries/{entry_id}/variants", response=list[AIModelVariantOutSchema])
+def list_catalog_entry_variants(request: HttpRequest, entry_id: int, active_only: bool = False):
+    """GET /api/ai/catalog-entries/{id}/variants — 管理员：列出某个模型目录项的二级选项。"""
+    _require_staff(request)
+    qs = AIModelVariant.objects.filter(model_entry_id=int(entry_id)).order_by("sort_order", "id")
+    if active_only:
+        qs = qs.filter(is_active=True)
+    return [_variant_to_out(v) for v in qs]
+
+
+@ai_router.post("/catalog-entries/{entry_id}/variants", response={201: AIModelVariantOutSchema})
+def create_catalog_entry_variant(request: HttpRequest, entry_id: int, payload: AIModelVariantCreateSchema):
+    """POST /api/ai/catalog-entries/{id}/variants — 管理员新增二级选项。"""
+    from ninja.errors import HttpError  # pyright: ignore[reportMissingImports]
+
+    _require_staff(request)
+    vid = (payload.variant_id or "").strip()
+    if not vid:
+        raise HttpError(400, "variant_id 不能为空")
+    obj = AIModelVariant.objects.create(
+        model_entry_id=int(entry_id),
+        kind=str(payload.kind or "voice"),
+        variant_id=vid,
+        label=str(payload.label or "").strip()[:160],
+        value=str(payload.value or "").strip()[:256],
+        sort_order=int(payload.sort_order or 0),
+        config=dict(payload.config or {}),
+        is_active=bool(payload.is_active),
+    )
+    return 201, _variant_to_out(obj)
+
+
+@ai_router.patch("/catalog-entries/{entry_id}/variants/{variant_pk}", response=AIModelVariantOutSchema)
+def patch_catalog_entry_variant(
+    request: HttpRequest,
+    entry_id: int,
+    variant_pk: int,
+    payload: AIModelVariantPatchSchema,
+):
+    """PATCH /api/ai/catalog-entries/{id}/variants/{pk} — 管理员更新二级选项。"""
+    _require_staff(request)
+    obj = get_object_or_404(AIModelVariant, pk=int(variant_pk), model_entry_id=int(entry_id))
+    data = payload.model_dump(exclude_unset=True)
+    for field, val in data.items():
+        if val is None:
+            continue
+        if field == "sort_order":
+            obj.sort_order = int(val)
+            continue
+        if field == "config":
+            obj.config = dict(val or {})
+            continue
+        if field == "is_active":
+            obj.is_active = bool(val)
+            continue
+        if field == "label":
+            obj.label = str(val).strip()[:160]
+            continue
+        if field == "value":
+            obj.value = str(val).strip()[:256]
+            continue
+        if field == "variant_id":
+            obj.variant_id = str(val).strip()[:96]
+            continue
+        if field == "kind":
+            obj.kind = str(val).strip()[:24]
+            continue
+    obj.save()
+    return _variant_to_out(obj)
+
+
+@ai_router.delete("/catalog-entries/{entry_id}/variants/{variant_pk}", response={204: None})
+def delete_catalog_entry_variant(request: HttpRequest, entry_id: int, variant_pk: int):
+    """DELETE /api/ai/catalog-entries/{id}/variants/{pk} — 管理员删除二级选项。"""
+    _require_staff(request)
+    AIModelVariant.objects.filter(pk=int(variant_pk), model_entry_id=int(entry_id)).delete()
+    return 204, None
 
 
 @ai_router.post("/catalog-entries", response={201: AIModelCatalogEntryOutSchema})

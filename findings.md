@@ -1,33 +1,33 @@
-# Findings & Decisions — Flowly AI Feature Expansion
+# Findings & Decisions — Flowly AI（项目现状与关键决策）
 
-## Research Findings
+## 现状核对（以仓库当前代码为准）
 
-### Current System Capabilities (Post Phase 1-6)
+### 当前系统能力摘要
 
-**Backend** (`Backend/ai_engine/`):
+**后端**（`Backend/ai_engine/`）：
 - `workflow.py` — Phase 3 LangGraph graph with 7 nodes: router, approval_gate, parallel_executor, consolidate, tool_executor, general_assistant, finalize
 - Send API parallel fan-out working
-- `DjangoSaver` checkpointing to MySQL
+- LangGraph 检查点：当前环境检查显示 **未安装** `langgraph.checkpoint.django` 时会回退为内存（重启不持久化）
 - Multi-model support: OpenAI, Claude, Ollama, VectorEngine
 - 3 built-in tools: query_database, call_external_api, send_notification
 - `WorkflowEventEmitter` via Django Channels → WebSocket
-- No RAG, no Celery, no multimodal
+- 已包含：RAG（Document/Chroma）、Celery、媒体资源（LocalMediaAsset）、自动回复（AutoReply*）、平台密钥入库（PlatformAIProviderSecrets）
 
-**Frontend** (`Frontend/src/`):
+**前端**（`Frontend/src/`）：
 - `WorkflowEditor.vue` — SVG-based visual editor (Phase 4)
 - `workflowEditor.ts` — Pinia store with node/edge CRUD, layout, serialization
 - `workflow.ts` — WebSocket-based execution streaming
 - `auth.ts` — JWT with auto-refresh
-- React Flow NOT yet integrated
+- 工作流画布：已使用 Vue Flow（见 `WorkflowEditor.vue` 相关实现）
 
-**Infrastructure**:
+**基础设施**：
 - MySQL 8.0, Redis 7, Django ASGI (Daphne), Vue + Nginx
 - LangSmith tracing configured but not active (needs API key)
-- Redis available → can be Celery broker (no new infra)
+- Redis 同时用于 Channels 与 Celery（broker/backend）
 
 ---
 
-## Technical Decisions
+## 技术决策（保留历史，但以当前实现为准）
 
 | Decision | Rationale |
 |----------|-----------|
@@ -37,7 +37,7 @@
 | Langfuse over LangSmith | Self-hosted, data sovereignty, similar features, avoids vendor lock-in |
 | Guardrails AI + Presidio | Presidio best-in-class PII detection, Guardrails AI for content safety |
 | LangChain MCP Adapters | Official LangChain support, plug-and-play MCP server discovery |
-| RapidOCR over Tesseract | Faster, better Chinese support, ONNX runtime |
+| OCR | 当前采用 `openocr-python`；已移除仓库内 `ocr_reference_bundle` 文件状态方案 |
 | ConversationBufferMemory short-term | LangChain native, minimal overhead |
 | Chroma for long-term memory | Unified vector store for RAG + memory |
 

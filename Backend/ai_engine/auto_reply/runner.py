@@ -149,6 +149,26 @@ def run_auto_reply_job_sync(job_id: int) -> None:
             j2.status = AutoReplyJob.Status.COMPLETED
             j2.updated_at = timezone.now()
             j2.save(update_fields=["reply_text", "model_key_used", "status", "updated_at"])
+        # 控制台关键日志：识别到的用户名、最后一条消息、以及 AI 回复文本（截断）
+        try:
+            fn2 = (getattr(job, "friend_name", "") or "").strip()[:128]
+            last_msg = (job.input_text or "").strip().replace("\n", " ")[:500]
+            reply_preview = text.strip().replace("\n", " ")[:1200]
+            logger.info(
+                "auto_reply job completed",
+                extra={
+                    "extra": {
+                        "job_id": int(job_id),
+                        "user_id": int(uid),
+                        "friend_name": fn2,
+                        "last_message": last_msg,
+                        "reply_text": reply_preview,
+                        "model_key": mk,
+                    }
+                },
+            )
+        except Exception:
+            pass
         try:
             fn2 = (getattr(job, "friend_name", "") or "").strip()
             AutoReplyChatHistoryEntry.objects.create(
@@ -166,9 +186,31 @@ def run_auto_reply_job_sync(job_id: int) -> None:
                 meta={"source": "auto_reply_job", "job_id": job_id, "model_key": mk},
             )
         except Exception:
-            logger.exception("auto_reply job %s: chat history persist failed", job_id)
+            # 仅保留关键信息，避免刷屏堆栈
+            logger.warning(
+                "auto_reply job chat history persist failed",
+                extra={"extra": {"job_id": int(job_id), "user_id": int(uid)}},
+            )
     except Exception as exc:
-        logger.exception("auto_reply job %s failed", job_id)
+        # 失败只输出简短原因（截断），避免控制台堆栈刷屏
+        try:
+            fn2 = (getattr(job, "friend_name", "") or "").strip()[:128]
+            last_msg = (job.input_text or "").strip().replace("\n", " ")[:500]
+        except Exception:
+            fn2 = ""
+            last_msg = ""
+        logger.error(
+            "auto_reply job failed",
+            extra={
+                "extra": {
+                    "job_id": int(job_id),
+                    "user_id": int(uid),
+                    "friend_name": fn2,
+                    "last_message": last_msg,
+                    "error": str(exc)[:800],
+                }
+            },
+        )
         with transaction.atomic():
             j2 = AutoReplyJob.objects.select_for_update().get(pk=job_id)
             j2.status = AutoReplyJob.Status.FAILED

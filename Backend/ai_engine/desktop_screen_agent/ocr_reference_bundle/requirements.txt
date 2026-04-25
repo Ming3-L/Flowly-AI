@@ -1,1 +1,0 @@
-openocr-python==0.1.5

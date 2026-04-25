@@ -1,18 +1,18 @@
-# Flowly AI — Deployment Guide
+# Flowly AI — 部署指南（生产可用）
 
 Production-ready deployment with Docker Compose.
 
 ---
 
-## Prerequisites
+## 前置条件
 
 - [Docker](https://docs.docker.com/get-docker/) 20.10+
 - [Docker Compose](https://docs.docker.com/compose/install/) 2.0+
-- OpenAI API key (or Anthropic API key for Claude models)
+- 至少配置一种可用的模型接入密钥（OpenAI / 豆包方舟 / Claude 等）
 
 ---
 
-## Quick Start
+## 快速开始（Docker Compose）
 
 ```bash
 # 1. Clone the repository
@@ -20,11 +20,12 @@ git clone https://github.com/your-org/flowly-ai.git
 cd flowly-ai
 
 # 2. Configure environment
-cp Backend/.env.docker Backend/.env
-# Edit Backend/.env with your actual values:
-#   - SECRET_KEY (generate with: python -c "import secrets; print(secrets.token_urlsafe(50))")
-#   - OPENAI_API_KEY
-#   - MYSQL_PASSWORD
+cp Backend/.env.example Backend/.env
+# 编辑 Backend/.env，至少需要：
+# - SECRET_KEY（可用 python 生成）
+# - DATABASE_URL（Docker 环境通常指向 db 容器）
+# - REDIS_URL
+# - 至少一个 AI 接入密钥（如 OPENAI_API_KEY 或 DOUBAO_API_KEY/ARK_API_KEY）
 
 # 3. Start all services
 docker compose up -d
@@ -41,7 +42,7 @@ open http://localhost
 
 ---
 
-## Architecture
+## 架构概览
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -63,11 +64,11 @@ open http://localhost
 
 ---
 
-## Configuration
+## 配置说明
 
-### Environment Variables
+### 环境变量（后端）
 
-Copy `Backend/.env.docker` to `Backend/.env` and configure:
+复制 `Backend/.env.example` 为 `Backend/.env` 并配置：
 
 | Variable | Description | Required |
 |----------|-------------|----------|
@@ -76,7 +77,7 @@ Copy `Backend/.env.docker` to `Backend/.env` and configure:
 | `ALLOWED_HOSTS` | Comma-separated allowed hosts | Yes |
 | `DATABASE_URL` | MySQL connection string | Yes |
 | `REDIS_URL` | Redis connection string | Yes |
-| `OPENAI_API_KEY` | OpenAI API key | Yes |
+| `OPENAI_API_KEY` | OpenAI API Key（可选：也可用豆包/Claude） | No |
 | `OPENAI_MODEL` | Model to use | No (default: gpt-4o) |
 | `ANTHROPIC_API_KEY` | Anthropic API key | No |
 | `LANGSMITH_TRACING` | Enable LangSmith tracing | No |
@@ -98,7 +99,7 @@ docker compose exec backend python manage.py loaddata fixtures/*.json
 
 ---
 
-## Services
+## 服务列表
 
 ### Backend (Django + Daphne ASGI)
 
@@ -132,6 +133,7 @@ Handles:
 - **Port:** 6379 (external, optional)
 - **Volume:** `redis_data` (persistent)
 - **Purpose:** Django Channels message broker
+- **Purpose:** Django Channels broker + Celery broker/backend（默认使用不同 DB：0/1）
 - **Health check:** `redis-cli ping`
 
 ---
@@ -184,6 +186,22 @@ Before going live:
 - [ ] Configure log aggregation
 - [ ] Set up rate limiting on the API
 - [ ] Review CORS settings
+- [ ] 若启用 Celery Beat：确认定时任务已启动（包含 90 天 generated 资源清理）
+
+## 定时任务说明（Celery Beat）
+
+项目在 `Backend/flowly_backend/celery.py` 中配置了 Beat 定时任务，包括：
+
+- `cleanup_failed_executions`：清理失败执行记录（默认 7 天）
+- `retry_stale_executions`：标记超时 running 的执行
+- `warm_workflow_cache`：预热工作流缓存
+- `cleanup_generated_media_assets`：清理 90 天前 `MEDIA_ROOT/generated/...` 本地生成资源，避免磁盘无限增长
+
+如果你不运行 `celery -A flowly_backend beat`，上述周期任务不会执行；你也可以手动运行：
+
+```bash
+python Backend/manage.py cleanup_generated_media_assets --dry-run --days 90
+```
 
 ---
 

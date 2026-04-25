@@ -576,7 +576,7 @@ async function downloadTts(format: string) {
     ElMessage.success('已开始下载')
   } catch (err: unknown) {
     const ax = err as { response?: { data?: Blob } }
-    let msg = 'TTS 失败（需 OPENAI_API_KEY）'
+    let msg = 'TTS 失败（需 OPENSPEECH_APPID/OPENSPEECH_ACCESS_TOKEN）'
     if (ax.response?.data instanceof Blob) {
       msg = await ax.response.data.text()
     }

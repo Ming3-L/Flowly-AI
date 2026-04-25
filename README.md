@@ -23,6 +23,7 @@
 | ⚡ **实时流式响应** | Django Channels + WebSocket 驱动的 SSE 输出，毫秒级延迟 |
 | 🔍 **RAG 向量检索** | PDF/Word/HTML 解析 + ChromaDB 语义搜索 |
 | 📋 **异步任务队列** | Celery + Redis 后台任务调度，Flower 监控面板 |
+| 🧹 **生命周期清理** | 自动清理 90 天前 `generated/` 本地资源，避免磁盘无限增长 |
 | 📊 **可观测性面板** | 执行追踪、LLM 成本分析、性能监控 |
 | 💾 **工作流持久化** | MySQL 事务同步 + DjangoSaver 检查点，失败自动回滚 |
 | 🧩 **自定义节点** | 通过 API 注册模板节点类型，按节点粒度计费 |
@@ -311,6 +312,18 @@ AI 密钥除下表所列环境变量外，还可放在 **`Backend/ai_engine/inte
 | `ALLOWED_HOSTS` | Django 允许的 Host | `localhost,127.0.0.1` |
 | `CELERY_BROKER_URL` | Celery 消息队列 | `redis://localhost:6379/1` |
 | `CELERY_RESULT_BACKEND` | Celery 结果存储 | `redis://localhost:6379/1` |
+### 生命周期清理（generated 资源）
+
+项目会把部分“生成类”的图片/音频/视频等资源写入 `MEDIA_ROOT/generated/...`（同时在 `LocalMediaAsset` 表落库元数据）。
+为避免磁盘无限增长，已内置 **90 天清理策略**：
+
+- 定时任务：Celery Beat 每天执行一次（见 `Backend/flowly_backend/celery.py`）
+- 手动执行（先 dry-run）：
+
+```bash
+python Backend/manage.py cleanup_generated_media_assets --dry-run --days 90
+```
+
 | `LANGSMITH_TRACING` | 启用 LangSmith 追踪 | `true`（可选）|
 | `LANGSMITH_API_KEY` | LangSmith API Key | `ls-...`（可选）|
 

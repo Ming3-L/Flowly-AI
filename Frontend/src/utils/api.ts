@@ -16,15 +16,20 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
 })
 
 // ── Request interceptor: attach JWT ──────────────────────────────────────────────
 
 api.interceptors.request.use(
   (config) => {
+    // Let the browser set multipart boundary for FormData.
+    // If we keep application/json here, Django won't see request.FILES.
+    const d: any = (config as any).data
+    if (typeof FormData !== 'undefined' && d instanceof FormData) {
+      // Axios may normalize header keys; defensively clear both.
+      delete (config.headers as any)?.['Content-Type']
+      delete (config.headers as any)?.['content-type']
+    }
     const token = localStorage.getItem('flowly_access_token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`

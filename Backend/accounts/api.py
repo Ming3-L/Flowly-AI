@@ -107,7 +107,9 @@ def upload_avatar(request):
             uploaded_file = None
     
     if uploaded_file is None:
-        raise ValueError("file required")
+        from ninja.errors import HttpError  # pyright: ignore[reportMissingImports]
+
+        raise HttpError(400, "file required")
     
     file = uploaded_file
     profile, _ = UserProfile.objects.get_or_create(user=request.user)
