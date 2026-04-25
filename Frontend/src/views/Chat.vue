@@ -648,8 +648,8 @@ onUnmounted(() => {
 .chat-sidebar {
   width: 240px;
   flex-shrink: 0;
-  background: #fafafa;
-  border-right: 1px solid #e0e0e0;
+  background: var(--app-surface);
+  border-right: 1px solid var(--app-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -660,13 +660,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--app-border);
 }
 
 .sidebar-title {
   font-weight: 600;
   font-size: 13px;
-  color: #333333;
+  color: var(--app-text);
 }
 
 .sidebar-actions {
@@ -676,13 +676,13 @@ onUnmounted(() => {
 
 .sidebar-batchbar {
   padding: 8px 12px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--app-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   font-size: 12px;
-  color: #666666;
+  color: var(--app-text-3);
 }
 
 .batch-actions {
@@ -710,17 +710,17 @@ onUnmounted(() => {
   cursor: pointer;
   margin-bottom: 2px;
   font-size: 13px;
-  color: #333333;
+  color: var(--app-text);
   transition: background 0.15s;
 
   &:hover {
-    background: #f0f0f0;
+    background: var(--el-fill-color-light);
     .delete-btn { opacity: 1; }
   }
 
   &.active {
-    background: #000000;
-    color: #ffffff;
+    background: var(--app-text);
+    color: var(--app-surface);
     font-weight: 500;
   }
 }
@@ -747,7 +747,7 @@ onUnmounted(() => {
   padding: 20px;
   text-align: center;
   font-size: 13px;
-  color: #999999;
+  color: var(--app-text-3);
 }
 
 // ── 聊天主区域 ────────────────────────────────────────────────────────────────
@@ -757,6 +757,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: var(--app-bg);
 }
 
 .messages-area {
@@ -771,17 +772,17 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: #666666;
+  color: var(--app-text-2);
   text-align: center;
 
   .empty-icon {
     font-size: 64px;
     margin-bottom: 16px;
-    color: #cccccc;
+    color: var(--app-text-3);
   }
 
-  h3 { margin: 0 0 8px; font-weight: 600; color: #000000; }
-  p { margin: 0; font-size: 14px; color: #666666; }
+  h3 { margin: 0 0 8px; font-weight: 600; color: var(--app-text); }
+  p { margin: 0; font-size: 14px; color: var(--app-text-2); }
 }
 
 .message-wrapper {
@@ -800,14 +801,14 @@ onUnmounted(() => {
   }
 
   &.user .message-bubble {
-    background: #000000;
-    color: #ffffff;
+    background: var(--app-text);
+    color: var(--app-surface);
     border-bottom-right-radius: 4px;
   }
 
   &.assistant .message-bubble {
-    background: #f5f5f5;
-    color: #000000;
+    background: var(--app-surface);
+    color: var(--app-text);
     border-bottom-left-radius: 4px;
   }
 }
@@ -817,7 +818,7 @@ onUnmounted(() => {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: #f0f0f0;
+  background: var(--el-fill-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -825,17 +826,17 @@ onUnmounted(() => {
 
 .avatar-icon {
   font-size: 18px;
-  color: #333333;
+  color: var(--app-text-2);
 }
 
 .user .avatar-icon {
-  color: #ffffff;
+  color: var(--app-text);
 }
 
 .message-content {
   :deep(.code-block) {
-    background: #1a1a1a;
-    color: #f8f8f2;
+    background: var(--app-surface-2);
+    color: var(--app-text);
     padding: 12px;
     border-radius: 4px;
     overflow-x: auto;
@@ -846,8 +847,8 @@ onUnmounted(() => {
   }
 
   :deep(.inline-code) {
-    background: rgba(0,0,0,0.08);
-    color: #c7254e;
+    background: var(--el-fill-color-light);
+    color: var(--app-accent-danger);
     padding: 1px 5px;
     border-radius: 3px;
     font-size: 13px;
@@ -857,8 +858,8 @@ onUnmounted(() => {
 
 .user .message-content {
   :deep(.code-block) {
-    background: #2a2a2a;
-    color: #f8f8f2;
+    background: var(--app-text);
+    color: var(--app-surface);
   }
 }
 
@@ -871,7 +872,7 @@ onUnmounted(() => {
 
 .message-time {
   font-size: 11px;
-  color: #999999;
+  color: var(--app-text-3);
   opacity: 0.7;
 }
 
@@ -890,8 +891,8 @@ onUnmounted(() => {
 
 .chat-input-area {
   padding: 12px 20px;
-  background: #ffffff;
-  border-top: 1px solid #e0e0e0;
+  background: var(--app-surface);
+  border-top: 1px solid var(--app-border);
   flex-shrink: 0;
 }
 
@@ -909,7 +910,7 @@ onUnmounted(() => {
 
 .attach-tip {
   font-size: 12px;
-  color: #888;
+  color: var(--app-text-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -923,7 +924,7 @@ onUnmounted(() => {
 
 .model-hint {
   font-size: 12px;
-  color: #666666;
+  color: var(--app-text-2);
 }
 
 .input-btns {

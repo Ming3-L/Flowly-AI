@@ -1,4 +1,4 @@
-* {
+﻿* {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
@@ -19,7 +19,7 @@ body {
   height: 100%;
 }
 
-// ── Element Plus — Pure Black & White Overrides ───────────────────────────────
+// 鈹€鈹€ Element Plus 鈥?Pure Black & White Overrides 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
 :root {
   // App tokens (light)
@@ -64,68 +64,656 @@ body {
   --el-border-color-dark: #cccccc;
   --el-border-color-darker: #b3b3b3;
 
-  // Map / function colors — no color, grayscale only
+  // Map / function colors 鈥?no color, grayscale only
   --el-color-success: #333333;
   --el-color-warning: #666666;
   --el-color-danger: #000000;
   --el-color-info: #999999;
 
-  // Box shadow — subtle, black only
+  // Box shadow 鈥?subtle, black only
   --el-box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.06);
   --el-box-shadow-light: 0px 1px 2px rgba(0, 0, 0, 0.04);
   --el-box-shadow-lighter: 0px 0px 0px rgba(0, 0, 0, 0.03);
   --el-box-shadow-dark: 0px 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-// ── Dark theme overrides ────────────────────────────────────────────────────
+// 鈹€鈹€ Dark theme overrides 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 html.theme-dark {
-  --app-bg: #0f1115;
-  --app-surface: #141824;
-  --app-surface-2: #10131c;
-  --app-text: #f5f7fb;
-  --app-text-2: #d7dbe6;
-  --app-text-3: #a8afc0;
-  --app-border: rgba(255, 255, 255, 0.12);
+  --app-bg: #0d0f14;
+  --app-surface: #141720;
+  --app-surface-2: #1c2030;
+  --app-text: #f0f2f8;
+  --app-text-2: #c8cdd8;
+  --app-text-3: #8b93a8;
+  --app-border: rgba(255, 255, 255, 0.1);
 
-  // Element Plus tokens
-  --el-color-primary: #ffffff;
-  --el-color-primary-light-3: rgba(255, 255, 255, 0.85);
-  --el-color-primary-light-5: rgba(255, 255, 255, 0.7);
-  --el-color-primary-light-7: rgba(255, 255, 255, 0.55);
-  --el-color-primary-light-8: rgba(255, 255, 255, 0.4);
-  --el-color-primary-light-9: rgba(255, 255, 255, 0.25);
-  --el-color-primary-dark-2: #ffffff;
+  // 鈹€鈹€ Accent colors (semantic, visible against dark bg) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+  --app-accent-success:  #4ade80;  // green 鈥?success, active, online
+  --app-accent-warning:  #fbbf24;  // amber 鈥?warning, pending
+  --app-accent-danger:   #f87171;  // red  鈥?danger, error, delete
+  --app-accent-info:    #60a5fa;  // blue 鈥?info (sparingly used)
+  --app-accent-muted:   rgba(255, 255, 255, 0.08);  // subtle surface
 
-  --el-text-color-primary: var(--app-text);
-  --el-text-color-regular: var(--app-text-2);
-  --el-text-color-secondary: var(--app-text-3);
-  --el-text-color-placeholder: rgba(245, 247, 251, 0.45);
-  --el-text-color-disabled: rgba(245, 247, 251, 0.35);
+  // Element Plus tokens 鈥?re-thought for dark mode
+  // Primary: white border/text on dark 鈥?subtle highlight, not overwhelming
+  --el-color-primary:         #e2e4ec;
+  --el-color-primary-light-3: rgba(226, 228, 236, 0.88);
+  --el-color-primary-light-5: rgba(226, 228, 236, 0.68);
+  --el-color-primary-light-7: rgba(226, 228, 236, 0.48);
+  --el-color-primary-light-8: rgba(226, 228, 236, 0.32);
+  --el-color-primary-light-9: rgba(226, 228, 236, 0.18);
+  --el-color-primary-dark-2:  #0d0f14;
 
-  --el-bg-color: var(--app-surface);
-  --el-bg-color-page: var(--app-bg);
-  --el-bg-color-overlay: var(--app-surface);
-  --el-fill-color: rgba(255, 255, 255, 0.06);
-  --el-fill-color-light: rgba(255, 255, 255, 0.05);
+  // Semantic colors 鈥?vivid against dark
+  --el-color-success:   var(--app-accent-success);
+  --el-color-warning:   var(--app-accent-warning);
+  --el-color-danger:    var(--app-accent-danger);
+  --el-color-info:      var(--app-accent-info);
+
+  --el-text-color-primary:    var(--app-text);
+  --el-text-color-regular:    var(--app-text-2);
+  --el-text-color-secondary:  var(--app-text-3);
+  --el-text-color-placeholder: rgba(240, 242, 248, 0.38);
+  --el-text-color-disabled:   rgba(240, 242, 248, 0.28);
+
+  --el-bg-color:           var(--app-surface);
+  --el-bg-color-page:      var(--app-bg);
+  --el-bg-color-overlay:   var(--app-surface);
+  --el-fill-color:         rgba(255, 255, 255, 0.07);
+  --el-fill-color-light:   rgba(255, 255, 255, 0.05);
   --el-fill-color-lighter: rgba(255, 255, 255, 0.04);
-  --el-fill-color-blank: var(--app-surface);
+  --el-fill-color-blank:   var(--app-surface);
 
-  --el-border-color: var(--app-border);
-  --el-border-color-light: rgba(255, 255, 255, 0.14);
-  --el-border-color-lighter: rgba(255, 255, 255, 0.1);
-  --el-border-color-extra-light: rgba(255, 255, 255, 0.08);
-  --el-border-color-dark: rgba(255, 255, 255, 0.18);
-  --el-border-color-darker: rgba(255, 255, 255, 0.22);
+  --el-border-color:          var(--app-border);
+  --el-border-color-light:    rgba(255, 255, 255, 0.13);
+  --el-border-color-lighter:  rgba(255, 255, 255, 0.09);
+  --el-border-color-extra-light: rgba(255, 255, 255, 0.06);
+  --el-border-color-dark:     rgba(255, 255, 255, 0.17);
+  --el-border-color-darker:   rgba(255, 255, 255, 0.22);
 
-  --el-color-success: rgba(255, 255, 255, 0.9);
-  --el-color-warning: rgba(255, 255, 255, 0.75);
-  --el-color-danger: #ffffff;
-  --el-color-info: rgba(255, 255, 255, 0.6);
+  --el-box-shadow:        0px 1px 3px rgba(0, 0, 0, 0.55);
+  --el-box-shadow-light:  0px 1px 2px rgba(0, 0, 0, 0.45);
+  --el-box-shadow-lighter:0px 0px 0px rgba(0, 0, 0, 0.30);
+  --el-box-shadow-dark:   0px 10px 40px rgba(0, 0, 0, 0.65);
 
-  --el-box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.5);
-  --el-box-shadow-light: 0px 1px 2px rgba(0, 0, 0, 0.4);
-  --el-box-shadow-lighter: 0px 0px 0px rgba(0, 0, 0, 0.25);
-  --el-box-shadow-dark: 0px 10px 30px rgba(0, 0, 0, 0.55);
+  // 鈹€鈹€ Component-level overrides 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+
+  // Scrollbar
+  ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+  ::-webkit-scrollbar-track { background: var(--el-fill-color); }
+
+  // Element Plus icons — make fills visible on dark bg
+  .el-icon, .el-icon svg { color: var(--app-text) !important; fill: var(--app-text) !important; }
+
+  // Dashboard specific overrides
+  html.theme-dark.theme-dark .stat-value { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .stat-label { color: var(--app-text-3) !important; }
+  html.theme-dark.theme-dark .quick-label { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .wf-name { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .wf-name-cell .wf-name { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .wf-name-cell .wf-desc { color: var(--app-text-3) !important; }
+  html.theme-dark.theme-dark .exec-count { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .date-text { color: var(--app-text-3) !important; }
+  html.theme-dark.theme-dark .history-item { background: var(--el-fill-color-light) !important; }
+  html.theme-dark.theme-dark .history-query { color: var(--app-text-2) !important; }
+  html.theme-dark.theme-dark .history-time { color: var(--app-text-3) !important; }
+
+  html.theme-dark.theme-dark .quick-icon { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .quick-icon .el-icon svg { fill: var(--app-text) !important; }
+  html.theme-dark.theme-dark .stat-value { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .stat-label { color: var(--app-text-3) !important; }
+  html.theme-dark.theme-dark .quick-label { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .wf-name { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .wf-name-cell .wf-name { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .wf-name-cell .wf-desc { color: var(--app-text-3) !important; }
+  html.theme-dark.theme-dark .exec-count { color: var(--app-text) !important; }
+  html.theme-dark.theme-dark .date-text { color: var(--app-text-3) !important; }
+  html.theme-dark.theme-dark .history-item { background: var(--el-fill-color-light) !important; }
+  html.theme-dark.theme-dark .history-query { color: var(--app-text-2) !important; }
+  html.theme-dark.theme-dark .history-time { color: var(--app-text-3) !important; }
+
+  // Header actions
+  html.theme-dark.theme-dark .header-actions .el-button {
+    background: var(--el-fill-color) !important;
+    border-color: var(--app-border) !important;
+    color: var(--app-text) !important;
+  }
+  html.theme-dark.theme-dark .header-actions .el-button--primary {
+    background: var(--app-text) !important;
+    border-color: var(--app-text) !important;
+    color: var(--app-bg) !important;
+    font-weight: 600 !important;
+  }
+
+  // Active menu item — fix white bg in dark mode
+  html.theme-dark .el-menu-item.is-active {
+    background: var(--el-fill-color) !important;
+    color: var(--app-text) !important;
+  }
+
+  // Dialog override
+  .el-dialog {
+    --el-dialog-bg-color: var(--app-surface);
+    background: var(--app-surface) !important;
+    border: 1px solid var(--app-border);
+    box-shadow: 0px 20px 60px rgba(0, 0, 0, 0.7), 0px 4px 16px rgba(0, 0, 0, 0.4) !important;
+
+    .el-dialog__header {
+      border-bottom: 1px solid var(--app-border);
+      padding: 18px 24px 14px;
+      margin-right: 0;
+
+      .el-dialog__title {
+        color: var(--app-text);
+        font-weight: 600;
+        font-size: 16px;
+      }
+
+      .el-dialog__close {
+        color: var(--app-text-3);
+        transition: color 0.15s;
+
+        &:hover { color: var(--app-text); }
+      }
+    }
+
+    .el-dialog__body {
+      padding: 20px 24px;
+      color: var(--app-text-2);
+    }
+
+    .el-dialog__footer {
+      border-top: 1px solid var(--app-border);
+      padding: 14px 24px;
+    }
+  }
+
+  // Overlay backdrop
+  .el-overlay {
+    background: rgba(0, 0, 0, 0.65) !important;
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
+  }
+
+  // Card
+  .el-card {
+    --el-card-border-color: var(--app-border);
+    --el-card-bg-color: var(--app-surface);
+    border: 1px solid var(--app-border) !important;
+    box-shadow: 0px 2px 8px rgba(0, 0, 0, 0.45) !important;
+
+    .el-card__header {
+      border-bottom: 1px solid var(--app-border);
+      background: var(--app-surface-2);
+    }
+
+    .el-card__body { background: var(--app-surface) !important; }
+  }
+
+  // Button
+  .el-button {
+    --el-button-border-color: var(--app-border);
+    --el-button-bg-color: var(--app-surface);
+    --el-button-text-color: var(--app-text-2);
+    --el-button-hover-border-color: rgba(255, 255, 255, 0.22);
+    --el-button-hover-bg-color: rgba(255, 255, 255, 0.08);
+    --el-button-hover-text-color: var(--app-text);
+    background: var(--app-surface);
+    border-color: var(--app-border);
+    color: var(--app-text-2);
+    box-shadow: none;
+
+    &.el-button--primary {
+      --el-button-bg-color: rgba(226, 228, 236, 0.92);
+      --el-button-border-color: rgba(226, 228, 236, 0.6);
+      --el-button-text-color: #0d0f14;
+      --el-button-hover-bg-color: rgba(226, 228, 236, 1);
+      --el-button-hover-border-color: rgba(226, 228, 236, 0.8);
+      --el-button-hover-text-color: #0d0f14;
+      background: rgba(226, 228, 236, 0.92);
+      border-color: rgba(226, 228, 236, 0.5);
+      color: #0d0f14;
+      font-weight: 600;
+    }
+
+    &.el-button--success {
+      --el-button-bg-color: rgba(74, 222, 128, 0.15);
+      --el-button-border-color: rgba(74, 222, 128, 0.4);
+      --el-button-text-color: var(--app-accent-success);
+      --el-button-hover-bg-color: rgba(74, 222, 128, 0.22);
+      --el-button-hover-border-color: var(--app-accent-success);
+      --el-button-hover-text-color: var(--app-accent-success);
+      background: rgba(74, 222, 128, 0.15);
+      border-color: rgba(74, 222, 128, 0.4);
+      color: var(--app-accent-success);
+    }
+
+    &.el-button--danger {
+      --el-button-bg-color: rgba(248, 113, 113, 0.15);
+      --el-button-border-color: rgba(248, 113, 113, 0.4);
+      --el-button-text-color: var(--app-accent-danger);
+      --el-button-hover-bg-color: rgba(248, 113, 113, 0.25);
+      --el-button-hover-border-color: var(--app-accent-danger);
+      --el-button-hover-text-color: var(--app-accent-danger);
+      background: rgba(248, 113, 113, 0.15);
+      border-color: rgba(248, 113, 113, 0.4);
+      color: var(--app-accent-danger);
+    }
+
+    &.el-button--warning {
+      --el-button-bg-color: rgba(251, 191, 36, 0.15);
+      --el-button-border-color: rgba(251, 191, 36, 0.4);
+      --el-button-text-color: var(--app-accent-warning);
+      --el-button-hover-bg-color: rgba(251, 191, 36, 0.25);
+      --el-button-hover-border-color: var(--app-accent-warning);
+      --el-button-hover-text-color: var(--app-accent-warning);
+      background: rgba(251, 191, 36, 0.15);
+      border-color: rgba(251, 191, 36, 0.4);
+      color: var(--app-accent-warning);
+    }
+
+    &.el-button--info {
+      --el-button-bg-color: rgba(96, 165, 250, 0.12);
+      --el-button-border-color: rgba(96, 165, 250, 0.35);
+      --el-button-text-color: var(--app-accent-info);
+      --el-button-hover-bg-color: rgba(96, 165, 250, 0.2);
+      --el-button-hover-border-color: var(--app-accent-info);
+      --el-button-hover-text-color: var(--app-accent-info);
+      background: rgba(96, 165, 250, 0.12);
+      border-color: rgba(96, 165, 250, 0.35);
+      color: var(--app-accent-info);
+    }
+
+    &.is-disabled {
+      background: var(--el-fill-color-light);
+      border-color: var(--el-border-color);
+      color: var(--el-text-color-disabled);
+      opacity: 0.7;
+    }
+  }
+
+  
+html.theme-light {
+// Input
+  .el-input {
+    --el-input-border-color: var(--app-border);
+    --el-input-hover-border-color: rgba(255, 255, 255, 0.28);
+    --el-input-focus-border-color: var(--el-color-primary);
+    --el-input-text-color: var(--app-text);
+    --el-input-placeholder-color: var(--el-text-color-placeholder);
+    --el-input-bg-color: var(--app-surface);
+    --el-input-icon-color: var(--app-text-3);
+
+    .el-input__wrapper {
+      background: var(--app-surface) !important;
+      box-shadow: 0 0 0 1px var(--app-border) inset;
+      color: var(--app-text);
+      transition: box-shadow 0.15s, border-color 0.15s;
+
+      &:hover {
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25) inset !important;
+      }
+
+      &.is-focus {
+        box-shadow: 0 0 0 2px rgba(226, 228, 236, 0.35) inset !important;
+      }
+
+      .el-input__inner {
+        color: var(--app-text);
+        &::placeholder { color: var(--el-text-color-placeholder); }
+      }
+
+      .el-input__prefix .el-input__prefix-inner { color: var(--app-text-3); }
+      .el-input__suffix .el-input__suffix-inner { color: var(--app-text-3); }
+    }
+
+    &.is-disabled .el-input__wrapper {
+      background: var(--app-surface-2) !important;
+      color: var(--el-text-color-disabled);
+    }
+  }
+
+  // Select
+  .el-select {
+    --el-select-border-color-hover: rgba(255, 255, 255, 0.28);
+    --el-select-input-focus-border-color: var(--el-color-primary);
+
+    .el-select__wrapper {
+      background: var(--app-surface) !important;
+      box-shadow: 0 0 0 1px var(--app-border) inset !important;
+      color: var(--app-text);
+
+      &:hover {
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25) inset !important;
+      }
+
+      &.is-focus {
+        box-shadow: 0 0 0 2px rgba(226, 228, 236, 0.35) inset !important;
+      }
+    }
+  }
+
+  .el-select-dropdown {
+    border: 1px solid var(--app-border);
+    background: var(--app-surface);
+    box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.55);
+
+    .el-select-dropdown__item {
+      color: var(--app-text-2);
+
+      &:hover { background: var(--el-fill-color-light); }
+      &.selected { color: var(--app-text); font-weight: 600; }
+      &.is-disabled { color: var(--el-text-color-disabled); }
+    }
+  }
+
+  // Message / Notification 鈥?dark with accent colors
+  .el-message {
+    --el-message-bg-color: var(--app-surface);
+    --el-message-border-color: var(--app-border);
+    --el-message-text-color: var(--app-text);
+    border: 1px solid var(--app-border);
+    box-shadow: 0px 6px 24px rgba(0, 0, 0, 0.5);
+    color: var(--app-text);
+  }
+
+  .el-notification {
+    background: var(--app-surface);
+    border: 1px solid var(--app-border);
+    box-shadow: 0px 10px 40px rgba(0, 0, 0, 0.6);
+    color: var(--app-text);
+
+    .el-notification__title { color: var(--app-text); }
+    .el-notification__content { color: var(--app-text-2); }
+  }
+
+  // Table
+  .el-table {
+    --el-table-bg-color: var(--app-surface);
+    --el-table-stripe-background: var(--app-surface-2);
+    --el-table-header-bg-color: var(--app-surface-2);
+    --el-table-tr-bg-color: var(--app-surface);
+    --el-table-row-hover-bg-color: var(--el-fill-color-light);
+    --el-table-border-color: var(--app-border);
+    --el-table-text-color: var(--app-text-2);
+    --el-table-header-text-color: var(--app-text);
+    background: var(--app-surface);
+
+    th.el-table__cell {
+      background: var(--app-surface-2);
+      color: var(--app-text);
+      font-weight: 600;
+      border-bottom: 1px solid var(--app-border);
+    }
+
+    td.el-table__cell {
+      border-bottom: 1px solid var(--app-border);
+    }
+
+    .el-table__inner-wrapper::before {
+      background: var(--app-border);
+    }
+  }
+
+  // Form
+  .el-form-item__label {
+    color: var(--app-text-2);
+  }
+
+  // Tabs
+  .el-tabs {
+    --el-tabs-header-height: 40px;
+
+    .el-tabs__item {
+      color: var(--app-text-3);
+
+      &.is-active { color: var(--app-text); }
+      &:hover { color: var(--app-text); }
+    }
+
+    .el-tabs__active-bar { background-color: var(--app-text); }
+    .el-tabs__nav-wrap::after { background: var(--app-border); }
+  }
+
+  // Dropdown
+  .el-dropdown-menu {
+    border: 1px solid var(--app-border);
+    background: var(--app-surface);
+    box-shadow: 0px 8px 32px rgba(0, 0, 0, 0.55);
+
+    .el-dropdown-menu__item {
+      color: var(--app-text-2);
+
+      &:hover {
+        background: var(--el-fill-color-light);
+        color: var(--app-text);
+      }
+
+      &.is-disabled {
+        color: var(--el-text-color-disabled);
+      }
+    }
+  }
+
+  // Tooltip / Popper
+  .el-popper,
+  .el-tooltip__popper {
+    --el-tooltip-border-color: var(--app-border);
+    --el-tooltip-color: var(--app-text);
+    --el-tooltip-bg-color: var(--app-surface);
+    border: 1px solid var(--app-border) !important;
+    background: var(--app-surface) !important;
+    box-shadow: 0px 6px 20px rgba(0, 0, 0, 0.5);
+    color: var(--app-text);
+
+    .el-popper__arrow::before {
+      background: var(--app-surface);
+      border-color: var(--app-border);
+    }
+  }
+
+  // Pagination
+  .el-pagination {
+    --el-pagination-button-bg-color: var(--app-surface);
+    --el-pagination-hover-color: var(--app-text);
+
+    .el-pager li {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      color: var(--app-text-2);
+
+      &.is-active {
+        background: var(--el-color-primary);
+        border-color: var(--el-color-primary);
+        color: #0d0f14;
+        font-weight: 600;
+      }
+
+      &:hover:not(.is-active) {
+        color: var(--app-text);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      &.is-disabled {
+        background: var(--app-surface-2);
+        border-color: var(--app-border);
+        color: var(--el-text-color-disabled);
+      }
+    }
+
+    .btn-prev, .btn-next {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      color: var(--app-text-2);
+
+      &:hover { color: var(--app-text); border-color: rgba(255, 255, 255, 0.2); }
+      &:disabled { background: var(--app-surface-2); color: var(--el-text-color-disabled); }
+    }
+  }
+
+  // Tag 鈥?colored borders + text on dark surface
+  .el-tag {
+    --el-tag-border-color: var(--app-border);
+    --el-tag-bg-color: var(--el-fill-color-light);
+    --el-tag-text-color: var(--app-text-2);
+
+    &.el-tag--success {
+      --el-tag-border-color: rgba(74, 222, 128, 0.35);
+      --el-tag-bg-color: rgba(74, 222, 128, 0.12);
+      --el-tag-text-color: var(--app-accent-success);
+    }
+
+    &.el-tag--warning {
+      --el-tag-border-color: rgba(251, 191, 36, 0.35);
+      --el-tag-bg-color: rgba(251, 191, 36, 0.12);
+      --el-tag-text-color: var(--app-accent-warning);
+    }
+
+    &.el-tag--danger {
+      --el-tag-border-color: rgba(248, 113, 113, 0.35);
+      --el-tag-bg-color: rgba(248, 113, 113, 0.12);
+      --el-tag-text-color: var(--app-accent-danger);
+    }
+
+    &.el-tag--info {
+      --el-tag-border-color: rgba(96, 165, 250, 0.35);
+      --el-tag-bg-color: rgba(96, 165, 250, 0.1);
+      --el-tag-text-color: var(--app-accent-info);
+    }
+  }
+
+  // Alert
+  .el-alert {
+    &.is-light {
+      background: var(--el-fill-color-light);
+      border: 1px solid var(--app-border);
+    }
+
+    &.el-alert--success {
+      --el-alert-border-color: rgba(74, 222, 128, 0.35);
+      background: rgba(74, 222, 128, 0.1);
+      .el-alert__title { color: var(--app-accent-success); }
+    }
+
+    &.el-alert--warning {
+      --el-alert-border-color: rgba(251, 191, 36, 0.35);
+      background: rgba(251, 191, 36, 0.1);
+      .el-alert__title { color: var(--app-accent-warning); }
+    }
+
+    &.el-alert--error,
+    &.el-alert--danger {
+      --el-alert-border-color: rgba(248, 113, 113, 0.35);
+      background: rgba(248, 113, 113, 0.1);
+      .el-alert__title { color: var(--app-accent-danger); }
+    }
+
+    &.el-alert--info {
+      --el-alert-border-color: rgba(96, 165, 250, 0.35);
+      background: rgba(96, 165, 250, 0.08);
+      .el-alert__title { color: var(--app-accent-info); }
+    }
+  }
+
+  // Empty
+  .el-empty__description { color: var(--app-text-3); }
+  .el-empty__image svg { fill: var(--app-text-3); }
+
+  // Progress
+  .el-progress {
+    --el-progress-text-color: var(--app-text-2);
+
+    .el-progress-bar__outer {
+      background: var(--el-fill-color-lighter);
+    }
+
+    .el-progress__text { color: var(--app-text-2); }
+  }
+
+  // Timeline
+  .el-timeline-item {
+    --el-timeline-node-color: var(--app-text-3);
+  }
+
+  // Upload drag
+  .el-upload-dragger {
+    border: 1px dashed var(--app-border);
+    background: var(--el-fill-color-light);
+
+    &:hover {
+      border-color: var(--app-text-3);
+    }
+
+    .el-upload__text {
+      color: var(--app-text-2);
+      em { color: var(--app-text); }
+    }
+  }
+
+  // Divider
+  .el-divider {
+    --el-divider-border-color: var(--app-border);
+    background: var(--app-border);
+  }
+
+  // Badge
+  .el-badge__content {
+    background: var(--el-color-primary);
+    color: #0d0f14;
+    border: 1px solid transparent;
+  }
+
+  // Descriptions
+  .el-descriptions {
+    --el-descriptions-table-border: var(--app-border);
+
+    .el-descriptions__label { color: var(--app-text-2); }
+    .el-descriptions__content { color: var(--app-text); }
+  }
+
+  // Checkbox / Radio
+  .el-checkbox__label,
+  .el-radio__label {
+    color: var(--app-text-2);
+  }
+
+  .el-checkbox__input.is-checked .el-checkbox__inner,
+  .el-radio__input.is-checked .el-radio__inner {
+    background: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+
+  // Switch
+  .el-switch.is-checked .el-switch__core {
+    background: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+  }
+
+  // Slider
+  .el-slider__runway {
+    background: var(--el-fill-color-lighter);
+  }
+
+  // Skeleton
+  .el-skeleton {
+    --el-skeleton-color: var(--el-fill-color);
+    --el-skeleton-to-color: var(--el-fill-color-light);
+  }
+
+  // Run button 鈥?primary bg becomes near-white, text must be dark
+  .run-btn {
+    background: var(--el-color-primary);
+    border-color: var(--el-color-primary);
+    color: #0d0f14;
+    font-weight: 600;
+
+    &:hover {
+      background: var(--el-color-primary-light-3);
+      border-color: var(--el-color-primary-light-3);
+      color: #0d0f14;
+    }
+  }
 }
 
 // Scrollbar styling
@@ -147,9 +735,9 @@ html.theme-dark {
   background: rgba(255, 255, 255, 0.34);
 }
 
-// ── Global element overrides ─────────────────────────────────────────────────
+// 鈹€鈹€ Global element overrides 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
-// All links — black, no blue
+// All links 鈥?black, no blue
 a {
   color: var(--el-text-color-primary);
   text-decoration: none;
@@ -159,28 +747,28 @@ a {
   }
 }
 
-// Table stripe — barely-there gray
+// Table stripe 鈥?barely-there gray
 .el-table {
   --el-table-stripe-background: #fafafa;
   --el-table-header-background-color: #f5f5f5;
 }
 
-// Tag — pure black outline style
+// Tag 鈥?pure black outline style
 .el-tag {
   --el-tag-border-color: #e0e0e0;
   --el-tag-bg-color: #fafafa;
   --el-tag-text-color: #333333;
 
   &.el-tag--success {
-    --el-tag-border-color: #d0d0d0;
+    --el-tag-border-color: #b2b2b2;
     --el-tag-bg-color: #f5f5f5;
-    --el-tag-text-color: #333333;
+    --el-tag-text-color: #222222;
   }
 
   &.el-tag--warning {
-    --el-tag-border-color: #d0d0d0;
+    --el-tag-border-color: #b2b2b2;
     --el-tag-bg-color: #f5f5f5;
-    --el-tag-text-color: #666666;
+    --el-tag-text-color: #555555;
   }
 
   &.el-tag--danger {
@@ -192,11 +780,11 @@ a {
   &.el-tag--info {
     --el-tag-border-color: #e0e0e0;
     --el-tag-bg-color: #f5f5f5;
-    --el-tag-text-color: #666666;
+    --el-tag-text-color: #555555;
   }
 }
 
-// Button — black primary
+// Button 鈥?black primary
 .el-button {
   --el-button-border-color: #e0e0e0;
   --el-button-bg-color: #ffffff;
@@ -204,6 +792,11 @@ a {
   --el-button-hover-border-color: #000000;
   --el-button-hover-bg-color: #f5f5f5;
   --el-button-hover-text-color: #000000;
+  background: var(--el-button-bg-color);
+  border-color: var(--el-button-border-color);
+  color: var(--el-button-text-color);
+  box-shadow: none;
+  transition: all 0.15s;
 
   &.el-button--primary {
     --el-button-bg-color: #000000;
@@ -212,9 +805,10 @@ a {
     --el-button-hover-bg-color: #333333;
     --el-button-hover-border-color: #333333;
     --el-button-hover-text-color: #ffffff;
-    --el-button-active-bg-color: #000000;
-    --el-button-active-border-color: #000000;
-    --el-button-active-text-color: #ffffff;
+    background: #000000;
+    border-color: #000000;
+    color: #ffffff;
+    font-weight: 600;
   }
 
   &.el-button--default {
@@ -226,23 +820,50 @@ a {
     }
   }
 
-  &.el-button--danger {
-    --el-button-bg-color: #ffffff;
-    --el-button-border-color: #000000;
-    --el-button-text-color: #000000;
+  &.el-button--success {
+    --el-button-bg-color: rgba(51, 51, 51, 0.08);
+    --el-button-border-color: #b2b2b2;
+    --el-button-text-color: #222222;
+    background: rgba(51, 51, 51, 0.08);
+    border-color: #b2b2b2;
+    color: #222222;
 
-    &:hover,
-    &:focus {
-      background-color: #000000;
+    &:hover, &:focus {
+      background: rgba(51, 51, 51, 0.14);
       border-color: #000000;
+      color: #000000;
+    }
+  }
+
+  &.el-button--danger {
+    --el-button-bg-color: #000000;
+    --el-button-border-color: #000000;
+    --el-button-text-color: #ffffff;
+    background: #000000;
+    border-color: #000000;
+    color: #ffffff;
+
+    &:hover, &:focus {
+      background: #333333;
+      border-color: #333333;
       color: #ffffff;
     }
   }
 
   &.el-button--warning {
-    --el-button-bg-color: #ffffff;
-    --el-button-border-color: #666666;
-    --el-button-text-color: #333333;
+    --el-button-bg-color: rgba(51, 51, 51, 0.08);
+    --el-button-border-color: #999999;
+    --el-button-text-color: #444444;
+    background: rgba(51, 51, 51, 0.08);
+    border-color: #999999;
+    color: #444444;
+  }
+
+  &.is-disabled {
+    background: #f5f5f5;
+    border-color: #e0e0e0;
+    color: #bdbdbd;
+    opacity: 0.7;
   }
 }
 
@@ -258,6 +879,7 @@ a {
   .el-input__wrapper {
     box-shadow: 0 0 0 1px var(--el-input-border-color) inset;
     background: var(--el-input-bg-color);
+    color: var(--el-input-text-color);
 
     &:hover {
       box-shadow: 0 0 0 1px #000000 inset;
@@ -266,10 +888,20 @@ a {
     &.is-focus {
       box-shadow: 0 0 0 2px #000000 inset !important;
     }
+
+    .el-input__inner {
+      color: var(--el-input-text-color);
+      &::placeholder { color: var(--el-input-placeholder-color); }
+    }
+  }
+
+  &.is-disabled .el-input__wrapper {
+    background: #f5f5f5 !important;
+    color: #bdbdbd;
   }
 }
 
-// 强制若页面仍写死白底，暗色下兜底覆盖（避免大片白屏）
+// 寮哄埗鑻ラ〉闈粛鍐欐鐧藉簳锛屾殫鑹蹭笅鍏滃簳瑕嗙洊锛堥伩鍏嶅ぇ鐗囩櫧灞忥級
 html.theme-dark .app-nav,
 html.theme-dark .app-main,
 html.theme-dark .dashboard-view,
@@ -296,38 +928,62 @@ html.theme-dark .editor-view {
   --el-card-border-color: #e8e8e8;
   --el-card-bg-color: #ffffff;
   --el-card-padding: 16px;
-  border: 1px solid #e8e8e8 !important;
-  box-shadow: 0px 1px 3px rgba(0, 0, 0, 0.04) !important;
+  border: 1px solid var(--el-card-border-color) !important;
+  box-shadow: var(--el-box-shadow) !important;
   border-radius: 6px !important;
 
   .el-card__header {
     border-bottom: 1px solid #f0f0f0;
     padding: 12px 16px;
+    background: var(--el-card-bg-color);
   }
 
   .el-card__body {
     padding: 16px;
+    background: var(--el-card-bg-color);
   }
 }
 
 // Dialog
 .el-dialog {
   --el-dialog-border-radius: 6px;
+  background: var(--el-card-bg-color);
+  border: 1px solid var(--el-card-border-color);
+  box-shadow: var(--el-box-shadow-dark);
 
   .el-dialog__header {
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--el-border-color);
     padding: 16px 20px;
     margin-right: 0;
+
+    .el-dialog__title {
+      color: var(--el-text-color-primary);
+      font-weight: 600;
+    }
+
+    .el-dialog__close {
+      color: var(--el-text-color-secondary);
+      transition: color 0.15s;
+      &:hover { color: var(--el-text-color-primary); }
+    }
   }
 
   .el-dialog__body {
     padding: 20px;
+    color: var(--el-text-color-regular);
   }
 
   .el-dialog__footer {
-    border-top: 1px solid #f0f0f0;
+    border-top: 1px solid var(--el-border-color);
     padding: 12px 20px;
   }
+}
+
+// Overlay backdrop
+.el-overlay {
+  background: rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }
 
 // Message / Notification
@@ -488,4 +1144,6 @@ html.theme-dark .editor-view {
 // Descriptions
 .el-descriptions {
   --el-descriptions-table-border: 1px solid #e8e8e8;
+}
+
 }

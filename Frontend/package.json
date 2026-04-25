@@ -26,9 +26,11 @@
   "devDependencies": {
     "@types/lodash-es": "^4.17.12",
     "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.0",
+    "@typescript-eslint/parser": "^8.59.0",
     "@vitejs/plugin-vue": "^5.0.0",
     "eslint": "^8.57.0",
-    "eslint-plugin-vue": "^9.22.0",
+    "eslint-plugin-vue": "^9.33.0",
     "sass": "^1.72.0",
     "typescript": "^5.4.0",
     "unplugin-auto-import": "^0.17.5",

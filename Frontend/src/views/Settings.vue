@@ -399,7 +399,6 @@ async function saveModel() {
     await auth.updateProfile({
       ai_model: aiModel.value,
       language: language.value,
-      nickname: nickname.value,
     })
     localStorage.setItem('flowly_preferences', JSON.stringify({
       temperature: temperature.value,
@@ -532,7 +531,7 @@ async function handleDeleteAccount() {
 <style scoped>
 .settings-page {
   min-height: calc(100vh - 56px);
-  background: #ffffff;
+  background: var(--app-bg);
   padding: 24px 0;
 }
 
@@ -545,7 +544,7 @@ async function handleDeleteAccount() {
 .page-title {
   font-size: 22px;
   font-weight: 700;
-  color: #000000;
+  color: var(--app-text);
   margin: 0 0 20px;
   letter-spacing: -0.3px;
 }
@@ -558,18 +557,18 @@ async function handleDeleteAccount() {
 .section-header {
   font-weight: 600;
   font-size: 15px;
-  color: #000000;
+  color: var(--app-text);
 }
 
 .form-tip {
   font-size: 12px;
-  color: #666666;
+  color: var(--app-text-3);
   margin-top: 4px;
   line-height: 1.4;
 }
 
 .danger-card {
-  border-color: #e0e0e0;
+  border-color: var(--app-border);
 }
 
 .avatar-grid {
@@ -584,12 +583,12 @@ async function handleDeleteAccount() {
   align-items: center;
   gap: 4px;
   padding: 6px;
-  border: 1px solid #eee;
+  border: 1px solid var(--app-border);
   border-radius: 8px;
 }
 
 .avatar-item.active {
-  border-color: #000;
+  border-color: var(--app-text);
 }
 
 .avatar-click {

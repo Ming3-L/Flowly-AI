@@ -356,12 +356,12 @@ store.fetchWorkflows()
 <style scoped lang="scss">
 .dashboard-view {
   min-height: 100vh;
-  background: #ffffff;
+  background: var(--app-bg);
 }
 
 .el-header {
-  background: #ffffff;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
 
   .header-content {
     display: flex;
@@ -374,7 +374,7 @@ store.fetchWorkflows()
       margin: 0;
       font-size: 18px;
       font-weight: 700;
-      color: #000000;
+      color: var(--app-text);
       letter-spacing: -0.2px;
     }
 
@@ -395,12 +395,12 @@ store.fetchWorkflows()
 .stats-row {
   .stat-card {
     border-radius: 6px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--app-border);
     cursor: pointer;
     transition: box-shadow 0.15s;
 
     &:hover {
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12) !important;
     }
 
     .stat-content {
@@ -418,24 +418,24 @@ store.fetchWorkflows()
         font-size: 20px;
         flex-shrink: 0;
 
-        &.dark { background: #000000; color: #ffffff; }
-        &.green { background: #000000; color: #ffffff; }
-        &.blue { background: #000000; color: #ffffff; }
-        &.red { background: #000000; color: #ffffff; }
+        &.dark { background: var(--app-text); color: var(--app-surface); }
+        &.green { background: var(--app-accent-success); color: #0d0f14; }
+        &.blue { background: var(--app-accent-info); color: #0d0f14; }
+        &.red { background: var(--app-accent-danger); color: #0d0f14; }
       }
 
       .stat-info {
         .stat-value {
           font-size: 24px;
           font-weight: 700;
-          color: #000000;
+          color: var(--app-text);
           line-height: 1.2;
           font-variant-numeric: tabular-nums;
         }
 
         .stat-label {
           font-size: 12px;
-          color: #666666;
+          color: var(--app-text-3);
           margin-top: 2px;
         }
       }
@@ -446,13 +446,13 @@ store.fetchWorkflows()
 .quick-actions-row {
   .quick-card {
     border-radius: 6px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--app-border);
     cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
 
     &:hover {
-      border-color: #000000;
-      background: #fafafa;
+      border-color: var(--app-text-3);
+      background: var(--el-fill-color-light);
     }
 
     .quick-content {
@@ -463,13 +463,13 @@ store.fetchWorkflows()
 
       .quick-icon {
         font-size: 20px;
-        color: #000000;
+        color: var(--app-text);
       }
 
       .quick-label {
         font-size: 14px;
         font-weight: 500;
-        color: #000000;
+        color: var(--app-text);
       }
     }
   }
@@ -478,7 +478,7 @@ store.fetchWorkflows()
 .workflow-table-card,
 .history-card {
   border-radius: 6px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--app-border);
 
   .card-header {
     display: flex;
@@ -486,7 +486,7 @@ store.fetchWorkflows()
     justify-content: space-between;
     font-weight: 600;
     font-size: 14px;
-    color: #000000;
+    color: var(--app-text);
   }
 
   .card-header-right {
@@ -503,13 +503,13 @@ store.fetchWorkflows()
 
   .wf-name {
     font-weight: 600;
-    color: #000000;
+    color: var(--app-text);
     font-size: 14px;
   }
 
   .wf-desc {
     font-size: 12px;
-    color: #666666;
+    color: var(--app-text-3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -520,12 +520,12 @@ store.fetchWorkflows()
 .exec-count {
   font-size: 13px;
   font-weight: 600;
-  color: #000000;
+  color: var(--app-text);
 }
 
 .date-text {
   font-size: 12px;
-  color: #666666;
+  color: var(--app-text-3);
 }
 
 .action-buttons {
@@ -543,7 +543,7 @@ store.fetchWorkflows()
 
 .history-item {
   padding: 8px;
-  background: #fafafa;
+  background: var(--el-fill-color-light);
   border-radius: 4px;
 
   .history-header {
@@ -555,12 +555,12 @@ store.fetchWorkflows()
 
   .history-time {
     font-size: 11px;
-    color: #999999;
+    color: var(--app-text-3);
   }
 
   .history-query {
     font-size: 12px;
-    color: #333333;
+    color: var(--app-text-2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

@@ -293,7 +293,7 @@ export const useWorkflowEditorStore = defineStore('workflowEditor', () => {
 
     layers.forEach((layer, li) => {
       const totalHeight = (layer.length - 1) * GAP_Y
-      let startY = START_Y - totalHeight / 2
+      const startY = START_Y - totalHeight / 2
 
       layer.forEach((id, ni) => {
         const node = nodes.value.find((n) => n.id === id)

@@ -3,10 +3,26 @@
     <!-- 导航栏 -->
     <header class="home-nav">
       <div class="nav-brand">
-        <img class="brand-logo" src="/logo.png" alt="Flowly" />
+        <img class="brand-logo" :src="isDarkTheme ? '/logow.png' : '/logo.png'" alt="Flowly" />
         <span class="brand-name">Flowly</span>
       </div>
       <div class="nav-actions">
+        <button class="theme-toggle-btn" :title="isDarkTheme ? '切换到浅色' : '切换到深色'" @click="toggleTheme">
+          <svg v-if="isDarkTheme" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg v-else xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
         <el-button size="small" @click="$router.push('/login')">登录</el-button>
         <el-button size="small" type="primary" @click="$router.push('/register')">免费开始</el-button>
       </div>
@@ -299,7 +315,7 @@
     <!-- 页脚 -->
     <footer class="home-footer">
       <div class="footer-brand">
-        <img src="/logo.png" alt="Flowly" class="footer-logo" />
+        <img :src="isDarkTheme ? '/logow.png' : '/logo.png'" alt="Flowly" class="footer-logo" />
         <span>Flowly</span>
       </div>
       <div class="footer-links">
@@ -315,7 +331,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import {
   ArrowRight,
   ChatDotRound,
@@ -329,9 +345,15 @@ import {
   Checked,
   Tools,
 } from '@element-plus/icons-vue'
+import { themeVersion } from '@/stores/themeStore'
+import { toggleTheme } from '@/utils/theme'
 
 const demoRef = ref<HTMLElement>()
 const currentYear = new Date().getFullYear()
+const isDarkTheme = computed(() => {
+  void themeVersion.value
+  return document.documentElement.classList.contains('theme-dark')
+})
 
 function scrollToDemo() {
   demoRef.value?.scrollIntoView({ behavior: 'smooth' })
@@ -341,7 +363,7 @@ function scrollToDemo() {
 <style scoped lang="scss">
 .home-page {
   min-height: 100vh;
-  background: #ffffff;
+  background: var(--app-bg);
   display: flex;
   flex-direction: column;
 }
@@ -353,10 +375,10 @@ function scrollToDemo() {
   justify-content: space-between;
   padding: 0 48px;
   height: 60px;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--app-border);
   position: sticky;
   top: 0;
-  background: #ffffff;
+  background: var(--app-surface);
   z-index: 10;
 }
 
@@ -374,7 +396,7 @@ function scrollToDemo() {
   .brand-name {
     font-size: 18px;
     font-weight: 700;
-    color: #000000;
+    color: var(--app-text);
     letter-spacing: -0.4px;
   }
 }
@@ -382,6 +404,32 @@ function scrollToDemo() {
 .nav-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.theme-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text-2);
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+
+  &:hover {
+    color: var(--app-text);
+    border-color: var(--app-text);
+    background: var(--el-fill-color-light);
+  }
+
+  &:active {
+    transform: scale(0.94);
+  }
 }
 
 // ─── 首屏 ───────────────────────────────────────────────────────────
@@ -405,8 +453,8 @@ function scrollToDemo() {
   font-weight: 600;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: #666666;
-  border: 1px solid #e0e0e0;
+  color: var(--app-text-3);
+  border: 1px solid var(--app-border);
   padding: 4px 12px;
   border-radius: 20px;
 }
@@ -414,7 +462,7 @@ function scrollToDemo() {
 .hero-title {
   font-size: 64px;
   font-weight: 900;
-  color: #000000;
+  color: var(--app-text);
   line-height: 1.05;
   letter-spacing: -2px;
   margin: 0 0 24px;
@@ -422,7 +470,7 @@ function scrollToDemo() {
 
 .hero-subtitle {
   font-size: 18px;
-  color: #666666;
+  color: var(--app-text-3);
   line-height: 1.7;
   margin: 0 0 40px;
 }
@@ -447,19 +495,19 @@ function scrollToDemo() {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #666666;
+  color: var(--app-text-3);
 
   .el-icon {
-    color: #000000;
+    color: var(--app-text);
   }
 }
 
 // ─── 演示区 ─────────────────────────────────────────────────
 .demo-section {
   padding: 60px 48px;
-  background: #fafafa;
-  border-top: 1px solid #f0f0f0;
-  border-bottom: 1px solid #f0f0f0;
+  background: var(--app-surface-2);
+  border-top: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .demo-header,
@@ -474,31 +522,31 @@ function scrollToDemo() {
   font-weight: 600;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: #666666;
+  color: var(--app-text-3);
   margin-bottom: 12px;
 }
 
 .section-title {
   font-size: 36px;
   font-weight: 700;
-  color: #000000;
+  color: var(--app-text);
   letter-spacing: -1px;
   margin: 0 0 12px;
 }
 
 .section-subtitle {
   font-size: 16px;
-  color: #666666;
+  color: var(--app-text-3);
   margin: 0;
 }
 
 .demo-window {
   max-width: 900px;
   margin: 0 auto;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--app-border);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
 }
 
 .demo-toolbar {
@@ -506,8 +554,8 @@ function scrollToDemo() {
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  background: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--app-surface-2);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .demo-dots {
@@ -526,20 +574,20 @@ function scrollToDemo() {
 
 .demo-title {
   font-size: 13px;
-  color: #666666;
+  color: var(--app-text-3);
   font-weight: 500;
 }
 
 .demo-content {
   display: flex;
   height: 360px;
-  background: #ffffff;
+  background: var(--app-surface);
 }
 
 .demo-palette {
   width: 160px;
-  background: #fafafa;
-  border-right: 1px solid #e0e0e0;
+  background: var(--app-surface-2);
+  border-right: 1px solid var(--app-border);
   padding: 16px 12px;
   flex-shrink: 0;
 }
@@ -547,7 +595,7 @@ function scrollToDemo() {
 .demo-palette-title {
   font-size: 11px;
   font-weight: 600;
-  color: #666666;
+  color: var(--app-text-3);
   text-transform: uppercase;
   letter-spacing: 0.8px;
   margin-bottom: 12px;
@@ -563,12 +611,12 @@ function scrollToDemo() {
   margin-bottom: 4px;
   cursor: pointer;
 
-  &:hover { background: #f0f0f0; }
+  &:hover { background: var(--el-fill-color-light); }
 
   span {
     font-size: 13px;
     font-weight: 500;
-    color: #000000;
+    color: var(--app-text);
   }
 }
 
@@ -590,7 +638,7 @@ function scrollToDemo() {
 .demo-canvas {
   flex: 1;
   position: relative;
-  background-image: radial-gradient(circle, #e0e0e0 1px, transparent 1px);
+  background-image: radial-gradient(circle, var(--app-border) 1px, transparent 1px);
   background-size: 20px 20px;
   padding: 24px;
 }
@@ -598,15 +646,15 @@ function scrollToDemo() {
 .demo-node {
   position: absolute;
   width: 160px;
-  background: #ffffff;
-  border: 2px solid #000000;
+  background: var(--app-surface);
+  border: 2px solid var(--app-text);
   border-radius: 4px;
   padding: 10px 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 
   &.demo-node-1 { top: 24px; left: 80px; }
-  &.demo-node-2 { top: 160px; left: 280px; border-color: #999999; }
-  &.demo-node-3 { top: 60px; left: 520px; border-color: #666666; }
+  &.demo-node-2 { top: 160px; left: 280px; border-color: var(--app-text-3); }
+  &.demo-node-3 { top: 60px; left: 520px; border-color: var(--app-text-2); }
   &.demo-node-4 { top: 240px; left: 520px; }
 }
 
@@ -618,22 +666,22 @@ function scrollToDemo() {
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
-  color: #000000;
+  color: var(--app-text-3);
   letter-spacing: 0.5px;
 }
 
 .demo-node-label {
   font-size: 13px;
   font-weight: 600;
-  color: #000000;
+  color: var(--app-text);
 }
 
 .demo-handle {
   position: absolute;
   width: 10px;
   height: 10px;
-  background: #cccccc;
-  border: 2px solid #ffffff;
+  background: var(--app-border);
+  border: 2px solid var(--app-surface);
   border-radius: 50%;
   &.demo-handle-in { left: -6px; top: 50%; transform: translateY(-50%); }
   &.demo-handle-out { right: -6px; top: 50%; transform: translateY(-50%); }
@@ -648,22 +696,22 @@ function scrollToDemo() {
     left: 240px;
     width: 40px;
     height: 2px;
-    background: #b3b3b3;
+    background: var(--app-border);
   }
 }
 
 // ─── 功能区 ────────────────────────────────────────────────────────
 .features-section {
   padding: 80px 48px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--app-border);
 }
 
 .features-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1px;
-  background: #e0e0e0;
-  border: 1px solid #e0e0e0;
+  background: var(--app-border);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
   overflow: hidden;
   max-width: 1100px;
@@ -671,24 +719,24 @@ function scrollToDemo() {
 }
 
 .feature-card {
-  background: #ffffff;
+  background: var(--app-surface);
   padding: 40px 32px;
   transition: background 0.15s ease-out;
 
   &:hover {
-    background: #fafafa;
+    background: var(--el-fill-color-light);
   }
 
   h3 {
     font-size: 16px;
     font-weight: 700;
-    color: #000000;
+    color: var(--app-text);
     margin: 0 0 10px;
   }
 
   p {
     font-size: 14px;
-    color: #666666;
+    color: var(--app-text-3);
     line-height: 1.65;
     margin: 0;
   }
@@ -697,7 +745,7 @@ function scrollToDemo() {
 .feature-icon {
   width: 44px;
   height: 44px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -706,15 +754,15 @@ function scrollToDemo() {
 
   .el-icon {
     font-size: 22px;
-    color: #000000;
+    color: var(--app-text);
   }
 }
 
 // ─── 定价区 ────────────────────────────────────────────────────────
 .pricing-section {
   padding: 80px 48px;
-  background: #fafafa;
-  border-top: 1px solid #f0f0f0;
+  background: var(--app-surface-2);
+  border-top: 1px solid var(--app-border);
 }
 
 .pricing-grid {
@@ -726,8 +774,8 @@ function scrollToDemo() {
 }
 
 .pricing-card {
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
   padding: 32px;
   text-align: center;
@@ -735,12 +783,12 @@ function scrollToDemo() {
   transition: border-color 0.15s;
 
   &:hover {
-    border-color: #000000;
+    border-color: var(--app-text-3);
   }
 
   &.featured {
-    border-color: #000000;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    border-color: var(--app-text);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
   }
 }
 
@@ -749,19 +797,20 @@ function scrollToDemo() {
   top: -12px;
   left: 50%;
   transform: translateX(-50%);
-  background: #000000;
-  color: #ffffff;
+  background: var(--app-text);
+  color: var(--app-surface);
   font-size: 11px;
   font-weight: 600;
   padding: 4px 12px;
   border-radius: 12px;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .pricing-tier {
   font-size: 14px;
   font-weight: 700;
-  color: #000000;
+  color: var(--app-text);
   text-transform: uppercase;
   letter-spacing: 1px;
   margin-bottom: 16px;
@@ -770,20 +819,20 @@ function scrollToDemo() {
 .pricing-price {
   font-size: 36px;
   font-weight: 900;
-  color: #000000;
+  color: var(--app-text);
   margin-bottom: 8px;
   letter-spacing: -1px;
 
   span {
     font-size: 14px;
     font-weight: 400;
-    color: #666666;
+    color: var(--app-text-3);
   }
 }
 
 .pricing-desc {
   font-size: 13px;
-  color: #666666;
+  color: var(--app-text-3);
   margin-bottom: 24px;
 }
 
@@ -795,9 +844,9 @@ function scrollToDemo() {
 
   li {
     font-size: 13px;
-    color: #333333;
+    color: var(--app-text-2);
     padding: 6px 0;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid var(--app-border);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -808,7 +857,7 @@ function scrollToDemo() {
 
     &::before {
       content: '✓';
-      color: #000000;
+      color: var(--app-text);
       font-weight: 700;
       font-size: 12px;
     }
@@ -823,7 +872,7 @@ function scrollToDemo() {
 // ─── 用户评价区 ─────────────────────────────────────────────────
 .testimonials-section {
   padding: 80px 48px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--app-border);
 }
 
 .testimonials-grid {
@@ -835,15 +884,15 @@ function scrollToDemo() {
 }
 
 .testimonial-card {
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
   border-radius: 8px;
   padding: 28px;
   transition: border-color 0.15s, box-shadow 0.15s;
 
   &:hover {
-    border-color: #000000;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    border-color: var(--app-text-3);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
   }
 }
 
@@ -851,13 +900,13 @@ function scrollToDemo() {
   display: flex;
   gap: 2px;
   margin-bottom: 16px;
-  color: #000000;
+  color: var(--app-text);
   font-size: 14px;
 }
 
 .testimonial-text {
   font-size: 14px;
-  color: #333333;
+  color: var(--app-text-2);
   line-height: 1.7;
   margin: 0 0 20px;
   font-style: italic;
@@ -873,8 +922,8 @@ function scrollToDemo() {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #000000;
-  color: #ffffff;
+  background: var(--app-text);
+  color: var(--app-surface);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -886,12 +935,12 @@ function scrollToDemo() {
 .author-name {
   font-size: 13px;
   font-weight: 600;
-  color: #000000;
+  color: var(--app-text);
 }
 
 .author-role {
   font-size: 12px;
-  color: #666666;
+  color: var(--app-text-3);
 }
 
 // ─── 行动号召条 ────────────────────────────────────────────────────
@@ -901,12 +950,12 @@ function scrollToDemo() {
   align-items: center;
   text-align: center;
   padding: 72px 20px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--app-border);
 
   .cta-strip-text {
     font-size: 24px;
     font-weight: 700;
-    color: #000000;
+    color: var(--app-text);
     letter-spacing: -0.5px;
     margin: 0 0 28px;
   }
@@ -916,14 +965,14 @@ function scrollToDemo() {
 .home-footer {
   margin-top: auto;
   padding: 24px 48px;
-  border-top: 1px solid #f0f0f0;
+  border-top: 1px solid var(--app-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 16px;
   font-size: 12px;
-  color: #999999;
+  color: var(--app-text-3);
 }
 
 .footer-brand {
@@ -939,7 +988,7 @@ function scrollToDemo() {
   span {
     font-size: 15px;
     font-weight: 700;
-    color: #000000;
+    color: var(--app-text);
   }
 }
 
@@ -948,12 +997,12 @@ function scrollToDemo() {
   gap: 24px;
 
   a {
-    color: #666666;
+    color: var(--app-text-3);
     text-decoration: none;
     font-size: 13px;
 
     &:hover {
-      color: #000000;
+      color: var(--app-text);
     }
   }
 }

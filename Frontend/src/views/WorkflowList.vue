@@ -391,7 +391,7 @@ onMounted(fetchWorkflows)
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #ffffff;
+  background: var(--app-bg);
 }
 
 .list-header {
@@ -399,14 +399,14 @@ onMounted(fetchWorkflows)
   align-items: center;
   justify-content: space-between;
   padding: 14px 20px;
-  background: #ffffff;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
 
   h1 {
     margin: 0;
     font-size: 18px;
     font-weight: 700;
-    color: #000000;
+    color: var(--app-text);
   }
 }
 
@@ -415,8 +415,8 @@ onMounted(fetchWorkflows)
   align-items: center;
   gap: 12px;
   padding: 10px 20px;
-  background: #ffffff;
-  border-bottom: 1px solid #e0e0e0;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
 }
 
 .search-input {
@@ -441,7 +441,7 @@ onMounted(fetchWorkflows)
     transition: background 0.15s;
 
     &:hover td {
-      background: #fafafa !important;
+      background: var(--el-fill-color-light) !important;
     }
   }
 }
@@ -453,13 +453,13 @@ onMounted(fetchWorkflows)
 
   .wf-name {
     font-weight: 600;
-    color: #000000;
+    color: var(--app-text);
     font-size: 14px;
   }
 
   .wf-desc {
     font-size: 12px;
-    color: #666666;
+    color: var(--app-text-3);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -469,7 +469,7 @@ onMounted(fetchWorkflows)
 
 .date-cell {
   font-size: 12px;
-  color: #666666;
+  color: var(--app-text-3);
 }
 
 .action-btns {

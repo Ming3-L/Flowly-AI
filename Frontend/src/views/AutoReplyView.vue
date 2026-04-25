@@ -799,7 +799,7 @@ function fillNboxFromArrays(
 }
 
 function syncNboxFromStrings() {
-  ;(['chat_window', 'user_name', 'friend_list', 'input_box'] as const).forEach((k) => {
+  (['chat_window', 'user_name', 'friend_list', 'input_box'] as const).forEach((k) => {
     const s =
       k === 'chat_window'
         ? screenBoxes.value.chat_window

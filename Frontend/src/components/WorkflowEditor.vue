@@ -1270,7 +1270,7 @@ function openEnhance(field: string) {
 }
 
 function applyEnhanced(v: string) {
-  ;(inspectorConfig.value as any)[enhanceField.value] = v
+  (inspectorConfig.value as any)[enhanceField.value] = v
   updateNodeConfig()
 }
 

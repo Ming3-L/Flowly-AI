@@ -1,25 +1,86 @@
 # Flowly AI
 
-> 基于 Django + LangGraph + Vue 3 的 AI 工作流引擎，支持可视化编排、实时流式响应、向量检索与异步任务处理。
+<!-- Markdown lint disable for inline HTML shields -->
+[![Stars](https://img.shields.io/github/stars/yuxiaopao/Flowly-AI?style=social)](https://github.com/yuxiaopao/Flowly-AI)
+[![License](https://img.shields.io/github/license/yuxiaopao/Flowly-AI)](https://github.com/yuxiaopao/Flowly-AI/blob/master/LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![Vue](https://img.shields.io/badge/Vue-3.4-green.svg)](https://vuejs.org/)
+[![Django](https://img.shields.io/badge/Django-5.x-teal.svg)](https://www.djangoproject.com/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
+
+> 基于 **Django + LangGraph + Vue 3** 的企业级 AI 工作流引擎，支持可视化编排、实时流式响应、向量检索与异步任务处理。
+
+[English](README_en.md) · [快速开始](#快速上手) · [文档](#目录) · [路线图](#路线图) · [贡献](#贡献) · [MIT License](#许可证)
 
 ---
 
-## 项目概览
+## ✨ 特性亮点
 
-Flowly AI 是一个企业级 AI 工作流平台，核心能力包括：
-
-- **可视化工作流编辑器** — 基于 Vue Flow 的拖拽式节点编排
-- **LangGraph 工作流引擎** — 支持并行节点、条件路由、人机交互、多模型切换
-- **实时流式响应** — Django Channels + WebSocket 驱动的 SSE/流式输出
-- **RAG 向量检索** — 支持 PDF/Word 文档解析与语义搜索
-- **异步任务队列** — Celery + Redis 实现后台任务调度
-- **可观测性面板** — 执行追踪、成本分析、性能监控
-- **工作流图 MySQL 持久化** — 保存工作流时在事务内从 `Workflow.definition` 同步到 `WorkflowGraphNode` / `WorkflowGraphEdge`（失败整单回滚）；密钥以 `get_ai_provider_settings()` 为单一来源
-- **用户自定义节点类型** — `POST /api/custom-node-types` 创建模板，画布节点 `type` 使用返回的 `type_key`（`ut_<id>`）；计费维度支持 `CostRecord.client_node_id` 与可选 `conversation_session`
+| 功能 | 说明 |
+|------|------|
+| 🎨 **可视化编辑器** | 基于 Vue Flow 的拖拽式节点编排，所见即所得 |
+| 🔀 **LangGraph 引擎** | 并行执行、条件路由、人机交互、多模型动态切换 |
+| ⚡ **实时流式响应** | Django Channels + WebSocket 驱动的 SSE 输出，毫秒级延迟 |
+| 🔍 **RAG 向量检索** | PDF/Word/HTML 解析 + ChromaDB 语义搜索 |
+| 📋 **异步任务队列** | Celery + Redis 后台任务调度，Flower 监控面板 |
+| 📊 **可观测性面板** | 执行追踪、LLM 成本分析、性能监控 |
+| 💾 **工作流持久化** | MySQL 事务同步 + DjangoSaver 检查点，失败自动回滚 |
+| 🧩 **自定义节点** | 通过 API 注册模板节点类型，按节点粒度计费 |
 
 ---
 
-## 界面预览
+## 🎯 快速上手
+
+> 如果只需要在本地运行项目（不使用 Docker），请参考下方「数据库配置（本地部署）」章节，选择适合你的方案（MySQL 或 SQLite）。
+
+### 一键部署（Docker Compose）
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/yuxiaopao/Flowly-AI.git
+cd Flowly-AI
+
+# 2. 配置环境变量
+cp Backend/.env.example Backend/.env
+# 编辑 Backend/.env，填入 OPENAI_API_KEY 等必要配置
+
+# 3. 启动所有服务
+docker compose up -d --build
+
+# 4. 数据库迁移
+docker compose exec backend python manage.py migrate
+
+# 5. 创建管理员账户
+docker compose exec backend python manage.py createsuperuser
+```
+
+访问地址：
+- 🌐 前端界面：`http://localhost`
+- 🔌 后端 API：`http://localhost:8000/api/`
+- 📊 Flower 监控：`http://localhost:5555`
+
+### 本地开发
+
+```bash
+# 后端
+cd Backend
+python -m venv venv
+.\venv\Scripts\activate   # Windows
+# source venv/bin/activate  # Linux/macOS
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+
+# 前端（新终端）
+cd Frontend
+npm install
+npm run dev
+```
+
+---
+
+## 📷 界面预览
 
 ### 工作流编辑器
 
@@ -35,116 +96,86 @@ Flowly AI 是一个企业级 AI 工作流平台，核心能力包括：
 
 ---
 
-## 目录结构
+## 📁 目录结构
 
 ```
 Flowly-AI/
-│
 ├── Backend/                        # Django 后端
 │   ├── ai_engine/                 # AI 引擎应用
-│   │   ├── workflow.py            # LangGraph 工作流核心（~1600行）
+│   │   ├── workflow.py            # LangGraph 工作流核心
 │   │   ├── workflows.py           # 工作流 CRUD API
-│   │   ├── executions.py           # 执行历史与统计
-│   │   ├── api.py                 # Django Ninja REST API（~800行）
+│   │   ├── executions.py          # 执行历史与统计
+│   │   ├── api.py                 # Django Ninja REST API
 │   │   ├── rag_api.py             # RAG / 向量检索 API
 │   │   ├── rag_models.py          # Document / Chunk 数据模型
-│   │   ├── task_api.py            # Celery 任务管理 API
-│   │   ├── analytics_api.py       # 可观测性分析 API
+│   │   ├── task_api.py           # Celery 任务管理 API
+│   │   ├── analytics_api.py      # 可观测性分析 API
 │   │   ├── analytics_models.py    # 执行记录/成本追踪模型
-│   │   ├── vector_store.py        # ChromaDB 向量存储封装
-│   │   ├── document_processor.py   # PDF/Word 文档处理
-│   │   ├── chunker.py             # 文档分块策略
-│   │   ├── tasks.py               # Celery 异步任务定义
-│   │   ├── cost_tracker.py        # LLM 成本追踪
+│   │   ├── vector_store.py       # ChromaDB 向量存储封装
+│   │   ├── document_processor.py  # PDF/Word 文档处理
+│   │   ├── chunker.py            # 文档分块策略
+│   │   ├── tasks.py              # Celery 异步任务定义
+│   │   ├── cost_tracker.py       # LLM 成本追踪
 │   │   ├── auth.py               # JWT 认证工具
-│   │   ├── consumers.py           # Django Channels WebSocket 消费者
-│   │   ├── graphs/                # LangGraph 子图定义
-│   │   ├── conversation/          # AI 对话 / 自动回复编排（预留实现）
-│   │   ├── integrations/        # 外部服务配置：环境变量 + project_secrets_local.py
-│   │   ├── workflow_graph/      # 工作流节点与边在 MySQL 中的规范化存储
-│   │   ├── workflow_nodes/      # 文本/音频/图片/视频/AI 对话等节点占位
-│   │   ├── migrations/            # 数据库迁移（含 graph + conversation 表）
-│   │   └── models.py              # 数据模型
+│   │   ├── consumers.py          # Django Channels WebSocket 消费者
+│   │   ├── graphs/               # LangGraph 子图定义
+│   │   ├── conversation/         # AI 对话编排（预留）
+│   │   ├── integrations/         # 外部服务配置
+│   │   ├── workflow_graph/       # 工作流图 MySQL 规范化存储
+│   │   ├── workflow_nodes/       # 节点类型占位
+│   │   ├── migrations/           # 数据库迁移
+│   │   └── models.py             # 数据模型
 │   ├── accounts/                  # 用户认证应用
-│   ├── checkpoint/                # LangGraph 状态持久化（DjangoSaver）
-│   ├── flowly_backend/             # Django 项目配置
-│   │   ├── settings.py            # 核心配置（含数据库配置逻辑）
-│   │   ├── urls.py                # 根路由
-│   │   ├── asgi.py               # ASGI 应用（支持 WebSocket）
-│   │   └── wsgi.py               # WSGI 应用
-│   ├── manage.py                  # Django 管理脚本
-│   ├── requirements.txt           # Python 依赖
-│   ├── Dockerfile                 # 后端容器镜像
-│   ├── .env.example               # 环境变量模板（含数据库配置说明）
-│   ├── .env                       # 本地环境变量（需用户自行配置）
-│   └── conftest.py               # Pytest 配置
+│   ├── checkpoint/               # LangGraph 状态持久化
+│   ├── flowly_backend/           # Django 项目配置
+│   │   ├── settings.py          # 核心配置
+│   │   ├── urls.py              # 根路由
+│   │   ├── asgi.py             # ASGI 应用（支持 WebSocket）
+│   │   └── wsgi.py             # WSGI 应用
+│   ├── manage.py                # Django 管理脚本
+│   ├── requirements.txt         # Python 依赖
+│   ├── Dockerfile               # 后端容器镜像
+│   └── .env.example            # 环境变量模板
 │
-├── Frontend/                      # Vue 3 前端
+├── Frontend/                     # Vue 3 前端
 │   ├── src/
-│   │   ├── views/                 # 页面视图
-│   │   │   ├── Home.vue           # 首页仪表盘
-│   │   │   ├── Chat.vue           # AI 聊天界面
-│   │   │   ├── DashboardView.vue  # 工作流列表与概览
-│   │   │   ├── WorkflowDetail.vue # 工作流详情与执行记录
-│   │   │   ├── WorkflowEditorView.vue  # 可视化编辑器入口
-│   │   │   ├── WorkflowList.vue   # 工作流管理列表
-│   │   │   ├── WorkflowRunView.vue    # 工作流执行视图
-│   │   │   ├── KnowledgeBaseView.vue  # 知识库管理（RAG）
-│   │   │   ├── ObservabilityView.vue  # 可观测性面板
-│   │   │   ├── Settings.vue       # 系统设置
-│   │   │   ├── AuthPage.vue       # 登录/注册页面
-│   │   │   └── About.vue          # 关于页面
-│   │   ├── components/
-│   │   │   ├── WorkflowEditor.vue # 可视化工作流编辑器（~870行）
-│   │   │   ├── WorkflowMonitor.vue # 执行状态监控（~430行）
-│   │   │   ├── WorkflowRunner.vue  # 工作流运行器
-│   │   │   ├── BgCubeCanvas.vue   # 3D 背景画布
-│   │   │   └── nodes/edges/        # 自定义节点与边组件
-│   │   ├── stores/                # Pinia 状态管理
-│   │   ├── router/                # Vue Router 配置
-│   │   ├── types/                 # TypeScript 类型定义
-│   │   ├── modules/               # 按领域拆分的前端模块（预留）
-│   │   │   ├── workflow/          # 工作流节点类型与图同步相关导出
-│   │   │   └── ai-conversation/   # AI 对话 / 自动回复相关导出
-│   │   ├── utils/                 # 工具函数
-│   │   ├── styles/                # 全局样式
-│   │   ├── assets/                # 静态资源
-│   │   ├── App.vue               # 根组件
-│   │   └── main.ts               # 应用入口
-│   ├── package.json               # Node 依赖
-│   ├── vite.config.ts            # Vite 配置
-│   ├── tsconfig.json             # TypeScript 配置
-│   └── Dockerfile                # 前端容器镜像（Nginx）
+│   │   ├── views/               # 页面视图
+│   │   ├── components/         # 组件（WorkflowEditor/WorkflowMonitor 等）
+│   │   ├── stores/             # Pinia 状态管理
+│   │   ├── router/             # Vue Router 配置
+│   │   ├── types/             # TypeScript 类型定义
+│   │   ├── modules/           # 领域模块（workflow/ai-conversation）
+│   │   ├── utils/             # 工具函数
+│   │   ├── styles/             # 全局样式
+│   │   ├── assets/             # 静态资源
+│   │   ├── App.vue            # 根组件
+│   │   └── main.ts           # 应用入口
+│   ├── package.json            # Node 依赖
+│   ├── vite.config.ts         # Vite 配置
+│   └── Dockerfile             # 前端容器镜像（Nginx）
 │
-├── docs/
-│   └── expansion/
-│       └── PHASE_7-16_EXPANSION_PLAN.md  # 未来功能路线图
-│
-├── scripts/
-│   └── deploy.sh                 # 一键部署脚本
-│
-├── docker-compose.yml            # Docker Compose 编排配置
-├── Dockerfile                   # 根目录 Dockerfile（多阶段构建）
-├── DEPLOYMENT.md                # 详细部署指南
-├── package.json                  # 根目录 Node 配置
-├── playwright.config.ts         # Playwright E2E 测试配置
-├── pytest.ini                   # Pytest 配置
-├── requirements.txt             # 根目录 Python 依赖
-└── README.md                    # 项目说明文档
+├── docs/expansion/              # 功能路线图
+├── scripts/deploy.sh           # 一键部署脚本
+├── docker-compose.yml          # Docker Compose 编排
+├── Dockerfile                  # 根目录多阶段构建
+├── DEPLOYMENT.md              # 详细部署指南
+├── pytest.ini                 # Pytest 配置
+├── playwright.config.ts       # Playwright E2E 测试配置
+└── requirements.txt          # 根目录 Python 依赖
 ```
 
 ---
 
-## 技术栈
+## 🛠️ 技术栈
 
 ### 后端
 
 | 分类 | 技术 | 用途 |
 |------|------|------|
 | Web 框架 | Django 5.x | HTTP 服务、Admin 后台、ORM |
-| REST API | django-ninja | 异步 REST API（支持 Pydantic 验证）|
+| REST API | django-ninja | 异步 REST API（Pydantic 验证）|
 | AI 编排 | LangGraph 0.3.x | 工作流图、多模型、流式执行 |
-| LLM 集成 | LangChain（OpenAI/Anthropic/Ollama）| 多模型支持 |
+| LLM 集成 | LangChain（OpenAI / Anthropic / Ollama）| 多模型支持 |
 | 状态持久化 | DjangoSaver（MySQL）| LangGraph 检查点持久化 |
 | WebSocket | Django Channels + Redis | 实时通信、流式响应 |
 | 任务队列 | Celery + Redis | 异步任务调度（文档处理等）|
@@ -168,7 +199,6 @@ Flowly-AI/
 | 路由 | Vue Router 4.3 | SPA 路由 |
 | HTTP 客户端 | Axios | API 请求 |
 | 实时通信 | @microsoft/fetch-event-source | SSE 流式请求 |
-| 图标 | @element-plus/icons-vue | Element Plus 图标集 |
 | E2E 测试 | Playwright | 端到端测试 |
 
 ### 基础设施
@@ -181,7 +211,7 @@ Flowly-AI/
 
 ---
 
-## 系统架构
+## 🏗️ 系统架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -209,7 +239,7 @@ Flowly-AI/
 
 ---
 
-## 核心功能
+## 🔧 核心功能
 
 ### 工作流引擎（Phase 1-3）
 
@@ -248,49 +278,13 @@ Flowly-AI/
 
 ---
 
-## 环境配置
+## ⚙️ 环境配置
 
-### 快速配置（开发环境）
-
-> **本地部署说明：** 如果只需要在本地运行项目（不使用 Docker），请参考下方「本地部署数据库配置」章节，选择适合你的方案（MySQL 或 SQLite）。
-
-```bash
-# 1. 后端环境变量
-cp Backend/.env.example Backend/.env
-# 编辑 Backend/.env，填入必要的配置（见下方详细说明）
-
-# 2. 前端依赖
-cd Frontend
-npm install
-
-# 3. 后端依赖
-cd ../Backend
-python -m venv venv
-.\venv\Scripts\activate   # Windows
-# source venv/bin/activate  # Linux/macOS
-pip install -r requirements.txt
-
-# 4. 数据库迁移（首次运行必须执行）
-python manage.py migrate
-
-# 5. 创建超级用户
-python manage.py createsuperuser
-
-# 6. 启动后端
-python manage.py runserver
-
-# 7. 启动前端（新终端）
-cd Frontend
-npm run dev
-```
-
-### 本地部署数据库配置
-
-如果使用 Docker Compose 部署，MySQL 会自动启动，无需手动配置。如果需要连接本地已有的 MySQL 或使用 SQLite，请参考「数据库配置（本地部署）」章节。
+> 💡 **提示**：如果只需要在本地运行项目（不使用 Docker），请直接参考「快速上手」中的本地开发步骤，或参考下方「数据库配置（本地部署）」章节选择 MySQL 或 SQLite。
 
 ### 环境变量详解
 
-AI 密钥除下表所列环境变量外，还可放在 **`Backend/ai_engine/integrations/project_secrets_local.py`**（从同目录 `project_secrets_local.example.py` 复制；该文件已加入 `.gitignore`）。示例文件中按 **语言 / 图片 / 音频 / 视频 / 向量** 分区预留了多厂商变量名。**环境变量非空时始终优先于该 Python 文件**。代码中通过 ``get_ai_provider_settings()`` 得到分组对象，例如 ``settings.language.openai_api_key``、``settings.image.stability_api_key``。
+AI 密钥除下表所列环境变量外，还可放在 **`Backend/ai_engine/integrations/project_secrets_local.py`**（从同目录 `project_secrets_local.example.py` 复制；该文件已加入 `.gitignore`）。代码中通过 `get_ai_provider_settings()` 统一获取。
 
 | 变量 | 说明 | 示例 |
 |------|------|------|
@@ -322,7 +316,7 @@ AI 密钥除下表所列环境变量外，还可放在 **`Backend/ai_engine/inte
 
 ---
 
-## 启动服务
+## 🚀 启动服务
 
 ### 开发模式
 
@@ -336,36 +330,17 @@ cd Frontend
 npm run dev
 ```
 
-### Docker Compose（推荐用于开发与生产）
+### Docker Compose
 
-```bash
-# 1. 配置环境变量
-cp Backend/.env.example Backend/.env
-# 编辑 Backend/.env
+Docker Compose 会启动以下服务：
 
-# 2. 启动所有服务
-docker compose up -d --build
-
-# 3. 应用数据库迁移
-docker compose exec backend python manage.py migrate
-
-# 4. 创建管理员账户
-docker compose exec backend python manage.py createsuperuser
-
-# 5. 访问应用
-# 前端: http://localhost
-# 后端 API: http://localhost:8000/api/
-# Flower 监控: http://localhost:5555
-```
-
-> **说明**：Docker Compose 会启动以下服务：
-> - `db` — MySQL 8.0（端口 3307）
-> - `redis` — Redis 7（端口 6379）
-> - `backend` — Django Daphne ASGI（端口 8000）
-> - `celery_worker` — Celery Worker × 2 副本
-> - `celery_beat` — Celery Beat 定时任务调度器
-> - `flower` — Celery 监控面板（端口 5555）
-> - `frontend` — Nginx 托管 Vue SPA（端口 80）
+- `db` — MySQL 8.0（端口 3307）
+- `redis` — Redis 7（端口 6379）
+- `backend` — Django Daphne ASGI（端口 8000）
+- `celery_worker` — Celery Worker × 2 副本
+- `celery_beat` — Celery Beat 定时任务调度器
+- `flower` — Celery 监控面板（端口 5555）
+- `frontend` — Nginx 托管 Vue SPA（端口 80）
 
 ### 独立服务启动
 
@@ -385,7 +360,7 @@ celery -A flowly_backend beat --loglevel=info
 
 ---
 
-## API 接口
+## 🔌 API 接口
 
 基础路径: `/api/`
 
@@ -452,7 +427,7 @@ celery -A flowly_backend beat --loglevel=info
 
 ---
 
-## 测试
+## 🧪 测试
 
 ### 后端单元测试
 
@@ -491,7 +466,7 @@ npx playwright test tests/dashboard.spec.ts
 
 ---
 
-## 开发指南
+## 🛠️ 开发指南
 
 ### 添加新的 API 端点
 
@@ -542,50 +517,62 @@ workflow.add_node("my_node", my_node)
 
 ---
 
-## 常见问题
+## ❓ 常见问题
 
 **Q: Redis 连接失败？**
+
 确保 Redis 服务已启动（Docker Compose 自动启动），或检查 `REDIS_URL` 配置。
 
 **Q: WebSocket 连接失败？**
+
 确认 Nginx 已正确配置 WebSocket 代理（`docker-compose.yml` 中已配置）。检查浏览器控制台是否有 CORS 错误。
 
 **Q: 数据库迁移失败？**
+
 确认 MySQL 服务运行正常，检查 `DATABASE_URL` 格式是否正确。首次运行后：
+
 ```bash
 python manage.py makemigrations
 python manage.py migrate
 ```
 
 **Q: 提示 "Access denied for user" 或 "Unknown database"？**
+
 检查 `Backend/.env` 中的 `DATABASE_URL` 是否与 MySQL 中创建的数据库和用户一致。Docker 环境中应使用 `db` 作为主机名，本地环境应使用 `localhost`。
 
 **Q: 没有安装 MySQL，能否运行项目？**
+
 可以。将 `Backend/.env` 中的 `DATABASE_URL` 留空或设为 `sqlite:///db.sqlite3`，Django 会自动使用 SQLite 数据库，无需安装 MySQL。
 
 **Q: 如何连接本地已有的 MySQL 数据库？**
+
 在 `Backend/.env` 中修改 `DATABASE_URL`，格式为 `mysql://用户名:密码@localhost:端口/数据库名`。确保 MySQL 已启动且用户权限配置正确。
 
 **Q: Docker 中数据库数据会丢失吗？**
+
 不会。Docker Compose 配置了 `mysql_data` 卷，MySQL 数据会持久化到 Docker volume 中。只要不执行 `docker compose down -v`（删除卷），数据就会保留。
 
 **Q: OpenAI / Claude API 调用失败？**
+
 确认 API Key 正确配置，且网络可访问 `OPENAI_BASE_URL`。检查 `.env` 文件中的 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`。
 
 **Q: 文档上传后无法检索？**
+
 RAG 处理是异步的（Celery 任务）。检查 `docker compose logs celery_worker` 确认文档处理任务正常执行。
 
 **Q: 如何查看 Celery 任务队列？**
+
 访问 `http://localhost:5555` 查看 Flower 监控面板（默认用户名密码为空）。
 
 **Q: 忘记管理员密码？**
+
 ```bash
 docker compose exec backend python manage.py changepassword admin
 ```
 
 ---
 
-## 数据库配置（本地部署）
+## 💾 数据库配置（本地部署）
 
 本节专门针对**将项目部署到本地**的用户，详细说明如何配置数据库。
 
@@ -779,27 +766,42 @@ npm run dev
 
 ---
 
-## 路线图
+## 🗺️ 路线图
 
-参见 [docs/expansion/PHASE_7-16_EXPANSION_PLAN.md](docs/expansion/PHASE_7-16_EXPANSION_PLAN.md)
+已规划的后续阶段（详见 [docs/expansion/PHASE_7-16_EXPANSION_PLAN.md](docs/expansion/PHASE_7-16_EXPANSION_PLAN.md)）：
 
-已规划的后续阶段：
-
-| 阶段 | 功能 |
-|------|------|
-| Phase 7 | 可视化编辑器升级（React Flow）|
-| Phase 8 | 向量检索 & RAG（已完成）|
-| Phase 9 | 异步任务队列 Celery（已完成）|
-| Phase 10 | 可观测性面板（已完成）|
-| Phase 11 | MCP 工具生态集成 |
-| Phase 12 | 多模态处理（图像/音频）|
-| Phase 13 | 安全与合规（RBAC、审计日志）|
-| Phase 14 | LLMOps 部署管理 |
-| Phase 15 | 测试与评估框架 |
-| Phase 16 | 记忆与上下文管理 |
+| 阶段 | 功能 | 状态 |
+|------|------|------|
+| Phase 7 | 可视化编辑器升级 | 🔄 进行中 |
+| Phase 8 | 向量检索 & RAG | ✅ 已完成 |
+| Phase 9 | 异步任务队列 Celery | ✅ 已完成 |
+| Phase 10 | 可观测性面板 | ✅ 已完成 |
+| Phase 11 | MCP 工具生态集成 | 📋 规划中 |
+| Phase 12 | 多模态处理（图像/音频）| 📋 规划中 |
+| Phase 13 | 安全与合规（RBAC、审计日志）| 📋 规划中 |
+| Phase 14 | LLMOps 部署管理 | 📋 规划中 |
+| Phase 15 | 测试与评估框架 | 📋 规划中 |
+| Phase 16 | 记忆与上下文管理 | 📋 规划中 |
 
 ---
 
-## 许可证
+## 🤝 贡献
 
-MIT License
+欢迎提交 Issue 和 Pull Request！
+
+1. **Fork** 本仓库
+2. 创建特性分支：`git checkout -b feature/amazing-feature`
+3. 提交更改：`git commit -m 'feat: add amazing feature'`
+4. 推送分支：`git push origin feature/amazing-feature`
+5. 提交 Pull Request
+
+提交前请确保：
+- 代码通过 lint 检查
+- 新功能附有测试用例
+- Commit 符合 [Conventional Commits](https://www.conventionalcommits.org/) 规范
+
+---
+
+## 📄 许可证
+
+本项目基于 [MIT License](LICENSE) 开源。
