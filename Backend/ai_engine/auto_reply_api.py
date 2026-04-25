@@ -6,10 +6,13 @@ import logging
 import threading
 from typing import Any
 import multiprocessing as mp
+import os
+import sys
 
 from django.conf import settings
 from django.http import HttpRequest
-from ninja import Router, Schema  # pyright: ignore[reportMissingImports]
+from ninja import File, Router, Schema  # pyright: ignore[reportMissingImports]
+from ninja.files import UploadedFile  # pyright: ignore[reportMissingImports]
 from pydantic import Field  # pyright: ignore[reportMissingImports]
 
 from ai_engine.auth import JWTAuth
@@ -37,6 +40,7 @@ class _AgentHandle:
 # - 优先 multiprocessing 子进程（隔离依赖/崩溃）
 # - Windows/开发环境下若启动失败，回退到线程（避免 500 直接不可用）
 _agent_handle_by_user: dict[int, _AgentHandle] = {}
+_agent_last_error_by_user: dict[int, str] = {}
 
 
 def _proc_is_alive(p: mp.Process | None) -> bool:
@@ -68,7 +72,8 @@ def agent_status(request: HttpRequest):
         raise AuthenticationError("Authentication required")
     h = _agent_handle_by_user.get(int(u.pk))
     pid = getattr(h.proc, "pid", None) if h and h.kind == "process" else None
-    return {"running": _agent_is_running(h), "pid": pid}
+    err = _agent_last_error_by_user.get(int(u.pk)) or ""
+    return {"running": _agent_is_running(h), "pid": pid, "error": err}
 
 
 @auto_reply_router.post("/agent/start")
@@ -87,26 +92,69 @@ def agent_start(request: HttpRequest):
 
     from ai_engine.desktop_screen_agent.server_runner import run_server_screen_agent
 
+    # Windows + Django 开发环境下 multiprocessing spawn 经常因句柄复制失败而崩溃（WinError 6）。
+    # 这里默认直接走线程模式，避免子进程 tracebacks 干扰与“假启动”。
+    force_thread = (os.getenv("FLOWLY_SCREEN_AGENT_FORCE_THREAD") or "").strip().lower() in ("1", "true", "yes")
+    is_windows = sys.platform.startswith("win")
+    if is_windows or force_thread:
+        logger.info("screen agent start: using thread mode", extra={"extra": {"user_id": uid, "force_thread": force_thread}})
+        try:
+            stop_evt2 = threading.Event()
+
+            def _t_entry():
+                import os as _os
+                import django
+
+                _os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowly_backend.settings")
+                django.setup()
+                try:
+                    run_server_screen_agent(user_id=uid, stop_event=stop_evt2)
+                except Exception as exc:
+                    _agent_last_error_by_user[uid] = f"{type(exc).__name__}: {exc}"
+                    logger.error("screen agent thread crashed", exc_info=True, extra={"extra": {"user_id": uid}})
+
+            t = threading.Thread(target=_t_entry, daemon=True, name=f"flowly-screen-agent-thread-{uid}")
+            _agent_last_error_by_user.pop(uid, None)
+            t.start()
+            _agent_handle_by_user[uid] = _AgentHandle(kind="thread", thread=t, stop=stop_evt2)
+            return {"ok": True, "running": True, "pid": None}
+        except Exception as exc2:
+            raise HttpError(500, f"线程模式启动失败: {exc2}") from exc2
+
     ctx = mp.get_context("spawn")
 
-    stop_evt = ctx.Event()
-
-    def _entry(user_id: int, stop_event) -> None:
+    def _entry(user_id: int) -> None:
         import os
         import django
 
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowly_backend.settings")
         django.setup()
-        run_server_screen_agent(user_id=int(user_id), stop_event=stop_event)
+        # 子进程模式下不传 multiprocessing.Event（Windows 下容易触发句柄复制问题）
+        run_server_screen_agent(user_id=int(user_id), stop_event=None)
 
     try:
-        p = ctx.Process(target=_entry, args=(uid, stop_evt), name=f"flowly-screen-agent-{uid}")
+        p = ctx.Process(target=_entry, args=(uid,), name=f"flowly-screen-agent-{uid}")
         p.daemon = True
         p.start()
-        _agent_handle_by_user[uid] = _AgentHandle(kind="process", proc=p, stop=stop_evt)
+        # 有些 Windows/开发环境下子进程会在启动阶段秒退（例如 WinError 6 句柄无效），这里探活后再确认。
+        try:
+            import time
+
+            time.sleep(0.25)
+        except Exception:
+            pass
+        if not _proc_is_alive(p):
+            try:
+                p.join(timeout=0.2)
+            except Exception:
+                pass
+            raise RuntimeError(f"screen agent 子进程启动失败（exitcode={getattr(p, 'exitcode', None)}）")
+
+        _agent_handle_by_user[uid] = _AgentHandle(kind="process", proc=p, stop=None)
         return {"ok": True, "running": True, "pid": p.pid}
     except Exception as exc:
         # 回退到线程模式（无法返回子进程 pid）
+        logger.warning("screen agent start: process mode failed, falling back to thread", exc_info=True, extra={"extra": {"user_id": uid}})
         try:
             stop_evt2 = threading.Event()
 
@@ -149,6 +197,7 @@ def agent_stop(request: HttpRequest):
     except Exception:
         pass
     _agent_handle_by_user.pop(uid, None)
+    _agent_last_error_by_user.pop(uid, None)
     return {"ok": True, "running": False}
 
 
@@ -264,8 +313,16 @@ class AutoReplyScreenProfileWrite(Schema):
     default_rule_id: int | None = None
 
 
+class ScreenProfileWatchOut(Schema):
+    """轻量轮询：与上次快照/配置时间对比，无变化时避免拉全量 screen-profile。"""
+
+    changed: bool
+    snapshot_ts: str = ""
+    profile_updated_at: str = ""
+
+
 class ScreenLayoutPatch(Schema):
-    """本机代理写回识别框；可选附带 region_detect_ack_nonce 与当前 region_detect_nonce 对齐。"""
+    """手动或外部客户端 PATCH 布局坐标；可选附带 region_detect_ack_nonce 与当前 region_detect_nonce 对齐。"""
 
     chat_window_box: list[int] | None = None
     input_box_pos: list[int] | None = None
@@ -394,6 +451,29 @@ def get_screen_profile(request: HttpRequest):
     return _screen_profile_out(p)
 
 
+@auto_reply_router.get("/screen-profile/watch", response=ScreenProfileWatchOut)
+def watch_screen_profile(request: HttpRequest, since_snapshot: str = "", since_profile: str = ""):
+    """
+    对比 ``agent_runtime_snapshot.updated_at`` 与行级 ``updated_at``（配置保存时变化）。
+    代理仅 ``.update(agent_runtime_snapshot=...)`` 时不会触发行级 auto_now，故须同时传两个 since。
+    """
+    from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+
+    u = request.auth
+    if u is None:
+        raise AuthenticationError("Authentication required")
+    p = AutoReplyScreenProfile.objects.only("agent_runtime_snapshot", "updated_at").filter(user=u).first()
+    if p is None:
+        AutoReplyScreenProfile.objects.get_or_create(user=u)
+        p = AutoReplyScreenProfile.objects.only("agent_runtime_snapshot", "updated_at").get(user=u)
+    snap = p.agent_runtime_snapshot if isinstance(p.agent_runtime_snapshot, dict) else {}
+    cur_snap_ts = str(snap.get("updated_at") or "")
+    cur_prof_ts = p.updated_at.isoformat() if p.updated_at else ""
+    ch_snap = (since_snapshot or "") != cur_snap_ts
+    ch_prof = (since_profile or "") != cur_prof_ts
+    return ScreenProfileWatchOut(changed=bool(ch_snap or ch_prof), snapshot_ts=cur_snap_ts, profile_updated_at=cur_prof_ts)
+
+
 @auto_reply_router.put("/screen-profile", response=AutoReplyScreenProfileOut)
 def put_screen_profile(request: HttpRequest, payload: AutoReplyScreenProfileWrite):
     from ninja.errors import AuthenticationError, HttpError  # pyright: ignore[reportMissingImports]
@@ -425,7 +505,7 @@ def put_screen_profile(request: HttpRequest, payload: AutoReplyScreenProfileWrit
     p.use_yolo = bool(payload.use_yolo)
     p.knowledge_reply_enabled = bool(payload.knowledge_reply_enabled)
     p.monitoring_active = bool(payload.monitoring_active)
-    # 项目约定：仅使用仓库根目录 best.pt（或环境变量 FLOWLY_SCREEN_YOLO_WEIGHTS 覆盖）
+    # 项目约定：权重由 settings.FLOWLY_SCREEN_YOLO_WEIGHTS 统一提供（可用环境变量覆盖；默认在后端模块 weights 下）
     # 前端仍保留字段显示，但保存时由服务端统一落为 settings.FLOWLY_SCREEN_YOLO_WEIGHTS
     p.yolo_weights_path = str(getattr(settings, "FLOWLY_SCREEN_YOLO_WEIGHTS", "") or "").strip()[:512]
     p.default_rule = rule
@@ -538,6 +618,72 @@ def create_knowledge_entry(request: HttpRequest, payload: AutoReplyKnowledgeWrit
         trigger_keywords=kws,
         is_active=bool(payload.is_active),
         sort_order=int(payload.sort_order or 0),
+    )
+    return 201, _knowledge_out(e)
+
+
+@auto_reply_router.post("/knowledge-entries/import-text-file", response={201: AutoReplyKnowledgeOut})
+def import_knowledge_text_file(request: HttpRequest, file: UploadedFile = File(...)):
+    """
+    从纯文本文件导入资料条目（.txt / .md 等），正文写入 body。
+    multipart 字段：file；可选表单字段：scope、friend_name、title、keywords（逗号/换行分隔）。
+    """
+    from ninja.errors import AuthenticationError, HttpError  # pyright: ignore[reportMissingImports]
+
+    u = request.auth
+    if u is None:
+        raise AuthenticationError("Authentication required")
+    if not isinstance(file, UploadedFile):
+        raise HttpError(400, "请上传文件字段 file")
+
+    orig = str(getattr(file, "name", "") or "").strip()
+    ext = os.path.splitext(orig)[1].lower()
+    if ext not in (".txt", ".md", ".markdown", ""):
+        raise HttpError(400, "仅支持 .txt / .markdown / .md 文本文件")
+
+    max_bytes = 512 * 1024
+    raw = b""
+    for chunk in file.chunks():
+        raw += chunk
+        if len(raw) > max_bytes:
+            raise HttpError(400, f"文件过大（>{max_bytes // 1024}KB）")
+
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("utf-8", errors="replace")
+
+    body = (text or "").strip()
+    if not body:
+        raise HttpError(400, "文件内容为空")
+
+    sc = (request.POST.get("scope") or "shared").strip()
+    if sc not in (AutoReplyKnowledgeEntry.Scope.SHARED, AutoReplyKnowledgeEntry.Scope.FRIEND):
+        raise HttpError(400, "scope 须为 shared 或 friend")
+    fn = (request.POST.get("friend_name") or "").strip()[:128]
+    if sc == AutoReplyKnowledgeEntry.Scope.FRIEND and not fn:
+        raise HttpError(400, "friend 范围须填写 friend_name")
+
+    title = (request.POST.get("title") or "").strip()[:256]
+    if not title:
+        title = (os.path.splitext(os.path.basename(orig))[0] or "导入资料")[:256]
+
+    kw_raw = (request.POST.get("keywords") or "").strip()
+    kws = [x.strip() for x in kw_raw.replace(",", "\n").splitlines() if x.strip()]
+
+    e = AutoReplyKnowledgeEntry.objects.create(
+        user=u,
+        scope=sc,
+        friend_name=fn,
+        title=title,
+        body=body[:200000],
+        trigger_keywords=kws,
+        is_active=True,
+        sort_order=0,
+    )
+    logger.info(
+        "knowledge import from file",
+        extra={"extra": {"user_id": int(u.pk), "entry_id": e.pk, "name": orig, "bytes": len(raw)}},
     )
     return 201, _knowledge_out(e)
 

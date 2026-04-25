@@ -59,6 +59,9 @@ langchain-openai>=0.2.0
 PyMuPDF>=1.23.0            # PDF text extraction
 python-docx>=1.0.0          # Word document extraction
 Pillow>=10.0.0              # Image format conversion for execution artifacts
+
+# 桌面屏幕代理：参考 OCR（ocr_reference_bundle / OpenOCR），默认同 Django 进程加载
+openocr-python==0.1.5
 beautifulsoup4>=4.12.0      # HTML parsing
 lxml>=4.9.0                  # XML/HTML parser for BeautifulSoup
 

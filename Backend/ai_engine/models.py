@@ -1144,7 +1144,7 @@ class AutoReplyScreenProfile(models.Model):
     region_detect_nonce = models.PositiveIntegerField(
         "区域识别请求序号",
         default=0,
-        help_text="前端「更新聊天窗口」自增；代理检测成功后回写坐标并同步 region_detect_ack_nonce。",
+        help_text="前端「请求区域识别」自增；代理完成后仅推进 ack 并将本轮框写入 agent_runtime_snapshot（不写布局坐标字段）。",
     )
     region_detect_ack_nonce = models.PositiveIntegerField(
         "区域识别已应用序号",

@@ -1,15 +1,19 @@
 """
-通过子进程调用参考项目 ``src/core/ocr.py``（需在 **FLOWLY_OCR_REFERENCE_ROOT** 下可 import，
-且该 Python 环境已安装 openocr 等依赖）。
+参考项目 ``src/core/ocr.py``（OpenOCR）调用入口。
+
+默认在**当前后端 Python 进程**内执行（与 ``runserver``、屏幕代理线程同一环境、同一套已安装依赖），
+不再依赖「子进程用的解释器是否另装过 openocr」。
 
 环境变量
 --------
+FLOWLY_OCR_USE_SUBPROCESS
+    设为 ``1`` / ``true`` 时改为**独立子进程**调用（旧行为，用于隔离崩溃/依赖；需 ``FLOWLY_OCR_PYTHON`` 环境一致）。
 FLOWLY_OCR_REFERENCE_ROOT
-    参考项目根（含 ``src/``），默认指向 Flowly 仓库内 ``docs/reference/AI自动回复``。
+    参考项目根（含 ``src/``），默认 ``ocr_reference_bundle``。
 FLOWLY_OCR_PYTHON
-    用于子进程的 Python 可执行文件；默认 ``sys.executable``。
+    仅子进程模式：Python 可执行文件，默认 ``sys.executable``。
 FLOWLY_OCR_SUBPROCESS_TIMEOUT
-    超时秒数，默认 120。
+    仅子进程模式：超时秒数，默认 120。
 """
 
 from __future__ import annotations
@@ -26,13 +30,13 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 
-def _flowly_repo_root() -> Path:
-    # .../Backend/ai_engine/desktop_screen_agent/ocr_subprocess.py -> parents[3] = 仓库根
-    return Path(__file__).resolve().parents[3]
+def _truthy_env(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def default_reference_root() -> Path:
-    return _flowly_repo_root() / "docs" / "reference" / "AI自动回复"
+    """OCR 参考实现根目录（含 ``src/``），与 ``desktop_screen_agent`` 包同级。"""
+    return Path(__file__).resolve().parent / "ocr_reference_bundle"
 
 
 def reference_root() -> Path:
@@ -53,14 +57,27 @@ def run_ocr_subprocess(
     box: tuple[int, int, int, int],
 ) -> dict[str, Any]:
     """
-    同步执行 OCR 子进程。
+    同步执行参考 OCR。
+
+    默认同进程（``run_reference_ocr_request``）；仅当 ``FLOWLY_OCR_USE_SUBPROCESS=1`` 时走子进程。
 
     :param op: user_area | chat_window | input_area | friend_list | all_area
-    :return: 与 worker 写入的 response JSON 一致，至少含 ``ok`` 键。
+    :return: 至少含 ``ok`` 键。
     """
     ref = reference_root()
     if not ref.is_dir():
         return {"ok": False, "error": f"参考项目目录不存在: {ref}"}
+
+    req: dict[str, Any] = {"op": op, "image_path": str(Path(image_path).resolve()), "box": list(box)}
+
+    if not _truthy_env("FLOWLY_OCR_USE_SUBPROCESS"):
+        from ai_engine.desktop_screen_agent.ocr_reference_worker import run_reference_ocr_request
+
+        try:
+            return run_reference_ocr_request(req, ref_root=str(ref.resolve()))
+        except Exception as e:
+            log.exception("参考 OCR 同进程执行失败")
+            return {"ok": False, "error": str(e)}
 
     worker = worker_script_path()
     if not worker.is_file():
@@ -69,7 +86,6 @@ def run_ocr_subprocess(
     exe = (os.environ.get("FLOWLY_OCR_PYTHON") or sys.executable or "python").strip()
     timeout = int(os.environ.get("FLOWLY_OCR_SUBPROCESS_TIMEOUT", "120"))
 
-    req = {"op": op, "image_path": str(Path(image_path).resolve()), "box": list(box)}
     with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",

@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -26,6 +27,38 @@ _NO_MODEL_LOG_INTERVAL_S = 20.0
 
 _yolo_model = None
 _yolo_model_path_loaded: str | None = None
+
+
+def _default_yolo_weights_path() -> str:
+    """
+    模块内默认权重位置（随项目迁移/部署）。
+    注意：不要依赖进程 cwd，避免从不同入口启动时找错路径。
+    """
+    try:
+        p = (Path(__file__).resolve().parent / "weights" / "best.pt")
+        return str(p) if p.is_file() else ""
+    except Exception:
+        return ""
+
+
+def _resolve_yolo_weights_path(weights_path: str) -> str:
+    """
+    兼容历史配置：若传入路径不存在，尝试回退到模块默认权重。
+    """
+    raw = (weights_path or "").strip()
+    if not raw:
+        return ""
+    try:
+        if os.path.isfile(raw):
+            return raw
+    except Exception:
+        # 若 isfile 异常（极少见），直接回退逻辑
+        pass
+
+    fallback = _default_yolo_weights_path()
+    if fallback and fallback != raw:
+        return fallback
+    return raw
 
 
 def _coerce_box4(value: Any) -> tuple[int, int, int, int] | None:
@@ -86,19 +119,27 @@ def is_coordinate_valid(box, parent_box=None, tolerance_px: int = 3):
 
 def _get_yolo_model(weights_path: str):
     global _yolo_model, _yolo_model_path_loaded
-    path = (weights_path or "").strip()
-    if not path or not os.path.isfile(path):
+    path = _resolve_yolo_weights_path(weights_path)
+    if not path:
+        return None
+    if not os.path.isfile(path):
+        log.info("YOLO 权重文件不存在: %s", (weights_path or "").strip() or path)
         return None
     if _yolo_model is not None and _yolo_model_path_loaded == path:
         return _yolo_model
     try:
-        from ultralytics import YOLO  # type: ignore[import-untyped]
+        try:
+            from ultralytics import YOLO  # type: ignore[import-untyped]
+        except ModuleNotFoundError:
+            # 这里用 info 级别：很多开发环境日志默认只看 INFO，避免“静默回退”
+            log.info("未安装 ultralytics，无法加载 YOLO；将回退到手动坐标。可 pip install ultralytics")
+            return None
 
         _yolo_model = YOLO(path)
         _yolo_model_path_loaded = path
         log.info("已加载 YOLO 权重: %s", path)
     except Exception as e:
-        log.warning("加载 YOLO 失败: %s", e)
+        log.info("加载 YOLO 失败，将回退到手动坐标: %s", e)
         _yolo_model = None
         _yolo_model_path_loaded = None
     return _yolo_model
@@ -265,7 +306,8 @@ def get_chat_areas(
             tolerance_px,
         )
         if ok:
-            log.info("成功识别所有区域")
+            # 高频循环下不刷屏：成功识别留给上层按“变化”节流打印
+            log.debug("成功识别所有区域")
             return areas, "成功识别所有区域"
         log.warning("坐标合规性检查失败: %s", msg)
         return None, msg

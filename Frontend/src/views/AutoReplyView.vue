@@ -8,13 +8,19 @@
       </p>
       <p class="sub sub2">
         原 Tk 四页（配置 / 好友风格 / 资料库 / 监控）已并入下方标签；<code>config.json</code>、聊天记录、资料与日志均入库。权重
-        <code>best.pt</code> 填「YOLO 权重路径」或由环境变量 <code>FLOWLY_SCREEN_YOLO_WEIGHTS</code> 指定。导入旧配置：
+        <code>best.pt</code> 由后端默认路径或环境变量 <code>FLOWLY_SCREEN_YOLO_WEIGHTS</code> 提供。导入旧配置：
         <code>python manage.py import_auto_reply_config path/to/config.json</code>。
       </p>
     </header>
 
     <el-tabs v-model="mainTab" class="main-tabs" @tab-change="onMainTabChange">
       <el-tab-pane label="总览" name="overview">
+        <el-alert type="info" :closable="false" show-icon class="mb8">
+          <template #title>总览页做什么</template>
+          <div class="overview-hint">
+            <strong>回复规则</strong>：定义模型、人格/情景与系统提示，供自动任务与手动试跑共用。<strong>生成回复</strong>：不截屏、不跑监控，用于快速验证某条消息在当前规则下会怎么答。<strong>最近记录</strong>：查看后台异步任务历史。真正的「截图 → YOLO → OCR → 是否自动发」在「监控界面」由<strong>开始监控</strong>开关统一控制。
+          </div>
+        </el-alert>
     <el-row :gutter="20">
       <el-col :xs="24" :md="9">
         <el-card shadow="never" class="card">
@@ -151,6 +157,10 @@
             <el-form-item label="启用 YOLO 区域检测">
               <el-switch v-model="screenForm.use_yolo" />
             </el-form-item>
+            <el-alert type="warning" :closable="false" show-icon class="mb8">
+              <template #title>何时用本页坐标</template>
+              关闭「启用 YOLO」或 YOLO 无法加载/识别不完整时，本页四个框作为<strong>唯一回退</strong>（必须填合规的 x1,y1,x2,y2）。开启 YOLO 且模型正常时，坐标一般由识别自动写回，也可手动微调后保存。
+            </el-alert>
             <p class="box-hint">各区域为 x1, y1, x2, y2，与参考「更新聊天窗口」/ config.json 字段一致。</p>
             <el-form-item label="聊天区域 chat_window_box">
               <div class="coord-row">
@@ -177,11 +187,8 @@
               <el-input v-model="screenBoxes.input_box" class="coord-str" placeholder="或逗号分隔" clearable @blur="syncNboxFromStrings" />
             </el-form-item>
             <el-alert type="info" :closable="false" show-icon>
-              <template #title>本机代理</template>
-              <pre class="cmd-pre">cd Backend
-$env:FLOWLY_API_BASE="http://127.0.0.1:8000/api"
-$env:FLOWLY_ACCESS_TOKEN="你的JWT"
-python -m ai_engine.desktop_screen_agent</pre>
+              <template #title>与「监控界面」的关系</template>
+              当前版本由<strong>后端内嵌本机屏幕代理</strong>执行截图与识别；在「监控界面」打开<strong>开始监控</strong>后会自动启动代理，一般无需再单独运行命令行客户端。若你仍要用独立客户端轮询 HTTP，可保留旧方式（见仓库 README）。
             </el-alert>
           </el-form>
         </el-card>
@@ -195,7 +202,9 @@ python -m ai_engine.desktop_screen_agent</pre>
               <el-button type="primary" size="small" :loading="screenSaving" @click="() => saveScreenProfile()">保存</el-button>
             </div>
           </template>
-          <p class="box-hint">与参考「聊天风格设置」一致：按好友名存人格/情景/自定义提示；监听名单在「监控界面」管理。</p>
+          <p class="box-hint">
+            在此添加的好友会<strong>同时加入监控名单</strong>（与「监控界面」列表一致）：保存后该好友会出现在监听列表中；取消监听会一并移除其风格配置。
+          </p>
           <el-button size="small" class="mb8" @click="openFriendDialog()">添加好友配置</el-button>
           <el-table :data="friendTableRows" size="small" stripe empty-text="暂无好友配置">
             <el-table-column prop="name" label="好友名称" min-width="100" />
@@ -228,6 +237,10 @@ python -m ai_engine.desktop_screen_agent</pre>
               <el-switch v-model="screenForm.knowledge_reply_enabled" />
             </el-form-item>
           </el-form>
+          <p class="box-hint mb8">
+            新建资料时可直接粘贴正文，或通过「从文件导入」在浏览器内读取 <code>.txt</code> / <code>.md</code> 填入正文（点「保存」后才写入数据库）。自动化脚本也可调用后端
+            <code>POST /api/auto-reply/knowledge-entries/import-text-file</code> 直接入库。
+          </p>
           <el-button type="primary" size="small" class="mb8" @click="openKbDialog()">新建资料条目</el-button>
           <el-table :data="kbEntries" size="small" stripe max-height="360" empty-text="暂无资料">
             <el-table-column prop="title" label="标题" min-width="100" show-overflow-tooltip />
@@ -269,18 +282,36 @@ python -m ai_engine.desktop_screen_agent</pre>
             <el-descriptions-item label="资料库合并">{{ screenForm.knowledge_reply_enabled ? '启用' : '关闭' }}</el-descriptions-item>
             <el-descriptions-item label="区域识别 nonce">{{ screenFormRegionNonce }}</el-descriptions-item>
             <el-descriptions-item label="配置更新时间">{{ screenUpdatedAt }}</el-descriptions-item>
-            <el-descriptions-item label="聊天区域">{{ screenBoxes.chat_window || '未配置' }}</el-descriptions-item>
-            <el-descriptions-item label="输入框区域">{{ screenBoxes.input_box || '未配置' }}</el-descriptions-item>
-            <el-descriptions-item label="用户名区域">{{ screenBoxes.user_name || '未配置' }}</el-descriptions-item>
-            <el-descriptions-item label="好友列表区域">{{ screenBoxes.friend_list || '未配置' }}</el-descriptions-item>
+            <el-descriptions-item label="聊天区域">
+              <span>{{ monitorAreaRows.chat.text }}</span>
+              <el-tag v-if="monitorAreaRows.chat.tag" class="area-src-tag" size="small" type="info">{{ monitorAreaRows.chat.tag }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="输入框区域">
+              <span>{{ monitorAreaRows.input.text }}</span>
+              <el-tag v-if="monitorAreaRows.input.tag" class="area-src-tag" size="small" type="info">{{ monitorAreaRows.input.tag }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="用户名区域">
+              <span>{{ monitorAreaRows.user.text }}</span>
+              <el-tag v-if="monitorAreaRows.user.tag" class="area-src-tag" size="small" type="info">{{ monitorAreaRows.user.tag }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="好友列表区域">
+              <span>{{ monitorAreaRows.friend.text }}</span>
+              <el-tag v-if="monitorAreaRows.friend.tag" class="area-src-tag" size="small" type="info">{{ monitorAreaRows.friend.tag }}</el-tag>
+            </el-descriptions-item>
             <el-descriptions-item label="默认规则（含模型）" :span="2">
               {{ defaultRuleLabel }}
             </el-descriptions-item>
           </el-descriptions>
+          <p class="box-hint mb8">
+            四个区域<strong>同一行展示</strong>：若在「屏幕配置」里保存过坐标则显示为「已保存」并写入数据库；未保存时由代理用本轮 YOLO 填入（标签「本轮识别」，仅存运行快照、不落布局库）。
+          </p>
           <div class="mb8" style="font-weight: 600; font-size: 13px; margin: 8px 0 6px">运行检测（本机代理上报）</div>
           <el-descriptions :column="2" border size="small" class="mb8">
             <el-descriptions-item label="快照时间">
               {{ String(agentRuntimeSnapshot.updated_at || '—') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="当前会话用户">
+              {{ String(agentRuntimeSnapshot.current_friend_name || '—') }}
             </el-descriptions-item>
             <el-descriptions-item label="检测到聊天区域">
               {{ yn(agentRuntimeSnapshot.detected_chat_area) }}
@@ -297,6 +328,9 @@ python -m ai_engine.desktop_screen_agent</pre>
             <el-descriptions-item label="检测到消息变化">
               {{ yn(agentRuntimeSnapshot.detected_message_change) }}
             </el-descriptions-item>
+            <el-descriptions-item label="对方最后一句（用于触发）" :span="2">
+              {{ String(agentRuntimeSnapshot.chat_last_other_text || '—') }}
+            </el-descriptions-item>
             <el-descriptions-item label="区域识别说明" :span="2">
               {{ String(agentRuntimeSnapshot.chat_area_source || '—') }}
             </el-descriptions-item>
@@ -311,26 +345,24 @@ python -m ai_engine.desktop_screen_agent</pre>
           </el-descriptions>
           <el-form label-position="left" label-width="120px">
             <el-form-item label="开始监控">
-              <el-switch v-model="screenForm.monitoring_active" active-text="运行中" inactive-text="已暂停" />
-            </el-form-item>
-            <el-form-item label="本机进程">
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap">
+                <el-switch
+                  :model-value="screenForm.monitoring_active"
+                  :loading="monitoringToggleLoading"
+                  active-text="运行中"
+                  inactive-text="已暂停"
+                  @change="onMonitoringActiveChange"
+                />
                 <el-tag size="small" :type="agentRunning ? 'success' : 'info'">
-                  {{ agentRunning ? `运行中 PID=${agentPid ?? '-'}` : '未启动' }}
+                  {{ agentRunning ? `代理运行中${agentPid != null ? ` PID=${agentPid}` : ''}` : '代理未运行' }}
                 </el-tag>
-                <el-button size="small" type="primary" :disabled="agentRunning" :loading="agentLoading" @click="startAgent">
-                  启动
-                </el-button>
-                <el-button size="small" :disabled="!agentRunning" :loading="agentLoading" @click="stopAgent">
-                  停止
-                </el-button>
-                <el-button size="small" :loading="agentLoading" @click="refreshAgentStatus">
-                  刷新状态
-                </el-button>
+                <el-button size="small" :loading="agentLoading" @click="() => refreshAgentStatus(false)">刷新状态</el-button>
               </div>
             </el-form-item>
           </el-form>
-          <p class="box-hint">本机代理拉取该开关；关闭时仅低频轮询配置。</p>
+          <p class="box-hint">
+            打开「开始监控」会保存配置并<strong>自动启动</strong>后端本机屏幕代理（截图、YOLO、OCR、触发判断）；关闭会<strong>自动停止</strong>代理。无需再手动点「启动/停止进程」。
+          </p>
         </el-card>
         <el-card shadow="never" class="card mt">
           <template #header>
@@ -359,11 +391,16 @@ python -m ai_engine.desktop_screen_agent</pre>
               :key="`${n}-${idx}`"
               closable
               class="tag-item"
-              @close="screenForm.monitored_friends.splice(idx, 1)"
+              @close="() => void removeMonitoredTag(n)"
             >
               {{ n }}
             </el-tag>
-            <el-input v-model="friendNameInput" class="friend-input" placeholder="回车添加监听" @keyup.enter="addMonitoredFriend" />
+            <el-input
+              v-model="friendNameInput"
+              class="friend-input"
+              placeholder="回车添加监听"
+              @keyup.enter="() => void addMonitoredFriend()"
+            />
           </div>
           <el-table :data="monitoredFriendRows" size="small" stripe empty-text="暂无监听好友">
             <el-table-column prop="name" label="好友名称" min-width="100" />
@@ -510,6 +547,11 @@ python -m ai_engine.desktop_screen_agent</pre>
         <el-form-item label="标题">
           <el-input v-model="kbForm.title" maxlength="256" />
         </el-form-item>
+        <el-form-item label="从文件导入（.txt / .md）">
+          <input ref="kbFileInputRef" type="file" accept=".txt,.md,.markdown" class="kb-file-input" @change="onKbFilePicked" />
+          <el-button size="small" :loading="kbImporting" @click="clickKbFileInput">选择文件并导入</el-button>
+          <p class="box-hint" style="margin-top: 6px">导入后正文会写入下方「正文」框，你可再编辑后点保存。</p>
+        </el-form-item>
         <el-form-item label="正文" required>
           <el-input v-model="kbForm.body" type="textarea" :rows="10" />
         </el-form-item>
@@ -529,7 +571,7 @@ python -m ai_engine.desktop_screen_agent</pre>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '@/utils/api'
 import { useAuthStore } from '@/stores/auth'
@@ -700,10 +742,13 @@ const screenBoxes = ref({
 const friendNameInput = ref('')
 // 屏幕事件/监控日志相关前端数据结构已移除
 const kbEntries = ref<KbEntry[]>([])
+const kbImporting = ref(false)
+const kbFileInputRef = ref<HTMLInputElement | null>(null)
 const regionDetectLoading = ref(false)
 const agentRunning = ref(false)
 const agentPid = ref<number | null>(null)
 const agentLoading = ref(false)
+const monitoringToggleLoading = ref(false)
 const agentError = ref('')
 const agentRuntimeSnapshot = ref<Record<string, unknown>>({})
 
@@ -860,6 +905,27 @@ function formatBox4(box: number[] | null | undefined): string {
   return box.join(', ')
 }
 
+function formatRuntimeBox4(v: unknown): string {
+  if (!Array.isArray(v) || v.length !== 4) return '—'
+  const t = formatBox4(v as number[])
+  return t || '—'
+}
+
+function pickMonitorAreaRow(manualStr: string, runtimeVal: unknown): { text: string; tag: string } {
+  const m = (manualStr || '').trim()
+  if (m) return { text: m, tag: '已保存' }
+  const t = formatRuntimeBox4(runtimeVal)
+  if (t !== '—') return { text: t, tag: '本轮识别' }
+  return { text: '未配置', tag: '' }
+}
+
+const monitorAreaRows = computed(() => ({
+  chat: pickMonitorAreaRow(screenBoxes.value.chat_window, agentRuntimeSnapshot.value.runtime_chat_window_box),
+  input: pickMonitorAreaRow(screenBoxes.value.input_box, agentRuntimeSnapshot.value.runtime_input_box_pos),
+  user: pickMonitorAreaRow(screenBoxes.value.user_name, agentRuntimeSnapshot.value.runtime_user_name_box),
+  friend: pickMonitorAreaRow(screenBoxes.value.friend_list, agentRuntimeSnapshot.value.runtime_friend_list_box),
+}))
+
 function parseBox4(s: string): number[] | null {
   const parts = s
     .split(/[,，\s]+/)
@@ -940,34 +1006,38 @@ function applyScreenProfile(p: ScreenProfile) {
 
 async function loadScreenProfile() {
   const { data } = await api.get<ScreenProfile>('/auto-reply/screen-profile')
+  // 监控页会高频轮询，这里不再 console spam
   applyScreenProfile(data)
 }
 
-async function refreshAgentStatus() {
-  agentLoading.value = true
+async function refreshAgentStatus(silent = false) {
+  if (!silent) agentLoading.value = true
   agentError.value = ''
   try {
-    const { data } = await api.get<{ running: boolean; pid: number | null }>('/auto-reply/agent/status')
+    const { data } = await api.get<{ running: boolean; pid: number | null; error?: string }>('/auto-reply/agent/status')
     agentRunning.value = !!data.running
     agentPid.value = data.pid ?? null
+    agentError.value = String(data?.error || '').trim()
     await loadScreenProfile()
-    await loadMonitorHistory()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     agentError.value = err?.response?.data?.detail || '无法获取本机进程状态（后端未启动或权限不足）'
   } finally {
-    agentLoading.value = false
+    if (!silent) agentLoading.value = false
   }
 }
 
-async function startAgent() {
+async function startAgent(showTip = true) {
   agentLoading.value = true
   agentError.value = ''
   try {
     const { data } = await api.post<{ running: boolean; pid: number | null }>('/auto-reply/agent/start')
     agentRunning.value = !!data.running
     agentPid.value = data.pid ?? null
-    ElMessage.success('已启动本机进程')
+    if (showTip) ElMessage.success('已启动本机屏幕代理')
+    await loadScreenProfile()
+    await new Promise((r) => setTimeout(r, 350))
+    await refreshAgentStatus(true)
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     agentError.value = err?.response?.data?.detail || '启动失败'
@@ -976,19 +1046,96 @@ async function startAgent() {
   }
 }
 
-async function stopAgent() {
+async function stopAgent(showTip = true) {
   agentLoading.value = true
   agentError.value = ''
   try {
     await api.post('/auto-reply/agent/stop')
     agentRunning.value = false
     agentPid.value = null
-    ElMessage.success('已停止本机进程')
+    if (showTip) ElMessage.success('已停止本机屏幕代理')
+    await loadScreenProfile()
+    await refreshAgentStatus(true)
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     agentError.value = err?.response?.data?.detail || '停止失败'
   } finally {
     agentLoading.value = false
+  }
+}
+
+async function onMonitoringActiveChange(val: string | number | boolean) {
+  const on = val === true
+  monitoringToggleLoading.value = true
+  agentError.value = ''
+  try {
+    if (on) {
+      screenForm.value.monitoring_active = true
+      await saveScreenProfile('已开启监控并开始识别')
+      await startAgent(false)
+      await refreshAgentStatus(true)
+      if (!agentRunning.value) {
+        screenForm.value.monitoring_active = false
+        await saveScreenProfile('')
+        throw new Error(agentError.value || '代理未能启动，请查看后端日志')
+      }
+    } else {
+      await stopAgent(false)
+      screenForm.value.monitoring_active = false
+      await saveScreenProfile('已暂停监控')
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : '操作失败'
+    ElMessage.error(msg)
+    if (on) {
+      screenForm.value.monitoring_active = false
+      try {
+        await stopAgent(false)
+      } catch {
+        /* ignore */
+      }
+      try {
+        await saveScreenProfile('')
+      } catch {
+        /* ignore */
+      }
+    }
+  } finally {
+    monitoringToggleLoading.value = false
+    await loadScreenProfile()
+  }
+}
+
+function clickKbFileInput() {
+  kbFileInputRef.value?.click()
+}
+
+async function onKbFilePicked(ev: Event) {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  const name = (file.name || '').toLowerCase()
+  if (!name.endsWith('.txt') && !name.endsWith('.md') && !name.endsWith('.markdown')) {
+    ElMessage.warning('仅支持 .txt / .md / .markdown')
+    return
+  }
+  kbImporting.value = true
+  try {
+    const text = (await file.text()).replace(/^\uFEFF/, '').trim()
+    if (!text) {
+      ElMessage.warning('文件内容为空')
+      return
+    }
+    kbForm.value.body = text
+    if (!kbForm.value.title.trim()) {
+      kbForm.value.title = (file.name.replace(/\.[^.]+$/, '') || '导入资料').slice(0, 256)
+    }
+    ElMessage.success('已读入文件到正文，确认后请点击保存')
+  } catch {
+    ElMessage.error('读取文件失败')
+  } finally {
+    kbImporting.value = false
   }
 }
 
@@ -1021,7 +1168,7 @@ async function saveScreenProfile(successTip: string | undefined = '屏幕配置�
       default_rule_id: screenForm.value.default_rule_id ?? null,
     })
     applyScreenProfile(data)
-    ElMessage.success(successTip)
+    if (successTip) ElMessage.success(successTip)
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     ElMessage.error(err?.response?.data?.detail || '保存失败')
@@ -1030,13 +1177,28 @@ async function saveScreenProfile(successTip: string | undefined = '屏幕配置�
   }
 }
 
-function addMonitoredFriend() {
+async function addMonitoredFriend() {
   const n = friendNameInput.value.trim()
   if (!n) return
   if (!screenForm.value.monitored_friends.includes(n)) {
     screenForm.value.monitored_friends.push(n)
   }
+  const fo = { ...(screenForm.value.friends_overrides as Record<string, Record<string, unknown>>) }
+  if (!fo[n]) {
+    fo[n] = {
+      name: n,
+      rule_id: null,
+      model_key: '',
+      personality: 'gentle_healing',
+      scene: 'daily_chat',
+      custom_system_prompt: '',
+      knowledge_paths: [],
+      knowledge_match_keywords: [],
+    }
+  }
+  screenForm.value.friends_overrides = fo
   friendNameInput.value = ''
+  await saveScreenProfile('已添加监听好友')
 }
 
 async function loadPresets() {
@@ -1101,7 +1263,7 @@ function onMainTabChange(tab: string | number) {
   const t = String(tab)
   if (t === 'knowledge') void loadKbEntries()
   if (t === 'monitor') {
-    void refreshAgentStatus()
+    void refreshAgentStatus(false)
     void loadScreenProfile()
     void loadMonitorHistory()
   }
@@ -1214,8 +1376,19 @@ async function saveFriendOverride() {
     knowledge_match_keywords: kws,
   }
   screenForm.value.friends_overrides = fo
+  if (!screenForm.value.monitored_friends.includes(nm)) {
+    screenForm.value.monitored_friends = [...screenForm.value.monitored_friends, nm]
+  }
   friendDialogVisible.value = false
   await saveScreenProfile('好友配置已保存')
+}
+
+async function removeMonitoredTag(name: string) {
+  screenForm.value.monitored_friends = screenForm.value.monitored_friends.filter((x) => x !== name)
+  const fo = { ...(screenForm.value.friends_overrides as Record<string, unknown>) }
+  delete fo[name]
+  screenForm.value.friends_overrides = fo
+  await saveScreenProfile('已更新监听名单')
 }
 
 async function removeMonitored(name: string) {
@@ -1224,8 +1397,7 @@ async function removeMonitored(name: string) {
   } catch {
     return
   }
-  screenForm.value.monitored_friends = screenForm.value.monitored_friends.filter((x) => x !== name)
-  await saveScreenProfile()
+  await removeMonitoredTag(name)
 }
 
 function openKbDialog(row?: KbEntry) {
@@ -1427,10 +1599,89 @@ onMounted(async () => {
       loadScreenProfile(),
       loadKbEntries(),
     ])
-    await refreshAgentStatus()
+    await refreshAgentStatus(false)
   } catch {
     ElMessage.error('加载失败，请确认已登录且后端可用')
   }
+})
+
+// 监控页自动轮询：刷新 screen-profile（含 agent_runtime_snapshot）与 agent/status
+let _monitorPollTimer: number | null = null
+let _pollBusy = false
+let _agentStatusPollCounter = 0
+let _lastPausedPollAt = 0
+
+async function _pollMonitorOnce() {
+  if (_pollBusy) return
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+  // 暂停监控且代理已停止时，降低轮询频率，避免后端与 runserver 访问日志刷屏
+  if (!screenForm.value.monitoring_active && !agentRunning.value) {
+    const now = Date.now()
+    if (now - _lastPausedPollAt < 5000) return
+    _lastPausedPollAt = now
+  }
+  _pollBusy = true
+  try {
+    const sinceSnap = String(agentRuntimeSnapshot.value?.updated_at || '')
+    const sinceProf = screenProfileUpdatedAt.value || ''
+    const { data } = await api.get<{ changed: boolean; snapshot_ts: string; profile_updated_at: string }>(
+      '/auto-reply/screen-profile/watch',
+      { params: { since_snapshot: sinceSnap, since_profile: sinceProf } },
+    )
+    if (data.changed) {
+      await loadScreenProfile()
+    }
+  } finally {
+    _pollBusy = false
+  }
+  // 仅在监控中/代理运行时才需要频繁刷新 agent/status
+  if (screenForm.value.monitoring_active || agentRunning.value) {
+    _agentStatusPollCounter += 1
+    if (_agentStatusPollCounter % 6 === 0) {
+      void refreshAgentStatus(true)
+    }
+  }
+}
+
+function _startMonitorPoll() {
+  if (_monitorPollTimer != null) return
+  void _pollMonitorOnce()
+  _monitorPollTimer = window.setInterval(() => {
+    void _pollMonitorOnce()
+  }, 1200)
+}
+
+function _stopMonitorPoll() {
+  if (_monitorPollTimer != null) {
+    window.clearInterval(_monitorPollTimer)
+    _monitorPollTimer = null
+  }
+}
+
+watch(
+  () => mainTab.value,
+  (t) => {
+    if (String(t) === 'monitor') {
+      // 已暂停且代理已停止时，不需要继续轮询（避免后端刷 /watch /status 日志）
+      if (screenForm.value.monitoring_active || agentRunning.value) _startMonitorPoll()
+      else _stopMonitorPoll()
+    }
+    else _stopMonitorPoll()
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [screenForm.value.monitoring_active, agentRunning.value, mainTab.value],
+  () => {
+    if (String(mainTab.value) !== 'monitor') return
+    if (screenForm.value.monitoring_active || agentRunning.value) _startMonitorPoll()
+    else _stopMonitorPoll()
+  },
+)
+
+onBeforeUnmount(() => {
+  _stopMonitorPoll()
 })
 </script>
 
@@ -1592,6 +1843,25 @@ onMounted(async () => {
 
 .mb8 {
   margin-bottom: 8px;
+}
+
+.area-src-tag {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.overview-hint {
+  font-size: 13px;
+  line-height: 1.55;
+  color: #555;
+}
+
+.kb-file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .hint-grid {

@@ -7,7 +7,6 @@ from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 import threading
 import unicodedata
 import re
-from openocr import OpenOCR
 from src.config.constants import MONITOR_LIST_FILE, PROJECT_ROOT
 from src.config.config_manager import (
     friends_config,
@@ -38,6 +37,15 @@ def get_last_chat_parse_debug() -> dict:
 def _get_openocr():
     global _OPENOCR
     if _OPENOCR is None:
+        try:
+            from openocr import OpenOCR  # type: ignore[import-untyped]
+        except ImportError as e:
+            raise ImportError(
+                "未安装 openocr-python，无法进行参考 OCR。请在本机后端虚拟环境中执行："
+                "pip install openocr-python==0.1.5 "
+                "或 pip install -r ai_engine/desktop_screen_agent/ocr_reference_bundle/requirements.txt "
+                "（与 Backend/requirements-desktop-agent.txt 中的 OCR 行一致）。"
+            ) from e
         # mobile 模式更轻量；需要更高精度可改为 mode='server'（依赖 torch）
         _OPENOCR = OpenOCR(task="ocr", mode="mobile")
     return _OPENOCR

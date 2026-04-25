@@ -1,8 +1,9 @@
 """
-在独立进程中加载参考项目 ``src.core.ocr``（OpenOCR），避免与 Flowly 主进程依赖混用。
+参考项目 ``src.core.ocr``（OpenOCR）入口。
 
-由 ``ocr_subprocess.run_ocr_subprocess`` 启动；环境变量 **FLOWLY_OCR_REFERENCE_ROOT** 须为
-参考项目根目录（含 ``src/`` 的目录，如仓库内 ``docs/reference/AI自动回复``）。
+- **默认**：由 ``ocr_subprocess.run_ocr_subprocess`` 在**当前后端 Python 进程**内调用
+  ``run_reference_ocr_request``（与 runserver / 屏幕代理同环境，无需单独子解释器装包）。
+- **可选**：仍可用本脚本作独立子进程（``FLOWLY_OCR_USE_SUBPROCESS=1`` 时由 ocr_subprocess 走子进程）。
 
 命令行::
 
@@ -21,6 +22,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 
 def _serialize_chat_lines(lines) -> list[dict]:
@@ -42,6 +44,90 @@ def _serialize_chat_lines(lines) -> list[dict]:
     return out
 
 
+def run_reference_ocr_request(req: dict[str, Any], *, ref_root: str) -> dict[str, Any]:
+    """
+    在**当前进程**内执行参考 OCR（临时 chdir + 插入 sys.path，结束后恢复）。
+    ``ref_root`` 须为含 ``src/`` 的目录（通常为 ``ocr_reference_bundle``）。
+    """
+    ref_raw = (ref_root or "").strip()
+    if not ref_raw or not Path(ref_raw).is_dir():
+        return {"ok": False, "error": f"参考 OCR 根目录无效: {ref_raw!r}"}
+    ref = str(Path(ref_raw).resolve())
+    try:
+        import openocr  # noqa: F401
+    except ImportError:
+        return {
+            "ok": False,
+            "error": (
+                "未安装 openocr-python。请在与本后端相同的虚拟环境中执行："
+                "pip install openocr-python==0.1.5（依赖已写入 Backend/requirements.txt）。"
+            ),
+        }
+
+    op = str(req.get("op") or "")
+    image_path = req.get("image_path")
+    box = req.get("box")
+    if not image_path or not isinstance(box, (list, tuple)) or len(box) != 4:
+        return {"ok": False, "error": "image_path 与 box[4] 必填"}
+    try:
+        box_t = tuple(int(x) for x in box)
+    except Exception:
+        return {"ok": False, "error": "box 须为四个整数"}
+
+    old_cwd = os.getcwd()
+    path_inserted = False
+    try:
+        os.chdir(ref)
+        if ref not in sys.path:
+            sys.path.insert(0, ref)
+            path_inserted = True
+
+        from PIL import Image
+
+        from src.core.ocr import (  # type: ignore[import-untyped]
+            ocr_all_area,
+            ocr_chat_window,
+            ocr_friend_list_area,
+            ocr_input_area,
+            ocr_user_area,
+        )
+
+        try:
+            img = Image.open(str(image_path))
+        except Exception as e:
+            return {"ok": False, "error": f"打开图片失败: {e}"}
+
+        try:
+            if op == "user_area":
+                text = ocr_user_area(box_t, img)
+                return {"ok": True, "op": op, "text": str(text or "")}
+            if op == "chat_window":
+                lines = ocr_chat_window(box_t, img)
+                return {"ok": True, "op": op, "lines": _serialize_chat_lines(lines)}
+            if op == "input_area":
+                text = ocr_input_area(box_t, img)
+                return {"ok": True, "op": op, "text": str(text or "")}
+            if op == "friend_list":
+                text = ocr_friend_list_area(box_t, img)
+                return {"ok": True, "op": op, "text": str(text or "")}
+            if op == "all_area":
+                text = ocr_all_area(box_t, img)
+                return {"ok": True, "op": op, "text": str(text or "")}
+            return {"ok": False, "error": f"未知 op: {op}"}
+        except Exception as e:
+            return {"ok": False, "error": str(e), "op": op}
+    finally:
+        try:
+            os.chdir(old_cwd)
+        except OSError:
+            pass
+        if path_inserted:
+            try:
+                sys.path.remove(ref)
+            except ValueError:
+                pass
+
+
 def main() -> None:
     if len(sys.argv) < 3:
         print("usage: ocr_reference_worker.py <request.json> <response.json>", file=sys.stderr)
@@ -56,69 +142,16 @@ def main() -> None:
         )
         sys.exit(1)
 
-    os.chdir(ref_root)
-    if ref_root not in sys.path:
-        sys.path.insert(0, ref_root)
-
     try:
         req = json.loads(req_path.read_text(encoding="utf-8"))
     except Exception as e:
         out_path.write_text(json.dumps({"ok": False, "error": f"请求 JSON 无效: {e}"}, ensure_ascii=False), encoding="utf-8")
         sys.exit(1)
 
-    op = str(req.get("op") or "")
-    image_path = req.get("image_path")
-    box = req.get("box")
-    if not image_path or not isinstance(box, (list, tuple)) or len(box) != 4:
-        out_path.write_text(
-            json.dumps({"ok": False, "error": "image_path 与 box[4] 必填"}, ensure_ascii=False),
-            encoding="utf-8",
-        )
-        sys.exit(1)
-    try:
-        box_t = tuple(int(x) for x in box)
-    except Exception:
-        out_path.write_text(json.dumps({"ok": False, "error": "box 须为四个整数"}, ensure_ascii=False), encoding="utf-8")
-        sys.exit(1)
-
-    from PIL import Image
-
-    from src.core.ocr import (  # type: ignore[import-untyped]
-        ocr_all_area,
-        ocr_chat_window,
-        ocr_friend_list_area,
-        ocr_input_area,
-        ocr_user_area,
-    )
-
-    try:
-        img = Image.open(str(image_path))
-    except Exception as e:
-        out_path.write_text(json.dumps({"ok": False, "error": f"打开图片失败: {e}"}, ensure_ascii=False), encoding="utf-8")
-        sys.exit(1)
-
-    try:
-        if op == "user_area":
-            text = ocr_user_area(box_t, img)
-            payload = {"ok": True, "op": op, "text": str(text or "")}
-        elif op == "chat_window":
-            lines = ocr_chat_window(box_t, img)
-            payload = {"ok": True, "op": op, "lines": _serialize_chat_lines(lines)}
-        elif op == "input_area":
-            text = ocr_input_area(box_t, img)
-            payload = {"ok": True, "op": op, "text": str(text or "")}
-        elif op == "friend_list":
-            text = ocr_friend_list_area(box_t, img)
-            payload = {"ok": True, "op": op, "text": str(text or "")}
-        elif op == "all_area":
-            text = ocr_all_area(box_t, img)
-            payload = {"ok": True, "op": op, "text": str(text or "")}
-        else:
-            payload = {"ok": False, "error": f"未知 op: {op}"}
-    except Exception as e:
-        payload = {"ok": False, "error": str(e), "op": op}
-
+    payload = run_reference_ocr_request(req, ref_root=ref_root)
     out_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    if not payload.get("ok"):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

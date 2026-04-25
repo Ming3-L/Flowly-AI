@@ -179,7 +179,14 @@ def main_loop() -> None:
             profile = fetch_screen_profile(session)
             wp = (profile.get("yolo_weights_path") or "").strip()
             if wp:
-                os.environ["FLOWLY_SCREEN_YOLO_WEIGHTS"] = wp
+                # 兼容历史/错误配置：只有存在的权重路径才写入 env，避免覆盖后端默认权重位置
+                try:
+                    if Path(wp).is_file():
+                        os.environ["FLOWLY_SCREEN_YOLO_WEIGHTS"] = wp
+                    else:
+                        os.environ.pop("FLOWLY_SCREEN_YOLO_WEIGHTS", None)
+                except Exception:
+                    os.environ.pop("FLOWLY_SCREEN_YOLO_WEIGHTS", None)
 
             nonce = int(profile.get("region_detect_nonce") or 0)
             ack = int(profile.get("region_detect_ack_nonce") or 0)

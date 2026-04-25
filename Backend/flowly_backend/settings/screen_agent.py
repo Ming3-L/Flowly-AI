@@ -5,9 +5,8 @@ from pathlib import Path
 
 from .paths import BASE_DIR
 
-# 仓库根目录下的 best.pt（与 Backend 平级）
-_REPO_ROOT = BASE_DIR.parent
-_DEFAULT_YOLO = _REPO_ROOT / "best.pt"
+# 默认权重放在后端模块内（随项目一起迁移/部署）
+_DEFAULT_YOLO = BASE_DIR / "ai_engine" / "desktop_screen_agent" / "weights" / "best.pt"
 
 _env_weights = (os.getenv("FLOWLY_SCREEN_YOLO_WEIGHTS") or "").strip()
 if _env_weights:

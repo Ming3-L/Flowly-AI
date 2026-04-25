@@ -15,7 +15,7 @@
 
 `torch` 需从 `https://download.pytorch.org/whl/cu118|cu121|cu124` 安装才能用 GPU；其余包走清华镜像。仅 CPU 时可自行 `pip install torch` 后 `pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r Backend/requirements-desktop-agent.txt`。
 
-若启用 OCR 子进程，请再安装与参考项目一致的 OpenOCR（见 `docs/reference/AI自动回复/requirements.txt` 中的 `openocr-python`）。
+若启用 OCR 子进程，请再安装与参考实现一致的 OpenOCR（见 `desktop_screen_agent/ocr_reference_bundle/requirements.txt` 中的 `openocr-python`）。
 
 ## 环境变量
 
@@ -23,12 +23,13 @@
 |------|------|
 | `FLOWLY_API_BASE` | API 根，如 `http://127.0.0.1:8000/api` |
 | `FLOWLY_ACCESS_TOKEN` | 登录后获得的 JWT |
-| `FLOWLY_SCREEN_YOLO_WEIGHTS` | （可选）`best.pt` 等权重绝对路径 |
+| `FLOWLY_SCREEN_YOLO_WEIGHTS` | （可选）`best.pt` 等权重绝对路径；不填时默认使用 `Backend/ai_engine/desktop_screen_agent/weights/best.pt`（若存在） |
 | `FLOWLY_SCREEN_YOLO_TOLERANCE_PX` | （可选）坐标容差，默认 20 |
 | `FLOWLY_SCREEN_OCR_SUBPROCESS` | 设为 `1` / `true` 时，每轮在子进程中跑参考 OCR（需已安装 openocr，且参考根有效） |
-| `FLOWLY_OCR_REFERENCE_ROOT` | 参考项目根（含 `src/`）。默认：`Flowly 仓库根/docs/reference/AI自动回复` |
+| `FLOWLY_OCR_REFERENCE_ROOT` | 参考项目根（含 `src/`）。默认：`Backend/ai_engine/desktop_screen_agent/ocr_reference_bundle` |
 | `FLOWLY_OCR_PYTHON` | 子进程 Python（默认当前解释器）；可为单独 venv 的 `python.exe` |
 | `FLOWLY_OCR_SUBPROCESS_TIMEOUT` | OCR 子进程超时秒数，默认 120 |
+| `FLOWLY_SCREEN_SEND_KEY` | （仅后端内置屏幕代理发送）发送快捷键：`enter`（默认）或 `ctrl_enter`（微信设置为 Ctrl+Enter 发送时用） |
 
 ## 启动
 
@@ -40,8 +41,9 @@
 cd D:\project\Flowly-AI\Backend
 $env:FLOWLY_API_BASE="http://127.0.0.1:8000/api"
 $env:FLOWLY_ACCESS_TOKEN="你的JWT"
-$env:FLOWLY_SCREEN_YOLO_WEIGHTS="D:\path\to\best.pt"
-python -m ai_engine.desktop_screen_agent
+$env:FLOWLY_SCREEN_YOLO_WEIGHTS="D:\project\Flowly-AI\Backend\ai_engine\desktop_screen_agent\weights\best.pt"
+# 建议使用项目根目录 .venv 的解释器运行（确保 ultralytics/torch 等已安装在正确环境）
+D:\project\Flowly-AI\.venv\Scripts\python.exe -m ai_engine.desktop_screen_agent
 ```
 
 **附加参考 OCR 子进程（同一解释器需能 import openocr，或设置 FLOWLY_OCR_PYTHON）**
@@ -50,7 +52,7 @@ python -m ai_engine.desktop_screen_agent
 $env:FLOWLY_SCREEN_OCR_SUBPROCESS="1"
 # 若参考目录不在仓库默认路径：
 # $env:FLOWLY_OCR_REFERENCE_ROOT="E:\桌面\project\AI自动回复"
-python -m ai_engine.desktop_screen_agent
+D:\project\Flowly-AI\.venv\Scripts\python.exe -m ai_engine.desktop_screen_agent
 ```
 
 ## 子进程协议
