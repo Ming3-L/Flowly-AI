@@ -245,6 +245,7 @@ class AutoReplyScreenProfileOut(Schema):
     region_detect_ack_nonce: int = 0
     default_rule_id: int | None = None
     updated_at: str = ""
+    agent_runtime_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
 class AutoReplyScreenProfileWrite(Schema):
@@ -376,6 +377,9 @@ def _screen_profile_out(p: AutoReplyScreenProfile) -> dict[str, Any]:
         "region_detect_ack_nonce": int(getattr(p, "region_detect_ack_nonce", 0) or 0),
         "default_rule_id": p.default_rule_id,
         "updated_at": p.updated_at.isoformat() if p.updated_at else "",
+        "agent_runtime_snapshot": getattr(p, "agent_runtime_snapshot", None)
+        if isinstance(getattr(p, "agent_runtime_snapshot", None), dict)
+        else {},
     }
 
 

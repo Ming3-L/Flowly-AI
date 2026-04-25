@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage  # pyright: ignore[reportMissin
 
 from ai_engine.cost_tracker import record_llm_cost_from_canvas_context
 from ai_engine.integrations.ark_generative import ark_images_generate_url
+from ai_engine.local_media_store import absolutize_public_url
 from ai_engine.models import AIModelCatalogEntry
 from ai_engine.workflow_nodes import cost_context as cost_ctx
 from ai_engine.workflow_nodes.base import NodeExecutor
@@ -95,10 +96,11 @@ class ImageNodeExecutor(NodeExecutor):
         llm, route, model_id = get_chat_model_for_canvas_node(config, max_tokens_default=1024, streaming=False)
 
         if image_url:
+            abs_url = absolutize_public_url(image_url)
             msg = HumanMessage(
                 content=[
                     {"type": "text", "text": user_q},
-                    {"type": "image_url", "image_url": {"url": image_url}},
+                    {"type": "image_url", "image_url": {"url": abs_url or image_url}},
                 ]
             )
         else:

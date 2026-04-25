@@ -1137,6 +1137,12 @@ class AutoReplyScreenProfile(models.Model):
         verbose_name="屏幕任务默认规则",
         help_text="代理自动建任务时可选；须属于同一用户。",
     )
+    agent_runtime_snapshot = models.JSONField(
+        "本机代理运行快照",
+        default=dict,
+        blank=True,
+        help_text="由本机屏幕代理周期性写入：区域是否识别到、是否检测到消息变化、最近 OCR 摘要等；前端监控页只读展示。",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

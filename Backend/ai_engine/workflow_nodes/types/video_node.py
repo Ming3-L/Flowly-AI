@@ -8,6 +8,7 @@ from langchain_core.messages import HumanMessage, SystemMessage  # pyright: igno
 
 from ai_engine.cost_tracker import record_llm_cost_from_canvas_context
 from ai_engine.integrations.ark_generative import ark_video_generate_poll
+from ai_engine.local_media_store import absolutize_public_url
 from ai_engine.models import AIModelCatalogEntry
 from ai_engine.workflow_nodes import cost_context as cost_ctx
 from ai_engine.workflow_nodes.base import NodeExecutor
@@ -67,21 +68,23 @@ class VideoNodeExecutor(NodeExecutor):
                     "hint": f"目录项「{entry.label}」未配置 model_id，请在后台模型目录中填写方舟视频模型 id。",
                     "video_url": str(inputs.get("video_url") or inputs.get("url") or "") or None,
                 }
-            ref_image_url = str(inputs.get("image_url") or inputs.get("imageUrl") or "").strip()
+            ref_image_url = absolutize_public_url(
+                str(inputs.get("image_url") or inputs.get("imageUrl") or "").strip()
+            )
 
             # 画布上游常把图片节点输出写成「签名 URL + 文生图说明」；
             # prompt 不应包含这些 URL（参考图单独走 image_url 参数）。
-            prompt_text = re.sub(r"https?://\\S+", "", body).strip()
+            prompt_text = re.sub(r"https?://\S+", "", body).strip()
             # 避免把「--dur 5」「--wm true」之类 CLI 风格参数塞进 prompt，部分 Seedance 版本会报 InvalidParameter
-            prompt_text = re.sub(r"--\\w+\\s+[^\\s]+", "", prompt_text).strip()
-            prompt_text = re.sub(r"--\\w+\\b", "", prompt_text).strip()
+            prompt_text = re.sub(r"--\w+\s+\S+", "", prompt_text).strip()
+            prompt_text = re.sub(r"--\w+\b", "", prompt_text).strip()
             if not prompt_text:
                 prompt_text = body
             try:
                 vid_url, raw = ark_video_generate_poll(
                     model_id=mid,
                     prompt_text=prompt_text,
-                    image_url=ref_image_url or None,
+                    image_url=(ref_image_url or None),
                     duration=int(config.get("video_duration") or 5),
                     resolution=str(config.get("video_resolution") or "720p"),
                     ratio=str(config.get("video_ratio") or "16:9"),
@@ -97,7 +100,8 @@ class VideoNodeExecutor(NodeExecutor):
                     "hint": str(exc),
                     "video_url": None,
                 }
-            lines = [f"（文生视频：{entry.label}）"]
+            mode_label = "图生视频" if ref_image_url else "文生视频"
+            lines = [f"（{mode_label}：{entry.label}）"]
             if ref_image_url:
                 lines.append(f"参考图：{ref_image_url}")
             if vid_url:

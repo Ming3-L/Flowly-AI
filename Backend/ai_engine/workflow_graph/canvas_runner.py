@@ -39,6 +39,40 @@ def _guess_media_type(url: str) -> str:
     return ""
 
 
+def _inject_initial_files_into_inputs(inputs: dict[str, Any]) -> None:
+    """
+    将 WorkflowRunner 传入的 initial_inputs.files（上传接口返回列表）映射为节点可读的
+    image_url / audio_url / video_url / media，供视频生成为首帧参考图等场景使用。
+    """
+    raw = inputs.get("files")
+    if not isinstance(raw, list) or not raw:
+        return
+    media = list(inputs.get("media") or []) if isinstance(inputs.get("media"), list) else []
+    for it in raw:
+        if not isinstance(it, dict):
+            continue
+        mime = str(it.get("mime") or "").lower()
+        url = str(it.get("public_url") or it.get("proxy_url") or "").strip()
+        if not url:
+            continue
+        if mime.startswith("image/"):
+            if not inputs.get("image_url"):
+                inputs["image_url"] = url
+            media.append({"type": "image", "url": url, "node_id": "__seed__", "field": "files"})
+        elif mime.startswith("audio/"):
+            if not inputs.get("audio_url"):
+                inputs["audio_url"] = url
+            media.append({"type": "audio", "url": url, "node_id": "__seed__", "field": "files"})
+        elif mime.startswith("video/"):
+            if not inputs.get("video_url"):
+                inputs["video_url"] = url
+            media.append({"type": "video", "url": url, "node_id": "__seed__", "field": "files"})
+        else:
+            media.append({"type": "file", "url": url, "node_id": "__seed__", "field": "files"})
+    if media:
+        inputs["media"] = media
+
+
 def _extract_media_items(out_obj: Any, *, node_id: str) -> list[dict[str, Any]]:
     """
     从节点输出中抽取媒体 URL（图片/音频/视频）为统一结构。
@@ -263,6 +297,7 @@ async def run_canvas_workflow_async(
             inputs: dict[str, Any] = {"upstream": upstream_payload}
             if nid == entry and seed_inputs:
                 inputs.update(seed_inputs)
+                _inject_initial_files_into_inputs(inputs)
                 if "text" in seed_inputs and isinstance(seed_inputs["text"], str):
                     pass
             else:

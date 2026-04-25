@@ -17,7 +17,7 @@ from langchain_core.messages import HumanMessage, SystemMessage  # pyright: igno
 from ai_engine.ai_model_catalog import get_user_preset_llm_overrides, resolve_route_and_model_id
 from ai_engine.auto_reply.knowledge_merge import build_knowledge_appendix
 from ai_engine.auto_reply.presets import compose_style_system_prompt
-from ai_engine.models import AutoReplyJob, AutoReplyRule
+from ai_engine.models import AutoReplyChatHistoryEntry, AutoReplyJob, AutoReplyRule, AutoReplyScreenProfile
 from ai_engine.workflow import get_chat_model
 
 logger = logging.getLogger(__name__)
@@ -28,7 +28,10 @@ _DEFAULT_SYSTEM = (
 )
 
 
-def _effective_model_key(rule: AutoReplyRule | None) -> str:
+def _effective_model_key(rule: AutoReplyRule | None, *, friend_model_key: str = "") -> str:
+    fk = (friend_model_key or "").strip()
+    if fk:
+        return fk
     r = (rule.model_key if rule and (rule.model_key or "").strip() else "").strip()
     if r:
         return r
@@ -72,7 +75,20 @@ def run_auto_reply_job_sync(job_id: int) -> None:
     )
     if appendix:
         system_prompt = (system_prompt or "").rstrip() + appendix
-    mk = _effective_model_key(rule)
+
+    friend_model_key = ""
+    fn = (getattr(job, "friend_name", "") or "").strip()
+    if fn:
+        try:
+            sp = AutoReplyScreenProfile.objects.filter(user_id=int(job.user_id)).first()
+            fo = sp.friends_overrides if sp and isinstance(sp.friends_overrides, dict) else {}
+            o = fo.get(fn) if isinstance(fo, dict) else None
+            if isinstance(o, dict):
+                friend_model_key = str(o.get("model_key") or "").strip()
+        except Exception:
+            friend_model_key = ""
+
+    mk = _effective_model_key(rule, friend_model_key=friend_model_key)
     uid = int(job.user_id)
 
     try:
@@ -97,6 +113,24 @@ def run_auto_reply_job_sync(job_id: int) -> None:
             j2.status = AutoReplyJob.Status.COMPLETED
             j2.updated_at = timezone.now()
             j2.save(update_fields=["reply_text", "model_key_used", "status", "updated_at"])
+        try:
+            fn2 = (getattr(job, "friend_name", "") or "").strip()
+            AutoReplyChatHistoryEntry.objects.create(
+                user_id=uid,
+                friend_name=fn2,
+                role=AutoReplyChatHistoryEntry.Role.USER,
+                content=(job.input_text or "").strip()[:32000],
+                meta={"source": "auto_reply_job", "job_id": job_id},
+            )
+            AutoReplyChatHistoryEntry.objects.create(
+                user_id=uid,
+                friend_name=fn2,
+                role=AutoReplyChatHistoryEntry.Role.ASSISTANT,
+                content=text[:32000],
+                meta={"source": "auto_reply_job", "job_id": job_id, "model_key": mk},
+            )
+        except Exception:
+            logger.exception("auto_reply job %s: chat history persist failed", job_id)
     except Exception as exc:
         logger.exception("auto_reply job %s failed", job_id)
         with transaction.atomic():

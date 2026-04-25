@@ -18,6 +18,7 @@ from typing import Any
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone as django_timezone
 
 from ai_engine.desktop_screen_agent.engine import get_chat_areas_from_profile
 from ai_engine.models import AutoReplyJob, AutoReplyRule, AutoReplyScreenProfile
@@ -233,6 +234,30 @@ def run_server_screen_agent(*, user_id: int, stop_event=None) -> None:
 
             if message_detected:
                 _log("info", f"检测到疑似新消息变化：{msg}", {"flags": flags, "user_id": uid})
+
+            snap_last_line = ""
+            if ocr_info and ocr_info.get("ok"):
+                snap_last_line = str(ocr_info.get("last_line") or "").strip()
+            try:
+                AutoReplyScreenProfile.objects.filter(pk=p.pk).update(
+                    agent_runtime_snapshot={
+                        "updated_at": django_timezone.now().isoformat(),
+                        "detected_chat_area": bool(flags["detected_chat_area"]),
+                        "detected_input_box": bool(flags["detected_input_box"]),
+                        "detected_user_name_area": bool(flags["detected_user"]),
+                        "detected_friend_list": bool(flags["detected_friend_list"]),
+                        "detected_message_change": bool(message_detected),
+                        "chat_area_source": str(msg or ""),
+                        "chat_ocr_preview": (
+                            str(ocr_info.get("preview") or "")[:800]
+                            if ocr_info and ocr_info.get("ok")
+                            else ""
+                        ),
+                        "chat_last_line": snap_last_line[:500],
+                    }
+                )
+            except Exception:
+                pass
 
             # ── 自动回复闭环：检测到变化 + 有输入框坐标 → 生成回复 → 尝试发送 ─────────────
             if message_detected and flags["detected_input_box"] and areas and areas.get("input_box"):

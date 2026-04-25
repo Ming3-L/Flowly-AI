@@ -30,6 +30,22 @@ def build_proxy_url(rel_path: str) -> str:
     return f"/api/media/proxy?path={rel_path}"
 
 
+def absolutize_public_url(url: str) -> str:
+    """
+    将站内相对 URL（如 /api/media/public?...）补全为第三方可拉取的绝对地址。
+    需在环境变量 FLOWLY_PUBLIC_BASE_URL 中配置站点根（无尾斜杠），例如 https://app.example.com
+    """
+    u = (url or "").strip()
+    if not u:
+        return ""
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    base = str(getattr(settings, "FLOWLY_PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
+    if base and u.startswith("/"):
+        return f"{base}{u}"
+    return u
+
+
 def _ext_from_mime(mime: str, fallback: str) -> str:
     m = (mime or "").lower().strip()
     if m.startswith("image/"):

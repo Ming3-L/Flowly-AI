@@ -13,7 +13,7 @@ from ai_engine.auth import JWTAuth
 from ai_engine.conversation import persist as chat_persist
 from ai_engine.models import ConversationMessage, ConversationSession
 from ai_engine.models import AIModelCatalogEntry, LocalMediaAsset
-from ai_engine.local_media_store import save_local_media_bytes
+from ai_engine.local_media_store import absolutize_public_url, save_local_media_bytes
 from ai_engine.integrations.ark_generative import ark_images_generate_url, ark_video_generate_poll
 from ai_engine.execution_media_services import fetch_url_bytes, openai_tts_bytes
 
@@ -45,6 +45,7 @@ class ChatMessageOutSchema(Schema):
     role: str
     content: str
     created_at: str
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ChatMessagesOutSchema(Schema):
@@ -65,6 +66,18 @@ class ChatSendOutSchema(Schema):
     ok: bool
     assistant_message: ChatMessageOutSchema | None = None
     error: str | None = None
+
+
+def _attachment_row_from_saved(*, saved: dict[str, Any], kind: str) -> dict[str, Any]:
+    prox = str(saved.get("proxy_url") or "").strip()
+    sep = "&" if "?" in prox else "?"
+    dl = f"{prox}{sep}download=1" if prox else ""
+    return {
+        "kind": kind,
+        "public_url": str(saved.get("public_url") or "").strip(),
+        "proxy_url": prox,
+        "download_url": dl,
+    }
 
 
 @chat_sessions_router.get("/sessions", response=ChatSessionListSchema)
@@ -142,6 +155,7 @@ def list_chat_messages(request: HttpRequest, session_id: int):
             role=m.role,
             content=m.content or "",
             created_at=m.created_at.isoformat() if m.created_at else "",
+            attachments=list(m.attachments) if isinstance(m.attachments, list) else [],
         )
         for m in rows
     ]
@@ -190,8 +204,20 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
     if not user_text and not payload.attachments:
         return ChatSendOutSchema(ok=False, assistant_message=None, error="empty_input")
 
+    user_attachments: list[dict[str, Any]] = []
+    for a in payload.attachments or []:
+        t = str(a.type or "").strip().lower()
+        u = str(a.url or "").strip()
+        if not u:
+            continue
+        user_attachments.append({"type": t, "url": u})
+
     # 写入用户消息，并生成对话上下文（滚动摘要 + 近期对话）
-    ctx_extra, latest_query = chat_persist.append_user_and_prepare_context(session=sess, user_text=user_text or "（空消息）")
+    ctx_extra, latest_query = chat_persist.append_user_and_prepare_context(
+        session=sess,
+        user_text=user_text or "（空消息）",
+        user_attachments=user_attachments or None,
+    )
     prior = str(ctx_extra.get("_chat_prior_transcript") or "").strip()
     summary = str(ctx_extra.get("_chat_rolling_summary") or "").strip()
 
@@ -216,109 +242,139 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
     route = "doubao"
     model_id = ""
     overrides: dict[str, Any] = {}
+    entry: AIModelCatalogEntry | None = None
     if model_key:
         entry = AIModelCatalogEntry.objects.filter(catalog_key=model_key, is_active=True).first()
-        if entry is not None and str(entry.api_kind or "") != AIModelCatalogEntry.ApiKind.ARK_CHAT:
-            ak = str(entry.api_kind or "")
-            mid = (entry.model_id or "").strip()
-            user_prompt = (latest_query or user_text or "").strip() or human_text
 
-            try:
-                if ak == AIModelCatalogEntry.ApiKind.ARK_IMAGE_GEN:
-                    if not mid:
-                        raise ValueError(f"目录项「{entry.label}」未配置 model_id")
-                    gen_url = ark_images_generate_url(model_id=mid, prompt=user_prompt, size="2K", watermark=False)
-                    raw, ct = fetch_url_bytes(gen_url)
-                    saved = save_local_media_bytes(
-                        user_id=u.pk,
-                        kind=LocalMediaAsset.Kind.IMAGE,
-                        data=raw,
-                        mime=ct or "image/png",
-                        original_name="generated.png",
-                        source_url=gen_url,
-                    )
-                    assistant_text = (
-                        f"已生成图片（{entry.label}）。\n"
-                        f"预览链接：{saved['public_url']}\n"
-                        f"下载链接：{saved['proxy_url']}\n"
-                    )
-                elif ak == AIModelCatalogEntry.ApiKind.ARK_VIDEO_GEN:
-                    if not mid:
-                        raise ValueError(f"目录项「{entry.label}」未配置 model_id")
-                    ref_img = ""
-                    for a in (payload.attachments or []):
-                        if str(a.type or "").strip().lower() == "image" and str(a.url or "").strip():
-                            ref_img = str(a.url).strip()
-                            break
-                    vid_url, _raw = ark_video_generate_poll(
-                        model_id=mid,
-                        prompt_text=user_prompt,
-                        image_url=ref_img or None,
-                        duration=5,
-                        resolution="720p",
-                        ratio="16:9",
-                        watermark=False,
-                        poll_interval_s=3.0,
-                        timeout_s=600.0,
-                    )
-                    if not vid_url:
-                        raise RuntimeError("视频任务已完成但未解析到 video_url")
-                    raw, ct = fetch_url_bytes(vid_url, max_bytes=80 * 1024 * 1024)
-                    saved = save_local_media_bytes(
-                        user_id=u.pk,
-                        kind=LocalMediaAsset.Kind.VIDEO,
-                        data=raw,
-                        mime=ct or "video/mp4",
-                        original_name="generated.mp4",
-                        source_url=vid_url,
-                    )
-                    assistant_text = (
-                        f"已生成视频（{entry.label}）。\n"
-                        f"预览链接：{saved['public_url']}\n"
-                        f"下载链接：{saved['proxy_url']}\n"
-                    )
-                elif ak == AIModelCatalogEntry.ApiKind.OPEN_SPEECH:
-                    audio, ct = openai_tts_bytes(text=user_prompt, voice="alloy", response_format="mp3")
-                    saved = save_local_media_bytes(
-                        user_id=u.pk,
-                        kind=LocalMediaAsset.Kind.AUDIO,
-                        data=audio,
-                        mime=ct or "audio/mpeg",
-                        original_name="tts.mp3",
-                        source_url="",
-                    )
-                    assistant_text = (
-                        "已生成音频（TTS）。\n"
-                        f"预览链接：{saved['public_url']}\n"
-                        f"下载链接：{saved['proxy_url']}\n"
-                    )
-                else:
-                    raise ValueError(f"暂不支持的 api_kind: {ak}")
-            except Exception as exc:
-                assistant_text = f"错误: {exc}"
+    if entry is not None and str(entry.api_kind or "") == AIModelCatalogEntry.ApiKind.ARK_EMBEDDING:
+        assistant_text = (
+            f"错误: 模型「{entry.label}」为向量嵌入（{entry.api_kind}），不能用于对话。"
+            "请在模型列表中选择「对话/补全」类模型（api_kind=ark_chat）。"
+        )
+        try:
+            chat_persist.record_assistant_reply(session_id=sess.pk, content=assistant_text)
+        except Exception:
+            pass
+        row = (
+            ConversationMessage.objects.filter(session=sess, role=ConversationMessage.Role.ASSISTANT)
+            .order_by("-created_at")
+            .first()
+        )
+        if row is None:
+            return ChatSendOutSchema(ok=True, assistant_message=None, error=None)
+        return ChatSendOutSchema(
+            ok=True,
+            assistant_message=ChatMessageOutSchema(
+                id=row.pk,
+                role=row.role,
+                content=row.content or "",
+                created_at=row.created_at.isoformat() if row.created_at else "",
+                attachments=list(row.attachments) if isinstance(row.attachments, list) else [],
+            ),
+            error=None,
+        )
 
-            try:
-                chat_persist.record_assistant_reply(session_id=sess.pk, content=assistant_text)
-            except Exception:
-                pass
-            row = (
-                ConversationMessage.objects.filter(session=sess, role=ConversationMessage.Role.ASSISTANT)
-                .order_by("-created_at")
-                .first()
+    if model_key and entry is not None and str(entry.api_kind or "") != AIModelCatalogEntry.ApiKind.ARK_CHAT:
+        ak = str(entry.api_kind or "")
+        mid = (entry.model_id or "").strip()
+        user_prompt = (latest_query or user_text or "").strip() or human_text
+        assistant_attachments: list[dict[str, Any]] = []
+
+        try:
+            if ak == AIModelCatalogEntry.ApiKind.ARK_IMAGE_GEN:
+                if not mid:
+                    raise ValueError(f"目录项「{entry.label}」未配置 model_id")
+                gen_url = ark_images_generate_url(model_id=mid, prompt=user_prompt, size="2K", watermark=False)
+                raw, ct = fetch_url_bytes(gen_url)
+                saved = save_local_media_bytes(
+                    user_id=u.pk,
+                    kind=LocalMediaAsset.Kind.IMAGE,
+                    data=raw,
+                    mime=ct or "image/png",
+                    original_name="generated.png",
+                    source_url=gen_url,
+                )
+                assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="image")]
+                assistant_text = f"已生成图片（{entry.label}）。"
+            elif ak == AIModelCatalogEntry.ApiKind.ARK_VIDEO_GEN:
+                if not mid:
+                    raise ValueError(f"目录项「{entry.label}」未配置 model_id")
+                ref_img = ""
+                for a in payload.attachments or []:
+                    if str(a.type or "").strip().lower() == "image" and str(a.url or "").strip():
+                        ref_img = absolutize_public_url(str(a.url).strip())
+                        break
+                vid_url, _raw = ark_video_generate_poll(
+                    model_id=mid,
+                    prompt_text=user_prompt,
+                    image_url=ref_img or None,
+                    duration=5,
+                    resolution="720p",
+                    ratio="16:9",
+                    watermark=False,
+                    poll_interval_s=3.0,
+                    timeout_s=600.0,
+                )
+                if not vid_url:
+                    raise RuntimeError("视频任务已完成但未解析到 video_url")
+                raw, ct = fetch_url_bytes(vid_url, max_bytes=80 * 1024 * 1024)
+                saved = save_local_media_bytes(
+                    user_id=u.pk,
+                    kind=LocalMediaAsset.Kind.VIDEO,
+                    data=raw,
+                    mime=ct or "video/mp4",
+                    original_name="generated.mp4",
+                    source_url=vid_url,
+                )
+                assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="video")]
+                mode_hint = "图生视频" if ref_img else "文生视频"
+                assistant_text = f"已生成视频（{entry.label}，{mode_hint}）。"
+            elif ak == AIModelCatalogEntry.ApiKind.OPEN_SPEECH:
+                audio, ct = openai_tts_bytes(text=user_prompt, voice="alloy", response_format="mp3")
+                saved = save_local_media_bytes(
+                    user_id=u.pk,
+                    kind=LocalMediaAsset.Kind.AUDIO,
+                    data=audio,
+                    mime=ct or "audio/mpeg",
+                    original_name="tts.mp3",
+                    source_url="",
+                )
+                assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="audio")]
+                assistant_text = "已生成音频（TTS）。"
+            else:
+                raise ValueError(f"暂不支持的 api_kind: {ak}")
+        except Exception as exc:
+            assistant_text = f"错误: {exc}"
+            assistant_attachments = []
+
+        try:
+            chat_persist.record_assistant_reply(
+                session_id=sess.pk,
+                content=assistant_text,
+                attachments=assistant_attachments or None,
             )
-            if row is None:
-                return ChatSendOutSchema(ok=True, assistant_message=None, error=None)
-            return ChatSendOutSchema(
-                ok=True,
-                assistant_message=ChatMessageOutSchema(
-                    id=row.pk,
-                    role=row.role,
-                    content=row.content or "",
-                    created_at=row.created_at.isoformat() if row.created_at else "",
-                ),
-                error=None,
-            )
+        except Exception:
+            pass
+        row = (
+            ConversationMessage.objects.filter(session=sess, role=ConversationMessage.Role.ASSISTANT)
+            .order_by("-created_at")
+            .first()
+        )
+        if row is None:
+            return ChatSendOutSchema(ok=True, assistant_message=None, error=None)
+        return ChatSendOutSchema(
+            ok=True,
+            assistant_message=ChatMessageOutSchema(
+                id=row.pk,
+                role=row.role,
+                content=row.content or "",
+                created_at=row.created_at.isoformat() if row.created_at else "",
+                attachments=list(row.attachments) if isinstance(row.attachments, list) else [],
+            ),
+            error=None,
+        )
 
+    if model_key:
         from ai_engine.ai_model_catalog import get_user_preset_llm_overrides, resolve_route_and_model_id
 
         route, model_id, cat_key = resolve_route_and_model_id({"modelKey": model_key}, user_id=u.pk)
@@ -334,7 +390,9 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
     if images:
         mm_content: list[dict[str, Any]] = [{"type": "text", "text": human_text}]
         for a in images[:4]:  # 简单限制数量，避免超长 payload
-            mm_content.append({"type": "image_url", "image_url": {"url": str(a.url).strip()}})
+            mm_content.append(
+                {"type": "image_url", "image_url": {"url": absolutize_public_url(str(a.url).strip())}}
+            )
         human_msg = HumanMessage(content=mm_content)
     else:
         human_msg = HumanMessage(content=human_text)
@@ -366,6 +424,7 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
             role=row.role,
             content=row.content or "",
             created_at=row.created_at.isoformat() if row.created_at else "",
+            attachments=list(row.attachments) if isinstance(row.attachments, list) else [],
         ),
         error=None,
     )

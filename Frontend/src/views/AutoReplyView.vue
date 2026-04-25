@@ -277,6 +277,38 @@ python -m ai_engine.desktop_screen_agent</pre>
               {{ defaultRuleLabel }}
             </el-descriptions-item>
           </el-descriptions>
+          <div class="mb8" style="font-weight: 600; font-size: 13px; margin: 8px 0 6px">运行检测（本机代理上报）</div>
+          <el-descriptions :column="2" border size="small" class="mb8">
+            <el-descriptions-item label="快照时间">
+              {{ String(agentRuntimeSnapshot.updated_at || '—') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="检测到聊天区域">
+              {{ yn(agentRuntimeSnapshot.detected_chat_area) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="检测到输入框">
+              {{ yn(agentRuntimeSnapshot.detected_input_box) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="检测到用户名区域">
+              {{ yn(agentRuntimeSnapshot.detected_user_name_area) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="检测到好友列表区域">
+              {{ yn(agentRuntimeSnapshot.detected_friend_list) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="检测到消息变化">
+              {{ yn(agentRuntimeSnapshot.detected_message_change) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="区域识别说明" :span="2">
+              {{ String(agentRuntimeSnapshot.chat_area_source || '—') }}
+            </el-descriptions-item>
+            <el-descriptions-item label="最近 OCR 摘要" :span="2">
+              <span style="white-space: pre-wrap; word-break: break-all">{{
+                String(agentRuntimeSnapshot.chat_ocr_preview || '').slice(0, 600) || '—'
+              }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="最近一句聊天文本" :span="2">
+              {{ String(agentRuntimeSnapshot.chat_last_line || '—') }}
+            </el-descriptions-item>
+          </el-descriptions>
           <el-form label-position="left" label-width="120px">
             <el-form-item label="开始监控">
               <el-switch v-model="screenForm.monitoring_active" active-text="运行中" inactive-text="已暂停" />
@@ -299,6 +331,20 @@ python -m ai_engine.desktop_screen_agent</pre>
             </el-form-item>
           </el-form>
           <p class="box-hint">本机代理拉取该开关；关闭时仅低频轮询配置。</p>
+        </el-card>
+        <el-card shadow="never" class="card mt">
+          <template #header>
+            <div class="card-hdr">
+              <span>自动回复对话记录</span>
+              <el-button size="small" type="primary" @click="loadMonitorHistory">刷新</el-button>
+            </div>
+          </template>
+          <el-table :data="monitorChatHistory" size="small" stripe max-height="320" empty-text="暂无记录（成功自动回复后会写入）">
+            <el-table-column prop="created_at" label="时间" width="160" />
+            <el-table-column prop="friend_name" label="好友" width="120" show-overflow-tooltip />
+            <el-table-column prop="role" label="角色" width="100" />
+            <el-table-column prop="content" label="内容" min-width="200" show-overflow-tooltip />
+          </el-table>
         </el-card>
         <el-card shadow="never" class="card mt">
           <template #header>
@@ -409,6 +455,24 @@ python -m ai_engine.desktop_screen_agent</pre>
             <el-option v-for="r in activeRules" :key="r.id" :label="r.name" :value="r.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="对话模型（可选；覆盖规则内模型，仅文本类）">
+          <el-select
+            v-model="friendForm.model_key"
+            filterable
+            clearable
+            placeholder="留空则使用规则或服务端默认模型"
+            style="width: 100%"
+          >
+            <el-option label="（留空：跟随规则/默认）" value="" />
+            <el-option-group
+              v-for="(grp, idx) in autoReplyModelGroups"
+              :key="`ff-${grp.label}-${idx}`"
+              :label="grp.label"
+            >
+              <el-option v-for="m in grp.rows" :key="`ff-${m.key}`" :label="m.label" :value="m.key" />
+            </el-option-group>
+          </el-select>
+        </el-form-item>
         <el-form-item label="聊天风格（人格键）">
           <el-select v-model="friendForm.personality_key" clearable placeholder="默认" style="width: 100%">
             <el-option v-for="p in presetPersonalities" :key="p.key" :label="p.label" :value="p.key" />
@@ -516,6 +580,7 @@ interface ScreenProfile {
   region_detect_ack_nonce: number
   default_rule_id: number | null
   updated_at: string
+  agent_runtime_snapshot?: Record<string, unknown>
 }
 
 interface KbEntry {
@@ -640,6 +705,21 @@ const agentRunning = ref(false)
 const agentPid = ref<number | null>(null)
 const agentLoading = ref(false)
 const agentError = ref('')
+const agentRuntimeSnapshot = ref<Record<string, unknown>>({})
+
+interface MonitorChatHistRow {
+  id: number
+  friend_name: string
+  role: string
+  content: string
+  created_at: string
+}
+
+const monitorChatHistory = ref<MonitorChatHistRow[]>([])
+
+function yn(v: unknown): string {
+  return v === true || v === 'true' || v === 1 ? '是' : '否'
+}
 
 const nbox = reactive({
   chat_window: [0, 0, 0, 0],
@@ -653,6 +733,7 @@ const friendForm = ref({
   name: '',
   nameLocked: false,
   rule_id: undefined as number | undefined,
+  model_key: '',
   personality_key: '',
   scene_key: '',
   custom_system_prompt: '',
@@ -732,7 +813,9 @@ const monitoredFriendRows = computed<MonitoredRow[]>(() => {
     const rule = rid ? rules.value.find((x) => x.id === rid) : null
     const defRid = Number(screenForm.value.default_rule_id || 0) || 0
     const defRule = !rid && defRid ? rules.value.find((x) => x.id === defRid) : null
+    const directMk = String(o.model_key || '').trim()
     const effectiveModelKey =
+      directMk ||
       (rule?.model_key || '').trim() ||
       (defRule?.model_key || '').trim() ||
       '（服务端默认：FLOWLY_AUTO_REPLY_MODEL_KEY）'
@@ -740,11 +823,13 @@ const monitoredFriendRows = computed<MonitoredRow[]>(() => {
       name,
       personality_label: presetPersonalityLabel(pk),
       scene_label: presetSceneLabel(sk),
-      rule_label: rid
-        ? `${ruleLabelById(rid)}${rule?.model_key ? `（${rule.model_key}）` : '（服务端默认模型）'}`
-        : defRule
-          ? `${ruleLabelById(defRid)}${defRule.model_key ? `（${defRule.model_key}）` : '（服务端默认模型）'}`
-          : '默认规则（服务端默认模型）',
+      rule_label: directMk
+        ? `好友直选模型（${directMk}）`
+        : rid
+          ? `${ruleLabelById(rid)}${rule?.model_key ? `（${rule.model_key}）` : '（服务端默认模型）'}`
+          : defRule
+            ? `${ruleLabelById(defRid)}${defRule.model_key ? `（${defRule.model_key}）` : '（服务端默认模型）'}`
+            : '默认规则（服务端默认模型）',
       effective_model_key: effectiveModelKey,
       has_custom: !!String(o.custom_system_prompt || '').trim(),
     }
@@ -847,6 +932,10 @@ function applyScreenProfile(p: ScreenProfile) {
   fillNboxFromArrays('user_name', p.user_name_box)
   fillNboxFromArrays('friend_list', p.friend_list_box)
   fillNboxFromArrays('input_box', p.input_box_pos)
+  agentRuntimeSnapshot.value =
+    p.agent_runtime_snapshot && typeof p.agent_runtime_snapshot === 'object'
+      ? { ...p.agent_runtime_snapshot }
+      : {}
 }
 
 async function loadScreenProfile() {
@@ -861,6 +950,8 @@ async function refreshAgentStatus() {
     const { data } = await api.get<{ running: boolean; pid: number | null }>('/auto-reply/agent/status')
     agentRunning.value = !!data.running
     agentPid.value = data.pid ?? null
+    await loadScreenProfile()
+    await loadMonitorHistory()
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     agentError.value = err?.response?.data?.detail || '无法获取本机进程状态（后端未启动或权限不足）'
@@ -1011,6 +1102,17 @@ function onMainTabChange(tab: string | number) {
   if (t === 'knowledge') void loadKbEntries()
   if (t === 'monitor') {
     void refreshAgentStatus()
+    void loadScreenProfile()
+    void loadMonitorHistory()
+  }
+}
+
+async function loadMonitorHistory() {
+  try {
+    const { data } = await api.get<MonitorChatHistRow[]>('/auto-reply/chat-history?limit=40')
+    monitorChatHistory.value = Array.isArray(data) ? data : []
+  } catch {
+    monitorChatHistory.value = []
   }
 }
 
@@ -1054,6 +1156,7 @@ function openFriendDialog(name?: string) {
       name,
       nameLocked: true,
       rule_id: typeof o.rule_id === 'number' ? (o.rule_id as number) : undefined,
+      model_key: String(o.model_key || ''),
       personality_key: String(o.personality || o.personality_key || ''),
       scene_key: String(o.scene || o.scene_key || ''),
       custom_system_prompt: String(o.custom_system_prompt || ''),
@@ -1066,6 +1169,7 @@ function openFriendDialog(name?: string) {
       name: '',
       nameLocked: false,
       rule_id: undefined,
+      model_key: '',
       personality_key: '',
       scene_key: '',
       custom_system_prompt: '',
@@ -1080,6 +1184,7 @@ function resetFriendForm() {
     name: '',
     nameLocked: false,
     rule_id: undefined,
+    model_key: '',
     personality_key: '',
     scene_key: '',
     custom_system_prompt: '',
@@ -1101,6 +1206,7 @@ async function saveFriendOverride() {
   fo[nm] = {
     name: nm,
     rule_id: friendForm.value.rule_id ?? null,
+    model_key: friendForm.value.model_key.trim(),
     personality: friendForm.value.personality_key || 'gentle_healing',
     scene: friendForm.value.scene_key || 'daily_chat',
     custom_system_prompt: friendForm.value.custom_system_prompt.trim(),

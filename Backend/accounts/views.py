@@ -5,6 +5,7 @@ All endpoints under /api/auth/ via the ai_engine NinjaAPI mount.
 """
 
 import logging
+import os
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -100,8 +101,15 @@ def register(request, payload: RegisterSchema):
     is_superuser = False
     if payload.register_as_staff:
         invite = (payload.admin_invite_code or "").strip()
-        super_code = getattr(settings, "FLOWLY_SUPERUSER_REGISTER_INVITE", "") or ""
-        admin_code = getattr(settings, "FLOWLY_ADMIN_REGISTER_INVITE", "") or ""
+        # 同时读 os.environ：避免极少数启动顺序下 settings 与进程环境不一致；并提示检查 Backend/.env
+        super_code = (
+            (getattr(settings, "FLOWLY_SUPERUSER_REGISTER_INVITE", "") or "").strip()
+            or (os.getenv("FLOWLY_SUPERUSER_REGISTER_INVITE", "") or "").strip()
+        )
+        admin_code = (
+            (getattr(settings, "FLOWLY_ADMIN_REGISTER_INVITE", "") or "").strip()
+            or (os.getenv("FLOWLY_ADMIN_REGISTER_INVITE", "") or "").strip()
+        )
         if not invite:
             return 400, AuthErrorSchema(
                 message="注册失败",
@@ -110,7 +118,7 @@ def register(request, payload: RegisterSchema):
         if not super_code and not admin_code:
             return 400, AuthErrorSchema(
                 message="注册失败",
-                detail="服务器未开放管理员自助注册（未配置邀请码）",
+                detail="服务器未开放管理员自助注册（未配置邀请码）。请在 Backend/.env 中设置 FLOWLY_ADMIN_REGISTER_INVITE 或 FLOWLY_SUPERUSER_REGISTER_INVITE 后重启后端进程。",
             )
         if super_code and invite == super_code:
             is_staff = True

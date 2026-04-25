@@ -53,12 +53,20 @@ def create_session(*, user: User, topic: str = "") -> ConversationSession:
 
 
 @transaction.atomic
-def append_message(*, session: ConversationSession, role: str, content: str, metadata: dict | None = None) -> ConversationMessage:
+def append_message(
+    *,
+    session: ConversationSession,
+    role: str,
+    content: str,
+    metadata: dict | None = None,
+    attachments: list[dict[str, Any]] | None = None,
+) -> ConversationMessage:
     return ConversationMessage.objects.create(
         session=session,
         role=role,
         content=content or "",
         metadata=metadata or {},
+        attachments=list(attachments or []),
     )
 
 
@@ -94,11 +102,21 @@ def build_prior_transcript(*, session_id: int, exclude_last_n: int = 1) -> str:
 
 
 @transaction.atomic
-def append_user_and_prepare_context(*, session: ConversationSession, user_text: str) -> tuple[dict[str, Any], str]:
+def append_user_and_prepare_context(
+    *,
+    session: ConversationSession,
+    user_text: str,
+    user_attachments: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], str]:
     """
     写入用户消息，返回 (要合并进 workflow context 的 dict, 当前用户一句原文)。
     """
-    append_message(session=session, role=ConversationMessage.Role.USER, content=user_text)
+    append_message(
+        session=session,
+        role=ConversationMessage.Role.USER,
+        content=user_text,
+        attachments=user_attachments,
+    )
     session.topic = (session.topic or "").strip() or _snippet(user_text, 40)
     md = dict(session.metadata or {})
     summary = str(md.get("rolling_summary") or "").strip()
@@ -113,10 +131,20 @@ def append_user_and_prepare_context(*, session: ConversationSession, user_text: 
 
 
 @transaction.atomic
-def record_assistant_reply(*, session_id: int, content: str) -> None:
+def record_assistant_reply(
+    *,
+    session_id: int,
+    content: str,
+    attachments: list[dict[str, Any]] | None = None,
+) -> None:
     """执行成功后写入助手回复并更新滚动摘要（轻量拼接，非二次模型调用）。"""
     sess = ConversationSession.objects.select_for_update().get(pk=session_id)
-    append_message(session=sess, role=ConversationMessage.Role.ASSISTANT, content=content or "")
+    append_message(
+        session=sess,
+        role=ConversationMessage.Role.ASSISTANT,
+        content=content or "",
+        attachments=attachments,
+    )
     md = dict(sess.metadata or {})
     prev = str(md.get("rolling_summary") or "").strip()
     last_user = (
