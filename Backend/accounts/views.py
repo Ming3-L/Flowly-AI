@@ -127,10 +127,15 @@ def register(request, payload: RegisterSchema):
             is_staff = True
             is_superuser = False
         else:
-            return 400, AuthErrorSchema(
-                message="注册失败",
-                detail="管理员邀请码无效",
-            )
+            detail = "管理员邀请码无效。"
+            up = invite.upper()
+            if "FLOWLY_" in up or "REGISTER_INVITE" in up:
+                detail += (
+                    " 提示：你输入的像是「环境变量名」。请在服务器 Backend/.env 中复制 "
+                    "FLOWLY_ADMIN_REGISTER_INVITE= 或 FLOWLY_SUPERUSER_REGISTER_INVITE= **等号右边** 的整段随机码（不要包含变量名），"
+                    "修改 .env 后需重启 Django。"
+                )
+            return 400, AuthErrorSchema(message="注册失败", detail=detail)
 
     try:
         with transaction.atomic():

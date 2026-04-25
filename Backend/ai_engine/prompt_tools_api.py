@@ -64,8 +64,10 @@ def _require_staff(request: HttpRequest) -> None:
     from ninja.errors import HttpError  # pyright: ignore[reportMissingImports]
 
     u = getattr(request, "auth", None)
-    if u is None or not bool(getattr(u, "is_staff", False)):
-        raise HttpError(403, "需要管理员（is_staff）权限")
+    if u is None or not (
+        bool(getattr(u, "is_staff", False)) or bool(getattr(u, "is_superuser", False))
+    ):
+        raise HttpError(403, "需要管理员（is_staff 或 is_superuser）权限")
 
 
 class AIModelCatalogEntryOutSchema(Schema):

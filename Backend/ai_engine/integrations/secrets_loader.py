@@ -3,16 +3,17 @@ AI 相关密钥与端点配置的**唯一封装入口**。
 
 数据来源（按优先级）
 --------------------
-1. 进程环境变量（可由 ``Backend/.env`` 注入）— 非空则优先。
-2. ``project_secrets_local.py``（从 ``project_secrets_local.example.py`` 复制，已 gitignore）。
-3. 代码内默认值（仅少量非敏感项）。
+1. **数据库** ``PlatformAIProviderSecrets``（单例加密存储；后台管理员维护）— 某 key 非空则优先。
+2. 进程环境变量（可由 ``Backend/.env`` 注入）。
+3. ``project_secrets_local.py``（从 ``project_secrets_local.example.py`` 复制，已 gitignore）。
+4. 代码内默认值（仅少量非敏感项）。
 
 返回结构 ``AIProviderSettings`` 按**能力维度**分组（语言 / 图片 / 音频 / 视频 / 向量），
 便于工作流里不同节点各取所需。业务代码请统一使用 ``get_ai_provider_settings()``。
 
 与数据库的关系
 --------------
-``WorkflowGraphNode.config`` 等 JSON 不得存放 API Key；密钥仅来自本模块路径。
+``WorkflowGraphNode.config`` 等 JSON 不得存放 API Key；平台级密钥来自数据库或本模块路径。
 """
 
 from __future__ import annotations
@@ -70,9 +71,12 @@ _LOCAL_ENV_KEYS: Final[tuple[str, ...]] = (
     "JINA_API_KEY",
     "VOYAGE_API_KEY",
     "VOYAGE_EMBEDDING_MODEL",
+    # 行为开关（与 workflow 中 openai 默认走方舟一致）
+    "FLOWLY_USE_DOUBAO_DEFAULT",
 )
 
 _local_overrides_cache: dict[str, str] | None = None
+_db_overrides_cache: dict[str, str] | None = None
 
 
 def _load_local_module_overrides() -> dict[str, str]:
@@ -94,13 +98,69 @@ def _load_local_module_overrides() -> dict[str, str]:
 
 
 def clear_local_secrets_cache() -> None:
-    """清除本地模块解析缓存（测试或热重载用）。"""
-    global _local_overrides_cache
+    """清除本地模块与数据库解析缓存（测试、保存平台配置后调用）。"""
+    global _local_overrides_cache, _db_overrides_cache
     _local_overrides_cache = None
+    _db_overrides_cache = None
+
+
+def _load_db_overrides() -> dict[str, str]:
+    """进程内缓存的数据库覆盖项（解密后）。"""
+    global _db_overrides_cache
+    if _db_overrides_cache is not None:
+        return _db_overrides_cache
+    try:
+        from ai_engine.integrations.db_platform_secrets import load_plain_entries
+
+        _db_overrides_cache = load_plain_entries()
+    except Exception:
+        _db_overrides_cache = {}
+    return _db_overrides_cache
+
+
+def managed_ai_config_key_names() -> tuple[str, ...]:
+    """与平台后台可编辑项一致的环境变量名列表。"""
+    return _LOCAL_ENV_KEYS
+
+
+def describe_managed_keys_for_admin() -> list[dict[str, str | bool]]:
+    """管理员只读状态：每项当前生效层与是否非空（不返回明文）。"""
+    db = _load_db_overrides()
+    rows: list[dict[str, str | bool]] = []
+    for key in _LOCAL_ENV_KEYS:
+        in_db = key in db and str(db.get(key, "")).strip() != ""
+        env_raw = os.environ.get(key)
+        env_set = env_raw is not None and str(env_raw).strip() != ""
+        loc = _load_local_module_overrides().get(key, "")
+        local_set = str(loc).strip() != ""
+
+        if in_db:
+            winning = "database"
+        elif env_set:
+            winning = "environment"
+        elif local_set:
+            winning = "local_file"
+        else:
+            winning = "default"
+
+        eff = _resolve(key, default="")
+        rows.append(
+            {
+                "key": key,
+                "winning_source": winning,
+                "is_effective_non_empty": bool(str(eff).strip()),
+            }
+        )
+    return rows
 
 
 def _resolve(name: str, *, default: str = "") -> str:
-    """环境变量（非空）优先，否则 ``project_secrets_local``，否则 ``default``。"""
+    """数据库非空优先，其次环境变量，其次 ``project_secrets_local``，否则 ``default``。"""
+    db_map = _load_db_overrides()
+    if name in db_map:
+        db_raw = db_map.get(name, "")
+        if str(db_raw).strip() != "":
+            return str(db_raw).strip()
     env_raw = os.environ.get(name)
     if env_raw is not None and str(env_raw).strip() != "":
         return str(env_raw).strip()
@@ -154,6 +214,7 @@ class LanguageModelSettings:
     doubao_ark_base_url: str
     doubao_ark_model: str
     doubao_ark_smart_router_endpoint: str
+    flowly_use_doubao_default: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,6 +316,7 @@ def get_ai_provider_settings() -> AIProviderSettings:
         ),
         doubao_ark_model=_resolve("DOUBAO_ARK_MODEL", default=""),
         doubao_ark_smart_router_endpoint=_resolve("DOUBAO_ARK_SMART_ROUTER_ENDPOINT", default=""),
+        flowly_use_doubao_default=_resolve("FLOWLY_USE_DOUBAO_DEFAULT", default="1"),
     )
     image = ImageModelSettings(
         openai_image_model=_resolve("OPENAI_IMAGE_MODEL", default="dall-e-3"),

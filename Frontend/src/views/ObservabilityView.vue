@@ -121,6 +121,7 @@
       </template>
       <el-table :data="workflowStats" v-loading="loading" stripe>
         <el-table-column prop="name" label="工作流" min-width="180" />
+        <el-table-column prop="owner_username" label="所属用户" min-width="120" show-overflow-tooltip />
         <el-table-column prop="execution_count_30d" label="30天执行数" width="130" align="center">
           <template #default="{ row }">{{ formatNumber(row.execution_count_30d) }}</template>
         </el-table-column>

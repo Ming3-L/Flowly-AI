@@ -301,17 +301,21 @@ class CostTracker:
         self,
         start_date: date,
         end_date: date,
+        *,
+        user_id: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Get cost breakdown by model."""
+        """Get cost breakdown by model. ``user_id`` 非空时仅统计该用户。"""
         from .analytics_models import CostRecord
         from django.db.models import Sum, Count
 
+        qs = CostRecord.objects.filter(
+            created_at__date__gte=start_date,
+            created_at__date__lte=end_date,
+        )
+        if user_id is not None:
+            qs = qs.filter(user_id=int(user_id))
         breakdown = (
-            CostRecord.objects.filter(
-                created_at__date__gte=start_date,
-                created_at__date__lte=end_date,
-            )
-            .values("model", "provider")
+            qs.values("model", "provider")
             .annotate(
                 total_cost=Sum("total_cost_usd"),
                 total_input_tokens=Sum("input_tokens"),

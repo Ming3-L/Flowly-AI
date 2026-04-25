@@ -87,11 +87,22 @@ class WorkflowStatsSchema(Schema):
     success_rate: float
     avg_cost_30d: float
     avg_duration_seconds: float | None
+    owner_user_id: int | None = None
+    owner_username: str = ""
 
 
 # ─── 路由（Router）───────────────────────────────────────────────────────────
 
 router = Router(tags=["Observability / Analytics"], auth=JWTAuth())
+
+
+def _request_user(request: HttpRequest):
+    return getattr(request, "auth", None) or getattr(request, "user", None)
+
+
+def _is_platform_staff(u: Any) -> bool:
+    """平台管理员：可查看全站监控与后台数据（与 Django is_staff / 超管一致）。"""
+    return bool(u) and (bool(getattr(u, "is_staff", False)) or bool(getattr(u, "is_superuser", False)))
 
 
 def _parse_date(d: Optional[str], default: date) -> date:
@@ -124,17 +135,19 @@ def get_usage_analytics(
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
 
-    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    u = _request_user(request)
     if not getattr(u, "is_authenticated", False):
         from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
 
         raise AuthenticationError("Authentication required")
 
+    staff = _is_platform_staff(u)
     queryset = WorkflowExecution.objects.filter(
-        thread__user=u,
         started_at__date__gte=start,
         started_at__date__lte=end,
     )
+    if not staff:
+        queryset = queryset.filter(thread__user=u)
     if workflow_id:
         queryset = queryset.filter(workflow_id=workflow_id)
 
@@ -217,20 +230,21 @@ def get_cost_analytics(
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
 
-    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    u = _request_user(request)
     if not getattr(u, "is_authenticated", False):
         from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
 
         raise AuthenticationError("Authentication required")
 
+    staff = _is_platform_staff(u)
     queryset = CostRecord.objects.filter(
         created_at__date__gte=start,
         created_at__date__lte=end,
     )
-    if user_id:
-        queryset = queryset.filter(user_id=user_id)
-    else:
+    if not staff:
         queryset = queryset.filter(user=u)
+    elif user_id is not None:
+        queryset = queryset.filter(user_id=int(user_id))
 
     # 总计
     totals = queryset.aggregate(
@@ -239,15 +253,13 @@ def get_cost_analytics(
         total_output=django_models.Sum("output_tokens"),
     )
 
-    # 按模型分组
-    model_breakdown = get_cost_tracker().get_model_breakdown(start, end)
-    if user_id:
-        pass  # 已在上方过滤
-    else:
-        model_breakdown = [
-            row for row in model_breakdown
-            if True  # 当前用户的全部模型
-        ]
+    # 按模型分组（与 queryset 用户范围一致）
+    breakdown_uid: int | None = None
+    if not staff:
+        breakdown_uid = int(u.pk)
+    elif user_id is not None:
+        breakdown_uid = int(user_id)
+    model_breakdown = get_cost_tracker().get_model_breakdown(start, end, user_id=breakdown_uid)
 
     # 按日期分组
     by_date_qs = (
@@ -295,22 +307,21 @@ def get_performance_analytics(
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
 
-    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    u = _request_user(request)
     if not getattr(u, "is_authenticated", False):
         from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
 
         raise AuthenticationError("Authentication required")
 
-    latencies = list(
-        CostRecord.objects.filter(
-            user=u,
-            created_at__date__gte=start,
-            created_at__date__lte=end,
-            latency_ms__gt=0,
-        )
-        .values_list("latency_ms", flat=True)
-        .order_by("latency_ms")
+    staff = _is_platform_staff(u)
+    lat_qs = CostRecord.objects.filter(
+        created_at__date__gte=start,
+        created_at__date__lte=end,
+        latency_ms__gt=0,
     )
+    if not staff:
+        lat_qs = lat_qs.filter(user=u)
+    latencies = list(lat_qs.values_list("latency_ms", flat=True).order_by("latency_ms"))
 
     def percentile(data: list, p: float) -> float:
         if not data:
@@ -325,9 +336,11 @@ def get_performance_analytics(
     p99 = percentile(latencies, 0.99)
 
     # 最慢的工作流（按平均耗时）
+    wf_scope = Workflow.objects.filter(is_deleted=False)
+    if not staff:
+        wf_scope = wf_scope.filter(user=u)
     slowest = (
-        Workflow.objects.filter(user=u, is_deleted=False)
-        .annotate(
+        wf_scope.annotate(
             avg_dur=Avg(
                 F("executions__completed_at") - F("executions__started_at"),
             )
@@ -376,16 +389,19 @@ def get_workflow_stats(
     start = _parse_date(start_date, date.today() - timedelta(days=30))
     end = _parse_date(end_date, date.today())
 
-    u = getattr(request, "auth", None) or getattr(request, "user", None)
+    u = _request_user(request)
     if not getattr(u, "is_authenticated", False):
         from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
 
         raise AuthenticationError("Authentication required")
 
-    workflows = Workflow.objects.filter(user=u, is_deleted=False)
+    staff = _is_platform_staff(u)
+    wf_qs = Workflow.objects.filter(is_deleted=False)
+    if not staff:
+        wf_qs = wf_qs.filter(user=u)
 
     results: list[WorkflowStatsSchema] = []
-    for wf in workflows:
+    for wf in wf_qs.select_related("user"):
         execs = wf.executions.filter(
             started_at__date__gte=start,
             started_at__date__lte=end,
@@ -411,6 +427,9 @@ def get_workflow_stats(
             or 0
         )
 
+        owner_uid = int(wf.user_id) if wf.user_id else None
+        owner_username = (getattr(wf.user, "username", "") or "") if wf.user_id else ""
+
         results.append(
             WorkflowStatsSchema(
                 workflow_id=wf.id,
@@ -419,6 +438,8 @@ def get_workflow_stats(
                 success_rate=round(success_rate * 100, 2),
                 avg_cost_30d=float(cost_sum),
                 avg_duration_seconds=round(avg_seconds, 2) if avg_seconds else None,
+                owner_user_id=owner_uid,
+                owner_username=owner_username,
             )
         )
 

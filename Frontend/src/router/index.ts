@@ -75,7 +75,13 @@ const routes: RouteRecordRaw[] = [
     path: '/observability',
     name: 'Observability',
     component: () => import('@/views/ObservabilityView.vue'),
-    meta: { requiresAuth: true },
+    meta: { requiresAuth: true, requiresStaff: true },
+  },
+  {
+    path: '/admin',
+    name: 'AdminConsole',
+    component: () => import('@/views/AdminConsoleView.vue'),
+    meta: { requiresAuth: true, requiresStaff: true },
   },
   {
     path: '/run',
@@ -121,6 +127,12 @@ router.beforeEach(async (to, _from, next) => {
   // Protected routes: redirect unauthenticated users to login
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return next({ name: 'Login', query: { redirect: to.fullPath } })
+  }
+
+  const staff =
+    !!auth.user && (Boolean(auth.user.is_staff) || Boolean(auth.user.is_superuser))
+  if (to.meta.requiresStaff && !staff) {
+    return next('/dashboard')
   }
 
   next()

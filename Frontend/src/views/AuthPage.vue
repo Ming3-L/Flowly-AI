@@ -196,10 +196,15 @@
               <el-input
                 v-model="registerForm.admin_invite_code"
                 type="password"
-                placeholder="由部署方配置 FLOWLY_ADMIN_REGISTER_INVITE 等环境变量后提供"
+                placeholder="粘贴 .env 里「=」右侧的随机码，勿填 FLOWLY_… 变量名"
                 size="large"
                 show-password
               />
+              <p class="invite-tip">
+                在 <code>Backend/.env</code> 中找到
+                <code>FLOWLY_ADMIN_REGISTER_INVITE</code> 或
+                <code>FLOWLY_SUPERUSER_REGISTER_INVITE</code>，把<strong>等号后面</strong>整段复制到这里（与文件里完全一致，含大小写与符号）。
+              </p>
             </el-form-item>
 
             <el-form-item>
@@ -626,6 +631,25 @@ async function handleRegister() {
   &:hover {
     background: #1a1a1a;
     border-color: #1a1a1a;
+  }
+}
+
+.invite-tip {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #606266;
+
+  code {
+    font-size: 11px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: #f5f7fa;
+    color: #303133;
+  }
+
+  strong {
+    color: #303133;
   }
 }
 

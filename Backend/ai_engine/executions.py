@@ -28,6 +28,12 @@ from .models import Workflow, WorkflowExecution, Thread
 exec_router = Router(tags=["Executions"], auth=JWTAuth())
 
 
+def _platform_staff(u) -> bool:
+    return bool(u) and (
+        bool(getattr(u, "is_staff", False)) or bool(getattr(u, "is_superuser", False))
+    )
+
+
 class ExecutionResponseSchema(Schema):
     id: int
     workflow_id: int
@@ -97,7 +103,9 @@ def list_executions(
     列出当前已认证用户的工作流执行记录。
     """
     u = getattr(request, "auth", None) or getattr(request, "user", None)
-    queryset = WorkflowExecution.objects.filter(thread__user=u).select_related("workflow", "thread")
+    queryset = WorkflowExecution.objects.select_related("workflow", "thread")
+    if not _platform_staff(u):
+        queryset = queryset.filter(thread__user=u)
 
     if workflow_id is not None:
         queryset = queryset.filter(workflow_id=workflow_id)
@@ -122,7 +130,9 @@ def execution_stats(request: HttpRequest, workflow_id: int | None = None):
     返回当前已认证用户的执行统计汇总。
     """
     u = getattr(request, "auth", None) or getattr(request, "user", None)
-    queryset = WorkflowExecution.objects.filter(thread__user=u)
+    queryset = WorkflowExecution.objects.all()
+    if not _platform_staff(u):
+        queryset = queryset.filter(thread__user=u)
 
     if workflow_id is not None:
         queryset = queryset.filter(workflow_id=workflow_id)
@@ -171,7 +181,10 @@ class TtsRequestIn(Schema):
 
 def _execution_qs(request: HttpRequest):
     u = getattr(request, "auth", None) or getattr(request, "user", None)
-    return WorkflowExecution.objects.select_related("workflow", "thread").filter(thread__user=u)
+    qs = WorkflowExecution.objects.select_related("workflow", "thread")
+    if not _platform_staff(u):
+        qs = qs.filter(thread__user=u)
+    return qs
 
 
 def _allowed_media_urls(exec_obj: WorkflowExecution) -> set[str]:

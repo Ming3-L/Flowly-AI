@@ -2,7 +2,7 @@
 工作流 CRUD API —— 列表、新建、详情、更新与删除。
 
 所有接口均需通过 HttpBearer 携带 JWT 鉴权。
-每个用户仅能查看与管理自己的工作流。
+列表与详情：普通用户仅本人；管理员可读全站。更新与删除仍为创建者本人。
 """
 
 from django.contrib.auth import get_user_model
@@ -46,6 +46,8 @@ class WorkflowResponseSchema(Schema):
     updated_at: str
     execution_count: int = 0
     thread_count: int = 0
+    owner_user_id: int | None = None
+    owner_username: str = ""
 
 
 class WorkflowListSchema(Schema):
@@ -64,6 +66,10 @@ class WorkflowValidationErrorSchema(Schema):
 
 
 def _workflow_to_response(wf: Workflow) -> WorkflowResponseSchema:
+    uid = getattr(wf, "user_id", None)
+    uname = ""
+    if uid and getattr(wf, "user", None):
+        uname = str(getattr(wf.user, "username", "") or "")
     return WorkflowResponseSchema(
         id=wf.id,
         name=wf.name,
@@ -74,14 +80,19 @@ def _workflow_to_response(wf: Workflow) -> WorkflowResponseSchema:
         updated_at=wf.updated_at.isoformat() if wf.updated_at else "",
         execution_count=WorkflowExecution.objects.filter(workflow=wf).count(),
         thread_count=Thread.objects.filter(workflow=wf).count(),
+        owner_user_id=int(uid) if uid else None,
+        owner_username=uname,
     )
 
 
 @workflow_crud_router.get("/", response=WorkflowListSchema)
 def list_workflows(request: HttpRequest, search: str = "", is_active: bool | None = None):
-    """GET /api/workflows/ —— 列出当前已认证用户的工作流。"""
+    """GET /api/workflows/ —— 列出工作流；普通用户仅本人，管理员（is_staff）可见全站。"""
     u = getattr(request, "auth", None) or getattr(request, "user", None)
-    queryset = Workflow.objects.filter(user=u, is_deleted=False)
+    staff = bool(getattr(u, "is_staff", False) or getattr(u, "is_superuser", False))
+    queryset = Workflow.objects.filter(is_deleted=False)
+    if not staff:
+        queryset = queryset.filter(user=u)
 
     if search:
         queryset = queryset.filter(
@@ -91,7 +102,7 @@ def list_workflows(request: HttpRequest, search: str = "", is_active: bool | Non
     if is_active is not None:
         queryset = queryset.filter(is_active=is_active)
 
-    items = [_workflow_to_response(wf) for wf in queryset.order_by("-created_at")]
+    items = [_workflow_to_response(wf) for wf in queryset.select_related("user").order_by("-created_at")]
 
     return WorkflowListSchema(total=len(items), items=items)
 
@@ -123,9 +134,15 @@ def create_workflow(request: HttpRequest, payload: WorkflowCreateSchema):
 
 @workflow_crud_router.get("/{workflow_id}", response=WorkflowResponseSchema)
 def get_workflow(request: HttpRequest, workflow_id: int):
-    """GET /api/workflows/{id}"""
+    """GET /api/workflows/{id} — 管理员可读任意工作流；普通用户仅本人。"""
     u = getattr(request, "auth", None) or getattr(request, "user", None)
-    wf = get_object_or_404(Workflow, id=workflow_id, user=u, is_deleted=False)
+    staff = bool(getattr(u, "is_staff", False) or getattr(u, "is_superuser", False))
+    if staff:
+        wf = get_object_or_404(Workflow.objects.select_related("user"), id=workflow_id, is_deleted=False)
+    else:
+        wf = get_object_or_404(
+            Workflow.objects.select_related("user"), id=workflow_id, user=u, is_deleted=False
+        )
     return 200, _workflow_to_response(wf)
 
 

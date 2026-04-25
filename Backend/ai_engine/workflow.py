@@ -364,7 +364,7 @@ def get_chat_model(
     if route in ("ark", "byte", "volcengine"):
         route = "doubao"
     if route == "openai" and s.language.doubao_ark_api_key:
-        flag = os.environ.get("FLOWLY_USE_DOUBAO_DEFAULT", "1").strip().lower()
+        flag = (s.language.flowly_use_doubao_default or "1").strip().lower()
         if flag not in ("0", "false", "no", "off"):
             route = "doubao"
 

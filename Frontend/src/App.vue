@@ -19,7 +19,18 @@
           <el-menu-item index="/chat">{{ ui.t('app.nav.chat') }}</el-menu-item>
           <el-menu-item index="/auto-reply">{{ ui.t('app.nav.autoReply', 'AI 自动回复') }}</el-menu-item>
           <el-menu-item index="/workflows">{{ ui.t('app.nav.workflows') }}</el-menu-item>
-          <el-menu-item index="/observability">{{ ui.t('app.nav.observability') }}</el-menu-item>
+          <el-menu-item
+            v-if="auth.user && (auth.user.is_staff || auth.user.is_superuser)"
+            index="/observability"
+          >
+            {{ ui.t('app.nav.observability') }}
+          </el-menu-item>
+          <el-menu-item
+            v-if="auth.user && (auth.user.is_staff || auth.user.is_superuser)"
+            index="/admin"
+          >
+            {{ ui.t('app.nav.adminConsole', '后台管理') }}
+          </el-menu-item>
         </el-menu>
 
         <div class="nav-actions">

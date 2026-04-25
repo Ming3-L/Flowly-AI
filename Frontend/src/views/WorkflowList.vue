@@ -2,7 +2,7 @@
   <div class="workflow-list-page">
     <!-- 页头 -->
     <div class="list-header">
-      <h1>工作流</h1>
+      <h1>{{ isStaff ? '工作流（全站）' : '工作流' }}</h1>
       <div class="header-actions">
         <el-button
           v-if="selectedRows.length > 0"
@@ -53,6 +53,13 @@
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="40" />
+        <el-table-column
+          v-if="isStaff"
+          prop="owner_username"
+          label="所属用户"
+          width="120"
+          show-overflow-tooltip
+        />
         <el-table-column label="名称" min-width="200">
           <template #default="{ row }">
             <div class="workflow-name-cell">
@@ -96,6 +103,7 @@
                 查看
               </el-button>
               <el-button
+                v-if="canMutateWorkflow(row)"
                 type="warning"
                 link
                 size="small"
@@ -114,6 +122,7 @@
                 复制
               </el-button>
               <el-button
+                v-if="canMutateWorkflow(row)"
                 type="danger"
                 link
                 size="small"
@@ -188,13 +197,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, View, Edit, Delete, CopyDocument } from '@element-plus/icons-vue'
 import api from '@/utils/api'
+import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
+const auth = useAuthStore()
+
+const isStaff = computed(() => !!(auth.user?.is_staff || auth.user?.is_superuser))
+
+function canMutateWorkflow(row: any): boolean {
+  if (!isStaff.value) return true
+  const uid = auth.user?.id
+  if (uid == null) return false
+  return row.owner_user_id == null || row.owner_user_id === uid
+}
 
 const workflows = ref<any[]>([])
 const isLoading = ref(false)
@@ -347,20 +367,24 @@ function handleSelectionChange(rows: any[]) {
 
 async function handleBatchDelete() {
   if (selectedRows.value.length === 0) return
+  const deletable = selectedRows.value.filter(canMutateWorkflow)
+  if (deletable.length === 0) {
+    ElMessage.warning('所选包含他人工作流，无法删除')
+    return
+  }
   try {
-    await ElMessageBox.confirm(
-      `确定要删除选中的 ${selectedRows.value.length} 个工作流吗？此操作不可恢复。`,
-      '批量删除确认',
-      {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-    await Promise.all(
-      selectedRows.value.map((row) => api.delete(`/workflows/${row.id}`))
-    )
-    ElMessage.success(`已删除 ${selectedRows.value.length} 个工作流`)
+    const skip = selectedRows.value.length - deletable.length
+    const msg =
+      skip > 0
+        ? `将跳过 ${skip} 个他人工作流，确定删除其余 ${deletable.length} 个吗？此操作不可恢复。`
+        : `确定要删除选中的 ${deletable.length} 个工作流吗？此操作不可恢复。`
+    await ElMessageBox.confirm(msg, '批量删除确认', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await Promise.all(deletable.map((row) => api.delete(`/workflows/${row.id}`)))
+    ElMessage.success(`已删除 ${deletable.length} 个工作流`)
     selectedRows.value = []
     fetchWorkflows()
   } catch {

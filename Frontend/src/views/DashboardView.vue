@@ -26,7 +26,7 @@
                   <el-icon><Document /></el-icon>
                 </div>
                 <div class="stat-info">
-                  <div class="stat-value">{{ workflows.length }}</div>
+                  <div class="stat-value">{{ dashboardWorkflows.length }}</div>
                   <div class="stat-label">工作流总数</div>
                 </div>
               </div>
@@ -46,7 +46,7 @@
             </el-card>
           </el-col>
           <el-col :span="6">
-            <el-card shadow="hover" class="stat-card" @click="router.push('/observability')">
+            <el-card shadow="hover" class="stat-card" @click="goRunsOrObservability">
               <div class="stat-content">
                 <div class="stat-icon blue">
                   <el-icon><Clock /></el-icon>
@@ -59,7 +59,7 @@
             </el-card>
           </el-col>
           <el-col :span="6">
-            <el-card shadow="hover" class="stat-card" @click="router.push('/observability')">
+            <el-card shadow="hover" class="stat-card" @click="goRunsOrObservability">
               <div class="stat-content">
                 <div class="stat-icon red">
                   <el-icon><CircleClose /></el-icon>
@@ -181,8 +181,8 @@
               <template #header>
                 <div class="card-header">
                   <span>最近执行记录</span>
-                  <el-button size="small" link @click="router.push('/observability')">
-                    监控
+                  <el-button size="small" link @click="goRunsOrObservability">
+                    {{ isPlatformStaff ? '监控' : '运行' }}
                     <el-icon><ArrowRight /></el-icon>
                   </el-button>
                 </div>
@@ -247,28 +247,48 @@ import {
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useWorkflowStore } from '@/stores/workflow'
+import { useAuthStore } from '@/stores/auth'
 import type { Workflow } from '@/types'
 import api from '@/utils/api'
 
 const router = useRouter()
 const store = useWorkflowStore()
+const auth = useAuthStore()
 const { workflows, history } = storeToRefs(store)
+
+const isPlatformStaff = computed(() => !!(auth.user?.is_staff || auth.user?.is_superuser))
+
+function goRunsOrObservability() {
+  if (isPlatformStaff.value) router.push('/observability')
+  else router.push('/run')
+}
 
 const searchQuery = ref('')
 
+/** 仪表盘「可用工作流」仅展示当前用户自己的；管理员在列表页查看全站。 */
+const dashboardWorkflows = computed(() => {
+  if (!isPlatformStaff.value) return workflows.value
+  const uid = auth.user?.id
+  if (uid == null) return workflows.value
+  return workflows.value.filter(
+    (w) => (w as Workflow).owner_user_id == null || (w as Workflow).owner_user_id === uid
+  )
+})
+
 const filteredWorkflows = computed(() => {
   const q = searchQuery.value.toLowerCase()
+  const base = dashboardWorkflows.value
   const list = q
-    ? workflows.value.filter(
+    ? base.filter(
         (w) =>
           w.name.toLowerCase().includes(q) ||
           (w.description ?? '').toLowerCase().includes(q)
       )
-    : workflows.value.slice(0, 10)
+    : base.slice(0, 10)
   return list
 })
 
-const activeCount = computed(() => workflows.value.filter((w) => w.is_active).length)
+const activeCount = computed(() => dashboardWorkflows.value.filter((w) => w.is_active).length)
 const recentFailures = computed(() => history.value.filter((h) => h.status === 'failed').length)
 
 function handleRowClick(row: Workflow) {
@@ -281,6 +301,13 @@ function handleRun(row: Workflow) {
 }
 
 async function handleDelete(row: Workflow) {
+  if (isPlatformStaff.value) {
+    const uid = auth.user?.id
+    if (uid != null && row.owner_user_id != null && row.owner_user_id !== uid) {
+      ElMessage.warning('不能删除其他用户的工作流')
+      return
+    }
+  }
   try {
     await ElMessageBox.confirm(
       `确定删除工作流 "${row.name}" 吗？`,

@@ -10,6 +10,9 @@ export interface Workflow {
   is_active: boolean
   created_at: string
   updated_at: string
+  /** 列表接口在管理员视角下返回，用于区分所有者 */
+  owner_user_id?: number | null
+  owner_username?: string
 }
 
 export interface WorkflowExecution {

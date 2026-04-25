@@ -599,13 +599,35 @@ class UserCustomNodeType(models.Model):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 平台级 AI 接入密钥与端点（加密 JSON，优先于环境变量；后台管理员维护）
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class PlatformAIProviderSecrets(models.Model):
+    """
+    单例（pk=1）：存放与 ``integrations.secrets_loader`` 中环境变量同名的配置项，
+    如 OPENAI_API_KEY、DOUBAO_ARK_MODEL 等；运行时数据库非空值优先于 .env。
+    """
+
+    encrypted_payload = models.TextField("加密配置包", default="", blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "平台 AI 接入配置"
+        verbose_name_plural = verbose_name
+
+    def __str__(self) -> str:
+        return "PlatformAIProviderSecrets(singleton)"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 项目级 AI 模型目录（方舟/语音等元数据，供 GET /api/ai/models 与画布 modelKey 解析）
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 class AIModelCatalogEntry(models.Model):
     """
-    项目维护的模型目录项（密钥仍只来自环境变量 / 用户自定义预设）。
+    项目维护的模型目录项（平台密钥优先来自数据库 ``PlatformAIProviderSecrets``，否则环境变量 / 用户自定义预设）。
 
     ``catalog_key`` 写入画布 ``config.modelKey``；仅 ``api_kind=ark_chat`` 且
     ``show_in_canvas_llm_nodes=True`` 的项会出现在画布 LLM 节点下拉中。
