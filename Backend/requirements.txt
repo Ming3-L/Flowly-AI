@@ -65,7 +65,11 @@ Pillow>=10.0.0              # Image format conversion for execution artifacts
 # 桌面屏幕代理（OCR）：当前实现不再依赖仓库内的 ocr_reference_bundle，
 # 直接使用 openocr-python 在后端进程/子进程内执行 OCR（见 ai_engine/desktop_screen_agent/openocr_runtime.py）。
 # 注意：屏幕代理（截图/YOLO/自动发送）属于**可选能力**，依赖见下方「Desktop Screen Agent」分组。
-openocr-python==0.1.5
+#
+# 重要：云端（Railway/Linux）部署的最小可用版本不需要这些依赖；
+# 且 openocr/torch/GUI 相关包在 Linux CI 环境容易安装失败。
+# 如需在 Windows 上启用屏幕代理能力，再安装这些可选依赖即可。
+openocr-python==0.1.5; platform_system == "Windows"
 beautifulsoup4>=4.12.0      # HTML parsing
 lxml>=4.9.0                  # XML/HTML parser for BeautifulSoup
 
@@ -79,5 +83,5 @@ celery>=5.3.0
 # 推荐脚本：Backend/scripts/install_desktop_agent_gpu_cn.ps1
 #
 # 运行桌面屏幕代理常见依赖：
-pyautogui>=0.9.54
-ultralytics>=8.0.0
+pyautogui>=0.9.54; platform_system == "Windows"
+ultralytics>=8.0.0; platform_system == "Windows"
