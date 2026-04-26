@@ -9,10 +9,8 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
 
 # Install build dependencies (use Tsinghua mirror for China)
-RUN sed -i 's|http://deb.debian.org|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources && \
-    apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
-    default-libmysqlclient-dev \
     pkg-config \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -32,9 +30,7 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /app
 
 # Install runtime dependencies (no build tools needed, use Tsinghua mirror)
-RUN sed -i 's|http://deb.debian.org|http://mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list.d/debian.sources && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    default-libmysqlclient-dev \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && useradd -m -u 1000 appuser \
     && rm -rf /var/lib/apt/lists/*
