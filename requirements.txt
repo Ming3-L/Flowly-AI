@@ -16,7 +16,7 @@ djangorestframework>=3.14.0
 
 # Django Ninja - Async REST API
 django-ninja>=1.0.0
-
+langgraph[django]>=0.1.0  # 版本根据你的项目调整
 # CORS Headers
 django-cors-headers>=4.3.0
 
