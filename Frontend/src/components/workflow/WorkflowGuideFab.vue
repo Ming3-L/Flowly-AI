@@ -7,7 +7,7 @@
     @dblclick.stop="openDrawer"
   >
     <button type="button" class="fab-inner" aria-label="工作流助手">
-      <img v-show="logoOk" class="fab-logo" src="/logo.png" alt="" @error="logoOk = false" />
+      <img v-show="logoOk" class="fab-logo" :src="logoSrc" alt="" @error="logoOk = false" />
       <span v-if="!logoOk" class="fab-fallback">F</span>
     </button>
   </div>
@@ -94,6 +94,7 @@ const fabRef = ref<HTMLElement | null>(null)
 const scrollRef = ref<HTMLElement | null>(null)
 const drawerOpen = ref(false)
 const logoOk = ref(true)
+const logoSrc = computed(() => `${import.meta.env.BASE_URL}logo.png`)
 const models = ref<CatalogModel[]>([])
 const modelOptionGroups = computed<ModelOptionGroup[]>(() => {
   const rows = models.value
