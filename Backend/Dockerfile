@@ -48,10 +48,11 @@ COPY --chown=appuser:appuser manage.py .
 COPY --chown=appuser:appuser ai_engine ai_engine/
 COPY --chown=appuser:appuser accounts accounts/
 COPY --chown=appuser:appuser flowly_backend flowly_backend/
+COPY --chown=appuser:appuser start.sh ./start.sh
 
 USER appuser
 
 EXPOSE 8000
 
 # Default: Daphne ASGI server (supports WebSocket + Channels)
-CMD ["daphne", "-b", "0.0.0.0", "-p", "8000", "flowly_backend.asgi:application"]
+CMD ["sh", "./start.sh"]

@@ -7,6 +7,10 @@ import { devServerProxy } from './src/config/vite-dev-proxy'
 export default defineConfig({
   plugins: [vue()],
 
+  // GitHub Pages 部署时需要设置为 "/<repo>/"；默认 "/" 适配本地与自定义域名。
+  // 在 CI 中通过环境变量 VITE_PUBLIC_BASE_PATH 注入即可，无需改代码。
+  base: process.env.VITE_PUBLIC_BASE_PATH || '/',
+
   resolve: {
     alias: {
       '@': resolve(__dirname, 'src'),

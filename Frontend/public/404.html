@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flowly</title>
+  </head>
+  <body>
+    <script>
+      // GitHub Pages 对 SPA 子路由会返回 404.html。
+      // 这里把原始路径暂存，然后跳回 index.html 让前端路由接管。
+      (function () {
+        try {
+          sessionStorage.setItem('__flowly_redirect_path__', location.pathname + location.search + location.hash)
+        } catch (e) {}
+        location.replace('./')
+      })()
+    </script>
+  </body>
+</html>
+

@@ -1,6 +1,12 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
+function getRuntimeBaseUrl(): string {
+  const rt = (globalThis as any)?.__FLOWLY_RUNTIME__
+  const v = (rt?.API_BASE_URL ?? '').toString().trim()
+  return v
+}
+
 declare module 'axios' {
   // Project-level extensions used by interceptors/callers.
   export interface AxiosRequestConfig {
@@ -11,7 +17,7 @@ declare module 'axios' {
   }
 }
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+const BASE_URL = getRuntimeBaseUrl() || import.meta.env.VITE_API_BASE_URL || '/api'
 
 const api = axios.create({
   baseURL: BASE_URL,
