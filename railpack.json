@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "python",
+  "packages": {
+    "python": "3.12"
+  },
+  "steps": {
+    "install": {
+      "inputs": [{ "local": true, "include": ["."] }],
+      "commands": ["pip install -r Backend/requirements.txt"]
+    }
+  },
+  "deploy": {
+    "startCommand": "cd Backend && sh start.sh"
+  }
+}
