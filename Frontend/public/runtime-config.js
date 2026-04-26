@@ -3,7 +3,6 @@
 // Example:
 // window.__FLOWLY_RUNTIME__ = { API_BASE_URL: "https://your-backend.up.railway.app/api" }
 
-window.__FLOWLY_RUNTIME__ = window.__FLOWLY_RUNTIME__ || {
-  API_BASE_URL: "",
-}
 
+
+window.__FLOWLY_RUNTIME__ = { API_BASE_URL: "https://flowly-ai-production-337c.up.railway.app/api" }
