@@ -5,4 +5,4 @@
 
 
 
-window.__FLOWLY_RUNTIME__ = { API_BASE_URL: "https://flowly-ai-production-337c.up.railway.app/api" }
+window.__FLOWLY_RUNTIME__ = { API_BASE_URL: "https://flowly-ai-production-2ba5.up.railway.app/api" }
