@@ -1,0 +1,6 @@
+# 把需要共享 skills/rules 的项目路径写在这里（UTF-8）。
+# 每行一个路径；以 # 开头为注释。
+E:\桌面\project\AI自动回复
+E:\project\textpy
+D:\project\石油化工危险检测
+
