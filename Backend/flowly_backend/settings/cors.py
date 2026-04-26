@@ -17,6 +17,8 @@ def _env_csv(name: str, default_csv: str) -> list[str]:
 
 
 # 兼容历史拼写：之前误写为 CORS_ALLOWED_ORIGINS（少了 ED），Railway 上可能已经配置了正确变量名
+# - 正确：CORS_ALLOWED_ORIGINS
+# - 旧误写：CORS_ALLOWED_ORIGINS
 _cors_allowed_origins_env = (
     os.getenv("CORS_ALLOWED_ORIGINS") or os.getenv("CORS_ALLOWED_ORIGINS") or ""
 ).strip()
