@@ -6,7 +6,6 @@
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
 [![Vue](https://img.shields.io/badge/Vue-3.4-green.svg)](https://vuejs.org/)
 [![Django](https://img.shields.io/badge/Django-5.x-teal.svg)](https://www.djangoproject.com/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 
 > 基于 **Django + LangGraph + Vue 3** 的企业级 AI 工作流引擎，支持可视化编排、实时流式响应、向量检索与异步任务处理。
 
@@ -34,31 +33,7 @@
 
 > 如果只需要在本地运行项目（不使用 Docker），请参考下方「数据库配置（本地部署）」章节，选择适合你的方案（MySQL 或 SQLite）。
 
-### 一键部署（Docker Compose）
-
-```bash
-# 1. 克隆项目
-git clone https://github.com/yuxiaopao/Flowly-AI.git
-cd Flowly-AI
-
-# 2. 配置环境变量
-cp Backend/.env.example Backend/.env
-# 编辑 Backend/.env，填入 OPENAI_API_KEY 等必要配置
-
-# 3. 启动所有服务
-docker compose up -d --build
-
-# 4. 数据库迁移
-docker compose exec backend python manage.py migrate
-
-# 5. 创建管理员账户
-docker compose exec backend python manage.py createsuperuser
-```
-
-访问地址：
-- 🌐 前端界面：`http://localhost`
-- 🔌 后端 API：`http://localhost:8000/api/`
-- 📊 Flower 监控：`http://localhost:5555`
+### 本地开发
 
 ### 本地开发
 
@@ -343,18 +318,6 @@ cd Frontend
 npm run dev
 ```
 
-### Docker Compose
-
-Docker Compose 会启动以下服务：
-
-- `db` — MySQL 8.0（端口 3307）
-- `redis` — Redis 7（端口 6379）
-- `backend` — Django Daphne ASGI（端口 8000）
-- `celery_worker` — Celery Worker × 2 副本
-- `celery_beat` — Celery Beat 定时任务调度器
-- `flower` — Celery 监控面板（端口 5555）
-- `frontend` — Nginx 托管 Vue SPA（端口 80）
-
 ### 独立服务启动
 
 ```bash
@@ -561,10 +524,6 @@ python manage.py migrate
 
 在 `Backend/.env` 中修改 `DATABASE_URL`，格式为 `mysql://用户名:密码@localhost:端口/数据库名`。确保 MySQL 已启动且用户权限配置正确。
 
-**Q: Docker 中数据库数据会丢失吗？**
-
-不会。Docker Compose 配置了 `mysql_data` 卷，MySQL 数据会持久化到 Docker volume 中。只要不执行 `docker compose down -v`（删除卷），数据就会保留。
-
 **Q: OpenAI / Claude API 调用失败？**
 
 确认 API Key 正确配置，且网络可访问 `OPENAI_BASE_URL`。检查 `.env` 文件中的 `OPENAI_API_KEY` 和 `ANTHROPIC_API_KEY`。
@@ -634,47 +593,7 @@ DATABASE_URL=sqlite:///db.sqlite3
 
 ### 本地部署数据库配置步骤
 
-#### 方案 A：使用 Docker Compose 部署（推荐）
-
-Docker Compose 会自动启动 MySQL 和 Redis，无需手动安装数据库服务。
-
-```bash
-# 1. 复制环境变量模板
-cp Backend/.env.example Backend/.env
-
-# 2. 编辑 Backend/.env，修改以下关键配置：
-#    - SECRET_KEY: 生成新密钥（见下方命令）
-#    - DATABASE_URL: 保持默认即可（Docker 内部使用 db 主机名）
-#    - OPENAI_API_KEY: 填入你的 API Key
-#    - VECTORENGINE_API_KEY: 如使用 VectorEngine 也需填入
-
-# 3. 生成 Django 密钥
-python -c "import secrets; print(secrets.token_urlsafe(50))"
-# 将输出结果填入 .env 的 SECRET_KEY
-
-# 4. 启动所有服务（MySQL、Redis、后端、前端）
-docker compose up -d
-
-# 5. 等待 MySQL 就绪后，执行数据库迁移
-docker compose exec backend python manage.py migrate
-
-# 6. 创建管理员账户
-docker compose exec backend python manage.py createsuperuser
-
-# 7. 访问应用
-# 前端界面: http://localhost
-# 后端 API: http://localhost:8000/api/
-```
-
-> **Docker Compose 中 MySQL 的连接信息：**
-> - 主机名：`db`（容器内部）
-> - 端口：`3306`（容器内部）
-> - 外部端口：`3307`（可从宿主机访问）
-> - 用户名：`flowly`
-> - 密码：`flowly_password`
-> - 数据库名：`flowly_db`
-
-#### 方案 B：本地已安装 MySQL
+#### 方案 A：本地已安装 MySQL
 
 如果你的机器上已经安装了 MySQL 8.0，可以直接连接本地数据库。
 
@@ -691,9 +610,6 @@ FLUSH PRIVILEGES;
 # 2. 编辑 Backend/.env，修改 DATABASE_URL
 # 如果 MySQL 使用默认端口 3306：
 DATABASE_URL=mysql://flowly:your_password@localhost:3306/flowly_db
-
-# 如果 MySQL 使用 Docker 映射的端口 3307：
-DATABASE_URL=mysql://flowly:your_password@localhost:3307/flowly_db
 
 # 3. 安装后端依赖
 cd Backend
@@ -717,7 +633,7 @@ npm install
 npm run dev
 ```
 
-#### 方案 C：使用 SQLite（最简开发环境）
+#### 方案 B：使用 SQLite（最简开发环境）
 
 如果不想安装 MySQL，可以使用 SQLite。
 
@@ -750,20 +666,12 @@ npm run dev
 | `Unknown database` | 数据库不存在 | 登录 MySQL 执行 `CREATE DATABASE flowly_db;` |
 | `Can't connect to MySQL server` | MySQL 服务未启动或端口错误 | 确认 MySQL 运行中；检查端口是否与 `DATABASE_URL` 匹配 |
 | `Connection refused` | 防火墙阻止或 MySQL 未监听该端口 | 检查 MySQL 配置文件 `my.cnf`，确认 `bind-address=0.0.0.0` |
-| Docker 中 `db` 主机无法解析 | Docker 网络问题 | 确保 `docker-compose.yml` 中 backend 服务正确 depends_on db |
 | 迁移报错 `no such table` | 迁移未执行 | 运行 `python manage.py migrate` |
 | 迁移报错 `table already exists` | 数据库已有旧数据 | 可选：删除数据库重新创建，或检查是否已执行过迁移 |
 
 ### 修改数据库配置后
 
-修改 `Backend/.env` 中的 `DATABASE_URL` 后：
-
-- **Docker Compose 环境**：重启后端服务即可
-  ```bash
-  docker compose restart backend
-  ```
-
-- **本地开发环境**：重启 Django 服务器
+修改 `Backend/.env` 中的 `DATABASE_URL` 后，本地重启 Django 服务器
   ```bash
   # Ctrl+C 停止后，重新运行
   python manage.py runserver
