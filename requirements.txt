@@ -1,16 +1,99 @@
 #
-# 根目录 requirements.txt（推荐入口）
+# 根目录 requirements.txt（单一事实来源 / Railway 友好）
 # -----------------------------
-# 这个文件用于“一键安装项目依赖”，避免出现多份依赖清单各自漂移。
-#
-# - 后端必须依赖：Backend/requirements.txt
-# - 桌面屏幕代理（可选）：已并入 Backend/requirements.txt 的可选分组（Desktop Screen Agent）
+# 说明：
+# - 以前这里用 `-r Backend/requirements.txt`，但部分 PaaS 构建器在 install 阶段不会带上 `Backend/`
+#   目录，导致 `-r` 解析失败。
+# - 现在把后端依赖直接列在本文件里；`Backend/requirements.txt` 与之保持**同内容**（Docker 构建上下文在 `Backend/`）。
 #
 # 用法（Windows / Linux / macOS 一致）：
 #   pip install -r requirements.txt
 #
 
--r Backend/requirements.txt
+# Django Framework
+Django>=5.0,<6.0
+djangorestframework>=3.14.0
 
-# 可选：如果你需要在 Windows 机器上运行“桌面屏幕代理”（截图 + YOLO + 自动回复发送），
-# 直接安装 Backend/requirements.txt 即可；但 torch（尤其 GPU 版）请按 README/脚本从官方源安装。
+# Django Ninja - Async REST API
+django-ninja>=1.0.0
+
+# CORS Headers
+django-cors-headers>=4.3.0
+
+# JWT Authentication
+djangorestframework-simplejwt>=5.3.0
+pyjwt>=1.7.1
+
+# LangGraph and State Persistence
+langgraph>=0.3.1
+# Local checkpoint models (see Backend/checkpoint/)
+langchain-openai>=0.2.0
+langchain-anthropic>=0.3.0
+langchain-ollama>=0.2.0
+langchain-text-splitters>=0.3.0
+openai>=1.0.0
+
+# Database - MySQL (use PyMySQL for cross-platform compatibility)
+PyMySQL>=1.1.0
+
+# Channels and WebSocket
+channels>=4.0.0
+channels-redis>=4.2.0
+daphne>=4.0.0
+websockets>=12.0
+
+# ASGI Server
+uvicorn[standard]>=0.27.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Volcengine Ark SDK (images.generate, content_generation.tasks, etc.)
+volcengine-python-sdk[ark]>=1.0.0
+volcengine-audio>=0.1.1
+
+# Additional Utilities
+cryptography>=42.0.0
+pydantic>=2.0.0
+python-multipart>=0.0.9
+redis>=5.0.0
+requests>=2.31.0
+
+# --- Optional: Django AI Assistant ---
+# Provides pre-built Thread/Message models and built-in API views.
+# Install with: pip install django-ai-assistant[openai]
+# NOTE: This package ships its own Thread and Message models. If you enable it,
+# remove the custom Thread model from ai_engine/models.py and run:
+#   python manage.py migrate django_ai_assistant
+# django-ai-assistant[openai]>=0.4.0
+
+# --- Phase 8: RAG - Vector Retrieval ---
+chromadb>=0.4.0
+langchain-chroma>=0.1.0
+PyMuPDF>=1.23.0            # PDF text extraction
+python-docx>=1.0.0          # Word document extraction
+Pillow>=10.0.0              # Image format conversion for execution artifacts
+
+# 桌面屏幕代理（OCR）：当前实现不再依赖仓库内的 ocr_reference_bundle，
+# 直接使用 openocr-python 在后端进程/子进程内执行 OCR（见 ai_engine/desktop_screen_agent/openocr_runtime.py）。
+# 注意：屏幕代理（截图/YOLO/自动发送）属于**可选能力**，依赖见下方「Desktop Screen Agent」分组。
+#
+# 重要：云端（Railway/Linux）部署的最小可用版本不需要这些依赖；
+# 且 openocr/torch/GUI 相关包在 Linux CI 环境容易安装失败。
+# 如需在 Windows 上启用屏幕代理能力，再安装这些可选依赖即可。
+openocr-python==0.1.5; platform_system == "Windows"
+beautifulsoup4>=4.12.0      # HTML parsing
+lxml>=4.9.0                  # XML/HTML parser for BeautifulSoup
+
+# --- Phase 9: Celery - Async Task Queue ---
+celery>=5.3.0
+
+# --- Optional: Desktop Screen Agent (Windows) ---
+# 仅当你要在 Windows 机器上运行“桌面屏幕代理”（截图 + YOLO 区域识别 + 可选自动发送）时才需要。
+#
+# 重要：torch（尤其 GPU 版）请按你的 CUDA 版本从 PyTorch 官方源安装，避免镜像源拿到不匹配/CPU 轮子。
+# 推荐脚本：Backend/scripts/install_desktop_agent_gpu_cn.ps1
+#
+# 运行桌面屏幕代理常见依赖：
+pyautogui>=0.9.54; platform_system == "Windows"
+ultralytics>=8.0.0; platform_system == "Windows"

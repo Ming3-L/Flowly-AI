@@ -1,3 +1,13 @@
+#
+# Backend/requirements.txt（Docker 构建上下文在 Backend/）
+# -----------------------------
+# 注意：为了兼容 `docker compose` / `Backend/Dockerfile`（构建上下文是 `./Backend`），
+# 这里必须保留一份完整依赖清单。
+#
+# 同时仓库根目录 `requirements.txt` 也包含**同一份清单**（用于 Railway/Railpack 等只复制根 requirements 的场景）。
+# 更新依赖时请两处一起改，避免漂移。
+#
+
 # Django Framework
 Django>=5.0,<6.0
 djangorestframework>=3.14.0
