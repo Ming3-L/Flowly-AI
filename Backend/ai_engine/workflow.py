@@ -363,7 +363,9 @@ def get_chat_model(
     route = (model_name or "openai").strip().lower()
     if route in ("ark", "byte", "volcengine"):
         route = "doubao"
-    if route == "openai" and s.language.doubao_ark_api_key:
+    # 仅当「未显式指定 OpenAI 模型」时，才允许把线路切到方舟默认（避免把 gpt-4o 等仍发到 Ark 导致 InvalidEndpointOrModel）
+    explicit_openai_model = str(override_kwargs.get("model") or "").strip()
+    if route == "openai" and s.language.doubao_ark_api_key and not explicit_openai_model:
         flag = (s.language.flowly_use_doubao_default or "1").strip().lower()
         if flag not in ("0", "false", "no", "off"):
             route = "doubao"

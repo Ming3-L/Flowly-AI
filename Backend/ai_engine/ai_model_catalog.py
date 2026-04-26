@@ -30,15 +30,13 @@ def _openspeech_tts_variants() -> list[dict[str, str]]:
     cfg = get_openspeech_settings()
     raw = (cfg.tts_voices_json or "").strip()
     if not raw:
-        # 至少提供一个默认项，避免前端无二级可选
-        vt = (cfg.tts_voice_type or "").strip()
-        if not vt:
-            return []
+        # 至少提供一个默认项，避免前端无二级可选（库内若误写入空字符串仍回退到常见默认音色）
+        vt = (cfg.tts_voice_type or "").strip() or "zh_male_M392_conversation_wvae_bigtts"
         return [{"id": vt, "label": vt, "voice_type": vt}]
     try:
         obj = json.loads(raw)
     except Exception:
-        return []
+        obj = None
     out: list[dict[str, str]] = []
     if isinstance(obj, list):
         for it in obj:
@@ -54,7 +52,10 @@ def _openspeech_tts_variants() -> list[dict[str, str]]:
             label = str(it.get("label") or vt).strip()
             vid = str(it.get("id") or vt).strip()
             out.append({"id": vid, "label": label, "voice_type": vt})
-    return out
+    if out:
+        return out
+    vt = (cfg.tts_voice_type or "").strip() or "zh_male_M392_conversation_wvae_bigtts"
+    return [{"id": vt, "label": vt, "voice_type": vt}]
 
 
 def _openspeech_tts2_variants() -> list[dict[str, str]]:
@@ -67,32 +68,31 @@ def _openspeech_tts2_variants() -> list[dict[str, str]]:
     import json
 
     cfg = get_openspeech_settings()
+    default_spk = (cfg.tts2_speaker or "").strip() or "zh_female_vv_uranus_bigtts"
     raw = (cfg.tts2_voices_json or "").strip()
-    if not raw:
-        spk = (cfg.tts2_speaker or "").strip()
-        if not spk:
-            return []
-        return [{"id": spk, "label": spk, "voice_type": spk}]
-    try:
-        obj = json.loads(raw)
-    except Exception:
-        return []
     out: list[dict[str, str]] = []
-    if isinstance(obj, list):
-        for it in obj:
-            if isinstance(it, str) and it.strip():
-                spk = it.strip()
-                out.append({"id": spk, "label": spk, "voice_type": spk})
-                continue
-            if not isinstance(it, dict):
-                continue
-            spk = str(it.get("speaker") or it.get("voice_type") or it.get("id") or "").strip()
-            if not spk:
-                continue
-            label = str(it.get("label") or spk).strip()
-            vid = str(it.get("id") or spk).strip()
-            out.append({"id": vid, "label": label, "voice_type": spk})
-    return out
+    if raw:
+        try:
+            obj = json.loads(raw)
+        except Exception:
+            obj = None
+        if isinstance(obj, list):
+            for it in obj:
+                if isinstance(it, str) and it.strip():
+                    spk = it.strip()
+                    out.append({"id": spk, "label": spk, "voice_type": spk})
+                    continue
+                if not isinstance(it, dict):
+                    continue
+                spk = str(it.get("speaker") or it.get("voice_type") or it.get("id") or "").strip()
+                if not spk:
+                    continue
+                label = str(it.get("label") or spk).strip()
+                vid = str(it.get("id") or spk).strip()
+                out.append({"id": vid, "label": label, "voice_type": spk})
+    if out:
+        return out
+    return [{"id": default_spk, "label": default_spk, "voice_type": default_spk}]
 
 
 def _variants_from_db(entry_id: int) -> list[dict[str, str]]:
@@ -109,7 +109,8 @@ def _variants_from_db(entry_id: int) -> list[dict[str, str]]:
         label = str(v.label or "").strip() or vid
         # voice_type 字段兼容前端：对语音模型，value 存 speaker/voice_type；为空时回退到 variant_id
         voice_type = str(v.value or "").strip() or vid
-        out.append({"id": vid, "label": label, "voice_type": voice_type})
+        kind = str(getattr(v, "kind", "") or "").strip()
+        out.append({"kind": kind, "id": vid, "label": label, "voice_type": voice_type})
     return out
 
 
@@ -406,6 +407,7 @@ def list_models_merged_for_api(user: Any | None) -> list[dict[str, Any]]:
                     "canvas_universal": False,
                     "api_kind": "ark_chat",
                     "show_in_canvas_llm_nodes": True,
+                    "variants": [],
                 }
             )
     out.sort(key=lambda r: (int(r.get("category_order") or 0), str(r.get("category") or ""), str(r.get("key") or "")))
@@ -575,9 +577,11 @@ def resolve_route_and_model_id(
             if not mid:
                 mid = _env_default_for_route(route, s)
             route, mid = _adjust_route_by_model_id(route, mid, prov)
-            # 关键：若目录项显式填写了 model_id（哪怕不是 ep-），就尊重管理员配置，不再强制映射到环境默认 ep。
-            # 仅当目录项留空，才回退到环境默认（可能是 ep-）。
-            if not (entry.model_id or "").strip():
+            preserve = str(getattr(getattr(s, "language", None), "flowly_preserve_doubao_model_id", "0") or "0").strip()
+            preserve_on = preserve in ("1", "true", "yes", "on")
+            # 默认保持历史稳健策略：当 DOUBAO_ARK_MODEL 是 ep-... 时，非 ep 模型名会映射到该 ep。
+            # 若管理员希望严格按目录显式 model_id（模型名）调用，可设置 FLOWLY_PRESERVE_DOUBAO_MODEL_ID=1。
+            if not preserve_on:
                 mid = _finalize_doubao_model_for_ark_endpoint(route, mid, s)
             return route, mid, catalog_key
 

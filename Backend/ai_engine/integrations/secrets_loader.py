@@ -72,6 +72,9 @@ _LOCAL_ENV_KEYS: Final[tuple[str, ...]] = (
     "VOYAGE_EMBEDDING_MODEL",
     # 行为开关（与 workflow 中 openai 默认走方舟一致）
     "FLOWLY_USE_DOUBAO_DEFAULT",
+    # 若为 1：解析方舟对话模型时，尊重目录中显式填写的“模型名”，不再映射到 DOUBAO_ARK_MODEL(ep-...)。
+    # 默认 0：保持历史行为（当 DOUBAO_ARK_MODEL 为 ep 时，非 ep 模型名会映射到该 ep）。
+    "FLOWLY_PRESERVE_DOUBAO_MODEL_ID",
     # ── 豆包语音（OpenSpeech，独立鉴权）─────────────────────────────────────
     "OPENSPEECH_APPID",
     "OPENSPEECH_ACCESS_TOKEN",
@@ -96,6 +99,17 @@ _LOCAL_ENV_KEYS: Final[tuple[str, ...]] = (
     "OPENSPEECH_AUC_SUBMIT_URL",
     "OPENSPEECH_AUC_QUERY_URL",
     "OPENSPEECH_AUC_RESOURCE_ID",
+    # ── 验证码邮件 SMTP（仅库内配置用于发送；见 accounts.email_service）────────
+    "FLOWLY_SMTP_HOST",
+    "FLOWLY_SMTP_PORT",
+    "FLOWLY_SMTP_USER",
+    "FLOWLY_SMTP_PASSWORD",
+    "FLOWLY_SMTP_FROM_EMAIL",
+    "FLOWLY_SMTP_USE_SSL",
+    "FLOWLY_SMTP_USE_TLS",
+    # ── 管理员注册邀请码（后台库内维护；accounts.views.register 使用）────────
+    "FLOWLY_ADMIN_REGISTER_INVITE",
+    "FLOWLY_SUPERUSER_REGISTER_INVITE",
 )
 
 _local_overrides_cache: dict[str, str] | None = None
@@ -238,6 +252,7 @@ class LanguageModelSettings:
     doubao_ark_model: str
     doubao_ark_smart_router_endpoint: str
     flowly_use_doubao_default: str
+    flowly_preserve_doubao_model_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -397,6 +412,7 @@ def get_ai_provider_settings() -> AIProviderSettings:
         doubao_ark_model=_resolve("DOUBAO_ARK_MODEL", default=""),
         doubao_ark_smart_router_endpoint=_resolve("DOUBAO_ARK_SMART_ROUTER_ENDPOINT", default=""),
         flowly_use_doubao_default=_resolve("FLOWLY_USE_DOUBAO_DEFAULT", default="1"),
+        flowly_preserve_doubao_model_id=_resolve("FLOWLY_PRESERVE_DOUBAO_MODEL_ID", default="0"),
     )
     image = ImageModelSettings(
         openai_image_model=_resolve("OPENAI_IMAGE_MODEL", default="dall-e-3"),

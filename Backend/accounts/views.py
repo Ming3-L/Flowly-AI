@@ -5,7 +5,6 @@ All endpoints under /api/auth/ via the ai_engine NinjaAPI mount.
 """
 
 import logging
-import os
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -13,12 +12,20 @@ from django.contrib.auth.hashers import check_password
 from django.db import IntegrityError, transaction
 from django.db.utils import OperationalError
 from django.http import HttpRequest
-from ninja import Router, Schema  # pyright: ignore[reportMissingImports]
-from ninja.errors import AuthenticationError  # pyright: ignore[reportMissingImports]
+from ninja import Field, Router, Schema  # pyright: ignore[reportMissingImports]
 
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from ai_engine.auth import JWTAuth
+from ai_engine.integrations.db_platform_secrets import load_plain_entries
+from .email_service import (
+    issue_code,
+    mark_send_cooldown,
+    send_cooldown_active,
+    send_verification_email,
+    smtp_configured,
+    verify_and_consume_code,
+)
 from .serializers import RegisterSchema
 from .models import UserProfile
 
@@ -47,6 +54,22 @@ class AuthErrorSchema(Schema):
 
 class RefreshSchema(Schema):
     refresh: str
+
+
+class OkMessageSchema(Schema):
+    detail: str
+
+
+class EmailSendCodeSchema(Schema):
+    email: str
+    purpose: str
+
+
+class PasswordResetConfirmSchema(Schema):
+    email: str
+    code: str
+    new_password: str = Field(..., min_length=8, max_length=128)
+    new_password_confirm: str = Field(..., min_length=8, max_length=128)
 
 
 class UserProfileSchema(Schema):
@@ -91,50 +114,57 @@ def register(request, payload: RegisterSchema):
             message="注册失败",
             detail="用户名已存在",
         )
-    if User.objects.filter(email=payload.email).exists():
+    if User.objects.filter(email__iexact=(payload.email or "").strip()).exists():
         return 400, AuthErrorSchema(
             message="注册失败",
             detail="邮箱已被注册",
         )
 
+    if smtp_configured():
+        code = (payload.email_verification_code or "").strip()
+        if len(code) != 4 or not code.isdigit():
+            return 400, AuthErrorSchema(
+                message="注册失败",
+                detail="请先通过邮箱获取并填写 4 位数字验证码",
+            )
+        if not verify_and_consume_code("register", payload.email, code):
+            return 400, AuthErrorSchema(
+                message="注册失败",
+                detail="邮箱验证码无效或已过期",
+            )
+
     is_staff = False
     is_superuser = False
     if payload.register_as_staff:
         invite = (payload.admin_invite_code or "").strip()
-        # 同时读 os.environ：避免极少数启动顺序下 settings 与进程环境不一致；并提示检查 Backend/.env
-        super_code = (
-            (getattr(settings, "FLOWLY_SUPERUSER_REGISTER_INVITE", "") or "").strip()
-            or (os.getenv("FLOWLY_SUPERUSER_REGISTER_INVITE", "") or "").strip()
-        )
-        admin_code = (
-            (getattr(settings, "FLOWLY_ADMIN_REGISTER_INVITE", "") or "").strip()
-            or (os.getenv("FLOWLY_ADMIN_REGISTER_INVITE", "") or "").strip()
-        )
+        # 邀请码只允许从数据库 PlatformAIProviderSecrets（后台管理员维护）读取。
+        # 特殊：若系统里还没有任何管理员账号，则允许使用默认邀请码 123456789 创建第一个超级管理员。
+        secret_map = load_plain_entries()
+        super_code = (secret_map.get("FLOWLY_SUPERUSER_REGISTER_INVITE") or "").strip()
+        admin_code = (secret_map.get("FLOWLY_ADMIN_REGISTER_INVITE") or "").strip()
         if not invite:
             return 400, AuthErrorSchema(
                 message="注册失败",
                 detail="注册管理员账号需要填写邀请码",
             )
-        if not super_code and not admin_code:
-            return 400, AuthErrorSchema(
-                message="注册失败",
-                detail="服务器未开放管理员自助注册（未配置邀请码）。请在 Backend/.env 中设置 FLOWLY_ADMIN_REGISTER_INVITE 或 FLOWLY_SUPERUSER_REGISTER_INVITE 后重启后端进程。",
-            )
-        if super_code and invite == super_code:
+        any_admin = User.objects.filter(is_superuser=True).exists() or User.objects.filter(is_staff=True).exists()
+        if not any_admin and invite == "123456789":
+            is_staff = True
+            is_superuser = True
+        elif super_code and invite == super_code:
             is_staff = True
             is_superuser = True
         elif admin_code and invite == admin_code:
             is_staff = True
             is_superuser = False
         else:
-            detail = "管理员邀请码无效。"
-            up = invite.upper()
-            if "FLOWLY_" in up or "REGISTER_INVITE" in up:
-                detail += (
-                    " 提示：你输入的像是「环境变量名」。请在服务器 Backend/.env 中复制 "
-                    "FLOWLY_ADMIN_REGISTER_INVITE= 或 FLOWLY_SUPERUSER_REGISTER_INVITE= **等号右边** 的整段随机码（不要包含变量名），"
-                    "修改 .env 后需重启 Django。"
+            if not super_code and not admin_code:
+                detail = (
+                    "管理员自助注册未开放：后台「接入配置 (密钥)」未设置 "
+                    "FLOWLY_ADMIN_REGISTER_INVITE / FLOWLY_SUPERUSER_REGISTER_INVITE。"
                 )
+            else:
+                detail = "管理员邀请码无效。"
             return 400, AuthErrorSchema(message="注册失败", detail=detail)
 
     try:
@@ -301,3 +331,89 @@ def get_me(request: HttpRequest):
         is_staff=bool(getattr(user, "is_staff", False)),
         is_superuser=bool(getattr(user, "is_superuser", False)),
     )
+
+
+# ── Email verification & password reset ─────────────────────────────────────
+
+
+@router.post(
+    "/email/send-code",
+    response={200: OkMessageSchema, 400: AuthErrorSchema, 503: AuthErrorSchema},
+)
+def send_email_code(request: HttpRequest, payload: EmailSendCodeSchema):
+    """
+    POST /api/auth/email/send-code
+
+    发送 4 位数字验证码（注册或找回密码）。SMTP 须在后台「接入配置」写入库内 ``FLOWLY_SMTP_*``。
+    """
+    from django.core.exceptions import ValidationError
+    from django.core.validators import validate_email
+
+    email = (payload.email or "").strip()
+    purpose = (payload.purpose or "").strip().lower()
+    if purpose not in ("register", "password_reset"):
+        return 400, AuthErrorSchema(message="发送失败", detail="purpose 须为 register 或 password_reset")
+
+    try:
+        validate_email(email)
+    except ValidationError:
+        return 400, AuthErrorSchema(message="发送失败", detail="邮箱格式无效")
+
+    if not smtp_configured():
+        return 503, AuthErrorSchema(
+            message="发送失败",
+            detail="管理员尚未在后台「接入配置 (密钥)」中填写 FLOWLY_SMTP_HOST、FLOWLY_SMTP_USER、FLOWLY_SMTP_PASSWORD",
+        )
+
+    if send_cooldown_active(purpose, email):
+        return 400, AuthErrorSchema(message="发送失败", detail="发送过于频繁，请约 1 分钟后再试")
+
+    if purpose == "register":
+        if User.objects.filter(email__iexact=email).exists():
+            return 400, AuthErrorSchema(message="发送失败", detail="该邮箱已注册")
+
+    if purpose == "password_reset":
+        if not User.objects.filter(email__iexact=email).exists():
+            return 200, OkMessageSchema(detail="若该邮箱已注册，您将很快收到验证码邮件")
+
+    code = issue_code(purpose, email)
+    try:
+        send_verification_email(purpose=purpose, to_email=email, code=code)
+    except Exception:
+        logger.exception("send_email_code: SMTP failure")
+        return 503, AuthErrorSchema(message="发送失败", detail="邮件发送失败，请稍后重试或检查 SMTP 配置")
+
+    mark_send_cooldown(purpose, email)
+    return 200, OkMessageSchema(detail="验证码已发送，请查收邮箱")
+
+
+@router.post(
+    "/password/reset/confirm",
+    response={200: OkMessageSchema, 400: AuthErrorSchema, 503: AuthErrorSchema},
+)
+def password_reset_confirm(request: HttpRequest, payload: PasswordResetConfirmSchema):
+    """
+    POST /api/auth/password/reset/confirm
+
+    使用邮箱收到的 4 位验证码重置密码。
+    """
+    if payload.new_password != payload.new_password_confirm:
+        return 400, AuthErrorSchema(message="重置失败", detail="两次输入的新密码不一致")
+
+    if not smtp_configured():
+        return 503, AuthErrorSchema(
+            message="重置失败",
+            detail="管理员尚未在后台配置库内发信项 FLOWLY_SMTP_*，无法使用邮箱重置密码",
+        )
+
+    email = (payload.email or "").strip()
+    user = User.objects.filter(email__iexact=email).first()
+    if user is None:
+        return 400, AuthErrorSchema(message="重置失败", detail="验证码无效或已过期")
+
+    if not verify_and_consume_code("password_reset", email, payload.code):
+        return 400, AuthErrorSchema(message="重置失败", detail="验证码无效或已过期")
+
+    user.set_password(payload.new_password)
+    user.save(update_fields=["password"])
+    return 200, OkMessageSchema(detail="密码已重置，请使用新密码登录")

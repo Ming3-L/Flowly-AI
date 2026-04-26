@@ -33,10 +33,34 @@ export const useAuthStore = defineStore('auth', () => {
     password_confirm: string
     register_as_staff?: boolean
     admin_invite_code?: string
+    email_verification_code?: string
   }) {
     const res = await api.post('/auth/register', payload, {
       skipGlobalErrorHandler: true,
     })
+    return res.data
+  }
+
+  async function sendEmailCode(email: string, purpose: 'register' | 'password_reset') {
+    const res = await api.post<{ detail: string }>(
+      '/auth/email/send-code',
+      { email, purpose },
+      { skipGlobalErrorHandler: true },
+    )
+    return res.data
+  }
+
+  async function resetPasswordConfirm(payload: {
+    email: string
+    code: string
+    new_password: string
+    new_password_confirm: string
+  }) {
+    const res = await api.post<{ detail: string }>(
+      '/auth/password/reset/confirm',
+      payload,
+      { skipGlobalErrorHandler: true },
+    )
     return res.data
   }
 
@@ -146,6 +170,8 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     isAuthenticated,
     register,
+    sendEmailCode,
+    resetPasswordConfirm,
     login,
     logout,
     fetchCurrentUser,

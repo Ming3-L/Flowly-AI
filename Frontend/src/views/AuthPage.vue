@@ -51,8 +51,8 @@
           <span>返回</span>
         </button>
 
-        <!-- 登录/注册切换 -->
-        <div class="auth-tabs">
+        <!-- 登录/注册切换（忘记密码时隐藏） -->
+        <div v-show="activeTab !== 'forgot'" class="auth-tabs">
           <button
             class="auth-tab"
             :class="{ active: activeTab === 'login' }"
@@ -68,6 +68,14 @@
             注册
           </button>
           <div class="tab-indicator" :class="activeTab"></div>
+        </div>
+
+        <!-- 忘记密码：返回登录 -->
+        <div v-show="activeTab === 'forgot'" class="forgot-toolbar">
+          <button type="button" class="back-btn ghost" @click="switchTab('login')">
+            <el-icon><ArrowLeft /></el-icon>
+            <span>返回登录</span>
+          </button>
         </div>
 
         <!-- 登录表单 -->
@@ -114,6 +122,10 @@
                 </template>
               </el-input>
             </el-form-item>
+
+            <div class="forgot-inline">
+              <button type="button" class="text-link" @click="switchTab('forgot')">忘记密码？</button>
+            </div>
 
             <el-form-item>
               <el-button
@@ -206,6 +218,27 @@
               />
             </el-form-item>
 
+            <el-form-item label="邮箱验证码" prop="email_verification_code">
+              <div class="email-code-row">
+                <el-input
+                  v-model="registerForm.email_verification_code"
+                  maxlength="4"
+                  placeholder="4 位数字（后台已配置 FLOWLY_SMTP 时必填）"
+                  size="large"
+                  inputmode="numeric"
+                  @keyup.enter="handleRegister"
+                />
+                <el-button
+                  size="large"
+                  :disabled="registerCodeCooldown > 0 || registerSendCodeLoading"
+                  :loading="registerSendCodeLoading"
+                  @click="handleSendRegisterCode"
+                >
+                  {{ registerCodeCooldown > 0 ? `${registerCodeCooldown}s` : '获取验证码' }}
+                </el-button>
+              </div>
+            </el-form-item>
+
             <el-form-item label="密码" prop="password">
               <el-input
                 v-model="registerForm.password"
@@ -258,7 +291,7 @@
               <el-input
                 v-model="registerForm.admin_invite_code"
                 type="password"
-                placeholder="由部署方配置 FLOWLY_ADMIN_REGISTER_INVITE 等环境变量后提供"
+                placeholder="由管理员在后台「接入配置」设置邀请码后提供"
                 size="large"
                 show-password
               />
@@ -277,13 +310,98 @@
             </el-form-item>
           </el-form>
         </div>
+
+        <!-- 忘记密码 -->
+        <div v-show="activeTab === 'forgot'" class="form-wrapper">
+          <div class="form-heading">
+            <h2>重置密码</h2>
+            <p>通过注册邮箱收取验证码后设置新密码</p>
+          </div>
+
+          <el-form
+            ref="forgotFormRef"
+            :model="forgotForm"
+            :rules="forgotRules"
+            label-position="top"
+            @submit.prevent="handleForgotSubmit"
+          >
+            <el-form-item label="邮箱" prop="email">
+              <el-input
+                v-model="forgotForm.email"
+                type="email"
+                placeholder="注册时使用的邮箱"
+                size="large"
+                :prefix-icon="Message"
+                @focus="onAuthFieldFocus"
+                @blur="onAuthFieldBlur"
+              />
+            </el-form-item>
+
+            <el-form-item label="邮箱验证码" prop="code">
+              <div class="email-code-row">
+                <el-input
+                  v-model="forgotForm.code"
+                  maxlength="4"
+                  placeholder="4 位数字"
+                  size="large"
+                  inputmode="numeric"
+                />
+                <el-button
+                  size="large"
+                  :disabled="forgotCodeCooldown > 0 || forgotSendCodeLoading"
+                  :loading="forgotSendCodeLoading"
+                  @click="handleSendForgotCode"
+                >
+                  {{ forgotCodeCooldown > 0 ? `${forgotCodeCooldown}s` : '获取验证码' }}
+                </el-button>
+              </div>
+            </el-form-item>
+
+            <el-form-item label="新密码" prop="new_password">
+              <el-input
+                v-model="forgotForm.new_password"
+                type="password"
+                placeholder="至少 8 个字符"
+                size="large"
+                :prefix-icon="Lock"
+                show-password
+                @focus="onAuthFieldFocus"
+                @blur="onAuthFieldBlur"
+              />
+            </el-form-item>
+
+            <el-form-item label="确认新密码" prop="new_password_confirm">
+              <el-input
+                v-model="forgotForm.new_password_confirm"
+                type="password"
+                placeholder="再次输入新密码"
+                size="large"
+                :prefix-icon="Lock"
+                show-password
+                @keyup.enter="handleForgotSubmit"
+              />
+            </el-form-item>
+
+            <el-form-item>
+              <el-button
+                type="primary"
+                size="large"
+                :loading="forgotLoading"
+                class="submit-btn"
+                @click="handleForgotSubmit"
+              >
+                重置密码
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </div>
       </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, type Ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock, Message, ArrowLeft, View, Hide } from '@element-plus/icons-vue'
@@ -318,10 +436,144 @@ const auth = useAuthStore()
 const social = useSocialStore()
 
 // ── Tab 状态 ──────────────────────────────────────────────────────────────
-const activeTab = ref<'login' | 'register'>('login')
+const activeTab = ref<'login' | 'register' | 'forgot'>('login')
 
-function switchTab(tab: 'login' | 'register') {
+function switchTab(tab: 'login' | 'register' | 'forgot') {
   activeTab.value = tab
+}
+
+const registerCooldownIntervalId = ref<number | null>(null)
+const forgotCooldownIntervalId = ref<number | null>(null)
+
+onUnmounted(() => {
+  if (registerCooldownIntervalId.value != null) window.clearInterval(registerCooldownIntervalId.value)
+  if (forgotCooldownIntervalId.value != null) window.clearInterval(forgotCooldownIntervalId.value)
+})
+
+function startCooldown(seconds: number, cooldownRef: Ref<number>, intervalRef: Ref<number | null>) {
+  cooldownRef.value = seconds
+  if (intervalRef.value != null) window.clearInterval(intervalRef.value)
+  intervalRef.value = window.setInterval(() => {
+    cooldownRef.value -= 1
+    if (cooldownRef.value <= 0 && intervalRef.value != null) {
+      window.clearInterval(intervalRef.value)
+      intervalRef.value = null
+    }
+  }, 1000) as unknown as number
+}
+
+const registerSendCodeLoading = ref(false)
+const registerCodeCooldown = ref(0)
+
+async function handleSendRegisterCode() {
+  const email = registerForm.email.trim()
+  if (!email) {
+    ElMessage.warning('请先填写邮箱')
+    return
+  }
+  registerSendCodeLoading.value = true
+  try {
+    const data = await auth.sendEmailCode(email, 'register')
+    ElMessage.success(data.detail || '验证码已发送')
+    startCooldown(60, registerCodeCooldown, registerCooldownIntervalId)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { detail?: string; message?: string } } }
+    const detail = e?.response?.data?.detail ?? e?.response?.data?.message ?? '发送失败'
+    ElMessage.error(detail)
+  } finally {
+    registerSendCodeLoading.value = false
+  }
+}
+
+const forgotFormRef = ref<FormInstance>()
+const forgotLoading = ref(false)
+const forgotSendCodeLoading = ref(false)
+const forgotCodeCooldown = ref(0)
+
+const forgotForm = reactive({
+  email: '',
+  code: '',
+  new_password: '',
+  new_password_confirm: '',
+})
+
+const validateForgotPasswordConfirm = (
+  _rule: unknown,
+  value: string,
+  callback: (err?: Error) => void,
+) => {
+  if (value !== forgotForm.new_password) {
+    callback(new Error('两次输入的新密码不一致'))
+  } else {
+    callback()
+  }
+}
+
+const forgotRules: FormRules = {
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { type: 'email', message: '请输入有效的邮箱地址', trigger: 'blur' },
+  ],
+  code: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { len: 4, message: '验证码为 4 位', trigger: 'blur' },
+    { pattern: /^\d{4}$/, message: '须为数字', trigger: 'blur' },
+  ],
+  new_password: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 8, message: '密码至少 8 个字符', trigger: 'blur' },
+  ],
+  new_password_confirm: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    { validator: validateForgotPasswordConfirm, trigger: 'blur' },
+  ],
+}
+
+async function handleSendForgotCode() {
+  const email = forgotForm.email.trim()
+  if (!email) {
+    ElMessage.warning('请先填写邮箱')
+    return
+  }
+  forgotSendCodeLoading.value = true
+  try {
+    const data = await auth.sendEmailCode(email, 'password_reset')
+    ElMessage.success(data.detail || '若该邮箱已注册，将收到验证码')
+    startCooldown(60, forgotCodeCooldown, forgotCooldownIntervalId)
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { detail?: string; message?: string } } }
+    const detail = e?.response?.data?.detail ?? e?.response?.data?.message ?? '发送失败'
+    ElMessage.error(detail)
+  } finally {
+    forgotSendCodeLoading.value = false
+  }
+}
+
+async function handleForgotSubmit() {
+  const valid = await forgotFormRef.value?.validate().catch(() => false)
+  if (!valid) return
+  forgotLoading.value = true
+  try {
+    const data = await auth.resetPasswordConfirm({
+      email: forgotForm.email.trim(),
+      code: forgotForm.code.trim(),
+      new_password: forgotForm.new_password,
+      new_password_confirm: forgotForm.new_password_confirm,
+    })
+    ElMessage.success(data.detail || '密码已重置')
+    switchTab('login')
+    loginForm.username = ''
+    forgotForm.email = ''
+    forgotForm.code = ''
+    forgotForm.new_password = ''
+    forgotForm.new_password_confirm = ''
+  } catch (err: unknown) {
+    const e = err as { response?: { data?: { detail?: string; message?: string } } }
+    const detail = e?.response?.data?.detail ?? e?.response?.data?.message ?? '重置失败'
+    ElMessage.error(detail)
+  } finally {
+    forgotLoading.value = false
+  }
 }
 
 // ── 登录 ──────────────────────────────────────────────────────────────────
@@ -368,6 +620,7 @@ const registerLoading = ref(false)
 const registerForm = reactive({
   username: '',
   email: '',
+  email_verification_code: '',
   password: '',
   password_confirm: '',
   register_as_staff: false,
@@ -382,6 +635,19 @@ const validatePasswordConfirm = (_rule: unknown, value: string, callback: (err?:
   }
 }
 
+const validateRegisterEmailCode = (_rule: unknown, value: string, callback: (err?: Error) => void) => {
+  const v = (value || '').trim()
+  if (!v) {
+    callback()
+    return
+  }
+  if (!/^\d{4}$/.test(v)) {
+    callback(new Error('验证码须为 4 位数字'))
+    return
+  }
+  callback()
+}
+
 const registerRules: FormRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
@@ -391,6 +657,7 @@ const registerRules: FormRules = {
     { required: true, message: '请输入邮箱', trigger: 'blur' },
     { type: 'email', message: '请输入有效的邮箱地址', trigger: 'blur' },
   ],
+  email_verification_code: [{ validator: validateRegisterEmailCode, trigger: 'blur' }],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 8, message: '密码至少 8 个字符', trigger: 'blur' },
@@ -401,16 +668,18 @@ const registerRules: FormRules = {
   ],
 }
 
-const charPasswordLength = computed(() =>
-  activeTab.value === 'login' ? loginForm.password.length : registerForm.password.length,
-)
+const charPasswordLength = computed(() => {
+  if (activeTab.value === 'login') return loginForm.password.length
+  if (activeTab.value === 'register') return registerForm.password.length
+  return forgotForm.new_password.length
+})
 
 /** 与 index.html 中小人逻辑一致：用于「明文/密文」与偷看动效 */
-const charShowPassword = computed(() =>
-  activeTab.value === 'login'
-    ? loginPwdVisible.value
-    : registerPwdVisible.value || registerConfirmPwdVisible.value,
-)
+const charShowPassword = computed(() => {
+  if (activeTab.value === 'login') return loginPwdVisible.value
+  if (activeTab.value === 'forgot') return false
+  return registerPwdVisible.value || registerConfirmPwdVisible.value
+})
 
 onMounted(() => {
   if (route.name === 'AuthRegister') {
@@ -427,6 +696,7 @@ async function handleRegister() {
     await auth.register({
       username: registerForm.username,
       email: registerForm.email,
+      email_verification_code: registerForm.email_verification_code.trim(),
       password: registerForm.password,
       password_confirm: registerForm.password_confirm,
       register_as_staff: registerForm.register_as_staff,
@@ -673,6 +943,46 @@ async function handleRegister() {
   &:hover {
     color: #000000;
     background: rgba(0, 0, 0, 0.05);
+  }
+
+  &.ghost {
+    position: static;
+    margin-bottom: 0;
+  }
+}
+
+.forgot-toolbar {
+  margin-bottom: 20px;
+  padding-top: 4px;
+}
+
+.email-code-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  align-items: stretch;
+
+  :deep(.el-input) {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.forgot-inline {
+  margin: -8px 0 12px;
+  text-align: right;
+}
+
+.text-link {
+  background: none;
+  border: none;
+  color: #6c3ff5;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+
+  &:hover {
+    text-decoration: underline;
   }
 }
 

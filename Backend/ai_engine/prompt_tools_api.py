@@ -31,6 +31,15 @@ ai_router = Router(tags=["AI Catalog"], auth=JWTAuth())
 prompt_tools_router = Router(tags=["Prompt Tools"], auth=JWTAuth())
 
 
+class AIModelVariantItemSchema(Schema):
+    """二级选项（音色/能力等），与 ``list_models_merged_for_api`` 中 ``variants`` 项一致。"""
+
+    kind: str = ""
+    id: str = ""
+    label: str = ""
+    voice_type: str = ""
+
+
 class AIModelEntrySchema(Schema):
     key: str
     label: str
@@ -55,6 +64,10 @@ class AIModelEntrySchema(Schema):
     canvas_universal: bool = False
     api_kind: str = Field(default="ark_chat", description="ark_chat / ark_embedding / …")
     show_in_canvas_llm_nodes: bool = True
+    variants: list[AIModelVariantItemSchema] = Field(
+        default_factory=list,
+        description="openspeech 等模型的二级选项；须与目录 API 一并返回供前端展示。",
+    )
 
 
 class AIModelsCatalogSchema(Schema):

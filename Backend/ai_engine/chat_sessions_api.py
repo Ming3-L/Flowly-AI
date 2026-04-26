@@ -21,6 +21,7 @@ from ai_engine.integrations.ark_generative import (
     ark_images_generate_url,
     ark_video_generate_poll,
 )
+from ai_engine.integrations.ark_model_normalize import normalize_ark_generation_model_id
 from ai_engine.execution_media_services import (
     fetch_url_bytes,
     openspeech_auc_submit_and_poll_url,
@@ -93,7 +94,7 @@ def _finalize_doubao_model_for_generation(model_id: str) -> str:
     因此这里仅做基础清洗：如果用户/目录项明确填了 `ep-...` 就原样返回；否则返回原 model_id。
     若你的账号只允许通过接入点调用生成模型，请在后台目录项把 model_id 直接填为该生成模型的 `ep-...`。
     """
-    mid = (model_id or "").strip()
+    mid = normalize_ark_generation_model_id(model_id)
     if not mid:
         return ""
     if mid.startswith("ep-"):
@@ -553,10 +554,32 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
                     )
                     assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="audio")]
                     assistant_text = f"【语音对话】\n\n用户：{user_spoken}\n\n助手：{reply_text}"
+                elif "播客" in scopes or ck == "speech-doubao-podcast":
+                    # 播客多角色 API 未接前：用单路 TTS 通读，避免聊天页直接不可用
+                    audio, ct = openspeech_tts_bytes(
+                        text=user_prompt,
+                        encoding="mp3",
+                        uid=str(u.pk),
+                        voice_type=(payload.tts_voice_type or "").strip() or None,
+                    )
+                    saved = save_local_media_bytes(
+                        user_id=u.pk,
+                        kind=LocalMediaAsset.Kind.AUDIO,
+                        data=audio,
+                        mime=ct or "audio/mpeg",
+                        original_name="podcast_simple.mp3",
+                        source_url="",
+                    )
+                    assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="audio")]
+                    assistant_text = (
+                        f"已生成音频（{entry.label}）。说明：当前为单音色通读简化模式；"
+                        "完整多角色播客需在 OpenSpeech 播客接口接入后替换。"
+                    )
                 else:
                     raise ValueError(
-                        f"模型「{entry.label}」为 OpenSpeech 语音能力（scopes={list(scopes)[:10]}），聊天页目前仅支持 TTS/ASR。"
-                        "如需播客/声音复刻/音色设计等能力，需要新增对应链路。"
+                        f"模型「{entry.label}」为 OpenSpeech 语音能力（scopes={list(scopes)[:10]}），"
+                        "聊天页已支持 TTS、ASR、同声传译（简化）、实时语音（简化）与播客（单音色通读）。"
+                        "声音复刻/音色设计等仍需单独链路或工作流节点。"
                     )
             else:
                 raise ValueError(f"暂不支持的 api_kind: {ak}")

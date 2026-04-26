@@ -160,9 +160,24 @@
         <p class="hint">
           库内配置优先于服务器 .env。仅保存您在输入框中新填写的内容；「清除库内项」可恢复为环境变量。
         </p>
+        <p class="hint smtp-hint">
+          <strong>注册/找回密码验证码邮件</strong>仅使用库内
+          <code>FLOWLY_SMTP_HOST</code>、<code>FLOWLY_SMTP_PORT</code>（默认 465）、<code>FLOWLY_SMTP_USER</code>（发件箱）、
+          <code>FLOWLY_SMTP_PASSWORD</code>（如 QQ 邮箱 SMTP 授权码）；可选
+          <code>FLOWLY_SMTP_FROM_EMAIL</code>、<code>FLOWLY_SMTP_USE_SSL</code>/<code>FLOWLY_SMTP_USE_TLS</code>。
+          正文由方舟文本模型生成后从上述发件箱发往用户填写的邮箱，请勿依赖 .env 的 EMAIL_*。
+        </p>
+        <p class="hint smtp-hint">
+          <strong>管理员自助注册邀请码</strong>请在库内设置
+          <code>FLOWLY_ADMIN_REGISTER_INVITE</code>（管理员）与 <code>FLOWLY_SUPERUSER_REGISTER_INVITE</code>（超管）。
+          特殊：若系统还没有任何管理员账号，邀请码 <code>123456789</code> 可用于创建第一个超管（便于初始化后再改为自定义邀请码）。
+        </p>
         <div class="secrets-scroll">
           <div v-for="row in secretStatusRows" :key="row.key" class="secret-row">
-            <code class="secret-key">{{ row.key }}</code>
+            <div class="secret-key-block">
+              <code class="secret-key">{{ row.key }}</code>
+              <span v-if="secretKeyHint(row.key)" class="secret-key-hint">{{ secretKeyHint(row.key) }}</span>
+            </div>
             <div class="secret-tags">
               <el-tag size="small">{{ sourceLabel(row.winning_source) }}</el-tag>
               <el-tag v-if="row.is_effective_non_empty" size="small" type="success">有值</el-tag>
@@ -328,6 +343,22 @@ function isSensitiveKey(key: string): boolean {
   if (u.includes('API_KEY') || u.endsWith('_KEY')) return true
   if (u.includes('TOKEN') || u.includes('SECRET')) return true
   return false
+}
+
+/** 验证码邮件等专用键的简短说明（其余键留空，仅展示 key） */
+function secretKeyHint(key: string): string {
+  const hints: Record<string, string> = {
+    FLOWLY_SMTP_HOST: 'SMTP 服务器，如 smtp.qq.com',
+    FLOWLY_SMTP_PORT: '端口，常用 465（SSL）或 587（STARTTLS）',
+    FLOWLY_SMTP_USER: '发件邮箱账号（与 QQ 授权码对应的全邮箱）',
+    FLOWLY_SMTP_PASSWORD: 'SMTP 授权码/密码（加密存储）',
+    FLOWLY_SMTP_FROM_EMAIL: '可选，发件人显示地址；不填则同 USER',
+    FLOWLY_SMTP_USE_SSL: '可选填 1：强制 SSL（一般 465 可留空自动）',
+    FLOWLY_SMTP_USE_TLS: '可选填 1：STARTTLS（587 常用）',
+    FLOWLY_ADMIN_REGISTER_INVITE: '管理员自助注册邀请码（匹配则注册为管理员）',
+    FLOWLY_SUPERUSER_REGISTER_INVITE: '超级管理员自助注册邀请码（匹配则注册为超管）',
+  }
+  return hints[key] || ''
 }
 
 async function loadSecretsStatus() {
@@ -726,6 +757,26 @@ onMounted(() => {
   color: var(--app-text-2);
   margin: 0 0 12px;
   line-height: 1.5;
+}
+
+.smtp-hint code {
+  font-size: 11px;
+  padding: 0 3px;
+  background: var(--app-surface-alt, rgba(0, 0, 0, 0.06));
+  border-radius: 4px;
+}
+
+.secret-key-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.secret-key-hint {
+  font-size: 11px;
+  color: var(--app-text-2);
+  line-height: 1.35;
 }
 
 .secrets-scroll {

@@ -537,14 +537,40 @@ def openspeech_tts_bytes(
         },
     }
 
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer;{token}",
+        "User-Agent": "Flowly-AI/1.0",
+    }
+    # 新版控制台场景：若配置了 OPENSPEECH_API_KEY，则优先使用 v3（更稳定），避免 v1 授权/音色 grant 问题。
+    if (getattr(cfg, "api_key", "") or "").strip():
+        # seed-tts-2.0 与 seed-tts-1.0 的 speaker 资源不一致；常见 55000000「resource ID is mismatched…」时换 resource 重试
+        spk2 = (voice_type or cfg.tts2_speaker or "").strip()
+        spk1 = (voice_type or cfg.tts_voice_type or "").strip() or voice
+        try:
+            return openspeech_v3_tts_bytes(
+                text=t,
+                encoding=enc,
+                speaker=spk2 or spk1,
+                resource_id="seed-tts-2.0",
+                uid=uid,
+            )
+        except RuntimeError as e:
+            err = str(e).lower()
+            if "55000000" not in str(e) and "mismatched" not in err and "resource" not in err:
+                raise
+        return openspeech_v3_tts_bytes(
+            text=t,
+            encoding=enc,
+            speaker=spk1,
+            resource_id="seed-tts-1.0",
+            uid=uid,
+        )
+
     req = urllib.request.Request(
         url,
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer;{token}",
-            "User-Agent": "Flowly-AI/1.0",
-        },
+        headers=headers,
         method="POST",
     )
     try:
@@ -564,11 +590,36 @@ def openspeech_tts_bytes(
             except Exception:
                 detail = f" body={body[:200]!r}"
         if int(getattr(exc, "code", 0) or 0) == 401:
-            raise RuntimeError(
-                "OpenSpeech TTS 鉴权失败（401 Unauthorized）。"
-                "请检查 OPENSPEECH_APPID / OPENSPEECH_ACCESS_TOKEN 是否为同一应用，且 access_token 未过期。"
-                + (f"{detail}" if detail else "")
-            ) from exc
+            # v1 授权失败时，自动回退到 v3（seed-tts-2.0），避免“grant not found”一类 SaaS 授权差异。
+            try:
+                spk2 = (voice_type or cfg.tts2_speaker or "").strip()
+                spk1 = (voice_type or cfg.tts_voice_type or "").strip() or voice
+                try:
+                    return openspeech_v3_tts_bytes(
+                        text=t,
+                        encoding=enc,
+                        speaker=spk2 or spk1,
+                        resource_id="seed-tts-2.0",
+                        uid=uid,
+                    )
+                except RuntimeError as e2:
+                    e2s = str(e2).lower()
+                    if "55000000" not in str(e2) and "mismatched" not in e2s and "resource" not in e2s:
+                        raise
+                return openspeech_v3_tts_bytes(
+                    text=t,
+                    encoding=enc,
+                    speaker=spk1,
+                    resource_id="seed-tts-1.0",
+                    uid=uid,
+                )
+            except Exception:
+                raise RuntimeError(
+                    "OpenSpeech TTS 鉴权失败（401 Unauthorized）。"
+                    "请检查 OPENSPEECH_APPID / OPENSPEECH_ACCESS_TOKEN 是否为同一应用，且 access_token 未过期；"
+                    "或在控制台生成并配置 OPENSPEECH_API_KEY（推荐）。"
+                    + (f"{detail}" if detail else "")
+                ) from exc
         raise RuntimeError(f"OpenSpeech TTS HTTP 错误: {exc}{detail}") from exc
     if len(raw) > _MAX_DOWNLOAD:
         raise ValueError("TTS 响应过大，已拒绝下载。")

@@ -19,6 +19,9 @@ class AiModelCatalogTests(TestCase):
         s.language.ollama_model = "env-ollama"
         s.language.vectorengine_model = "env-ve"
         s.language.doubao_ark_model = "ep-from-env"
+        # MagicMock 会为未声明属性自动生成子 mock；需显式置空，避免误判为 ep 或污染 model 解析
+        s.language.doubao_ark_smart_router_endpoint = ""
+        s.language.flowly_preserve_doubao_model_id = "0"
         return s
 
     @patch("ai_engine.ai_model_catalog.get_ai_provider_settings")
@@ -42,7 +45,8 @@ class AiModelCatalogTests(TestCase):
         mock_gs.return_value = self._mock_settings()
         route, mid, key = resolve_route_and_model_id({"modelKey": "ark-doubao-smart-router"})
         self.assertEqual(route, "doubao")
-        self.assertEqual(mid, "Doubao-Smart-Router")
+        # 目录里是 Doubao-Smart-Router；当环境 DOUBAO_ARK_MODEL 为 ep- 时与 Seed 系列一样映射到该 ep
+        self.assertEqual(mid, "ep-from-env")
         self.assertEqual(key, "ark-doubao-smart-router")
 
     @patch("ai_engine.ai_model_catalog.get_ai_provider_settings")
@@ -168,4 +172,6 @@ class AiModelCatalogMergeTests(TestCase):
         s.language.ollama_model = "env-ollama"
         s.language.vectorengine_model = "env-ve"
         s.language.doubao_ark_model = "ep-from-env"
+        s.language.doubao_ark_smart_router_endpoint = ""
+        s.language.flowly_preserve_doubao_model_id = "0"
         return s

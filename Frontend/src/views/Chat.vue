@@ -217,44 +217,25 @@
                   </el-option>
                 </el-option-group>
               </el-select>
-              <el-popover v-if="currentTtsVariants().length"
-                placement="top"
-                width="320"
-                trigger="click"
-                :disabled="streaming"
-              >
-                <template #reference>
-                  <el-button
-                    size="small"
-                    style="margin-left: 10px"
-                    :disabled="streaming"
-                  >
-                    二级选项 &gt;
-                  </el-button>
-                </template>
-                <div style="display:flex; align-items:center; gap:10px">
-                  <div style="font-size:12px; color: var(--app-text-2); white-space: nowrap">音色/能力</div>
-                  <el-select
-                    v-model="selectedTtsVoiceId"
-                    size="small"
-                    filterable
-                    style="width: 230px"
-                    :disabled="streaming"
-                    placeholder="请选择"
-                    @change="saveTtsVoice"
-                  >
-                    <el-option
-                      v-for="v in currentTtsVariants()"
-                      :key="v.id"
-                      :label="v.label"
-                      :value="v.id"
-                    />
-                  </el-select>
-                </div>
-                <div style="margin-top:10px; font-size:12px; color: var(--app-text-2)">
-                  共 {{ currentTtsVariants().length }} 项（将随本模型保存）
-                </div>
-              </el-popover>
+              <div v-if="currentTtsVariants().length" class="chat-variant-inline">
+                <span class="chat-variant-inline__label">音色/能力</span>
+                <el-select
+                  v-model="selectedTtsVoiceId"
+                  size="small"
+                  filterable
+                  style="width: 220px"
+                  :disabled="streaming"
+                  placeholder="请选择"
+                  @change="saveTtsVoice"
+                >
+                  <el-option
+                    v-for="v in currentTtsVariants()"
+                    :key="v.id"
+                    :label="v.label"
+                    :value="v.id"
+                  />
+                </el-select>
+              </div>
             </div>
             <div class="input-btns">
               <el-button
@@ -685,6 +666,13 @@ async function streamResponse(query: string, sessionId: number) {
     const cm = currentModel()
     const mods = new Set((cm?.modalities ?? []).map((x) => String(x).toLowerCase()))
     const allowImageMm = (cm?.api_kind ?? 'ark_chat') === 'ark_chat' && mods.has('image')
+    const kind = String(cm?.api_kind || 'ark_chat').toLowerCase()
+    const sendTimeout =
+      kind === 'ark_video_gen' || kind === 'ark_3d_gen'
+        ? 12 * 60 * 1000
+        : kind === 'ark_image_gen' || kind === 'openspeech'
+          ? 4 * 60 * 1000
+          : 60 * 1000
 
     // 先上传附件（得到 public_url 供多模态模型抓取）
     const attachments: Array<{ type: string; url: string }> = []
@@ -724,7 +712,8 @@ async function streamResponse(query: string, sessionId: number) {
           return String(found?.voice_type || '').trim()
         })(),
         attachments,
-      }
+      },
+      { timeout: sendTimeout }
     )
 
     streaming.value = false
@@ -839,7 +828,21 @@ onMounted(async () => {
   else await startNewChat()
 })
 
-watch(selectedModelKey, () => saveModelKey())
+watch(selectedModelKey, () => {
+  saveModelKey()
+  loadSavedTtsVoice()
+  const vs = currentTtsVariants()
+  if (vs.length) {
+    const cur = (selectedTtsVoiceId.value || '').trim()
+    const ok = cur && vs.some((x) => String(x.id || '').trim() === cur)
+    if (!ok) {
+      selectedTtsVoiceId.value = String(vs[0]?.id || '').trim()
+      saveTtsVoice()
+    }
+  } else {
+    selectedTtsVoiceId.value = ''
+  }
+})
 
 onUnmounted(() => {
   ws?.close()
@@ -852,6 +855,20 @@ onUnmounted(() => {
   display: flex;
   height: calc(100vh - 56px);
   overflow: hidden;
+}
+
+// 语音模型二级选项（音色/能力）
+.chat-variant-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 10px;
+}
+
+.chat-variant-inline__label {
+  font-size: 12px;
+  color: var(--app-text-2);
+  white-space: nowrap;
 }
 
 // ── 侧边栏 ──────────────────────────────────────────────────────────────────

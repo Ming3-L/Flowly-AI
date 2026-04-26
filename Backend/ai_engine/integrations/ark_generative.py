@@ -14,11 +14,56 @@ from __future__ import annotations
 import json
 import logging
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from typing import Any
 
 from ai_engine.integrations import get_ai_provider_settings
+from ai_engine.integrations.ark_model_normalize import normalize_ark_generation_model_id
 
 logger = logging.getLogger(__name__)
+
+
+def _ark_contents_generations_request(*, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+    """
+    调用方舟 ``/api/v3/contents/generations/tasks`` REST（与官方 curl 一致）。
+
+    部分 Python SDK 在 3D 图生场景会把 ``image_data`` 序列化成非 string，触发
+    ``InvalidParameter: body -> image_data``；此处用原始 JSON 规避。
+    """
+    s = get_ai_provider_settings()
+    key = (s.language.doubao_ark_api_key or "").strip()
+    if not key:
+        raise ValueError("请配置 ARK_API_KEY 或 DOUBAO_API_KEY（与方舟控制台一致）。")
+    base = (s.language.doubao_ark_base_url or "https://ark.cn-beijing.volces.com/api/v3").strip().rstrip("/")
+    p = path if path.startswith("/") else f"/{path}"
+    url = f"{base}{p}"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "Content-Type": "application/json",
+        "User-Agent": "Flowly-AI/ark-generative",
+    }
+    data: bytes | None = None
+    m = method.upper()
+    if body is not None and m != "GET":
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers=headers, method=m)
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:  # noqa: S310
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = ""
+        raise RuntimeError(f"方舟 contents/generations HTTP {exc.code}: {detail[:1200]}") from exc
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise RuntimeError(f"方舟响应非 JSON：{raw[:400]!r}") from exc
 
 def _require_ark_sdk():
     try:
@@ -284,11 +329,10 @@ def ark_3d_generate_poll(
     图生 3D / 文生 3D（异步任务），返回 (3D 资源 URL 或空字符串, 原始结果 dict)。
 
     说明：
-    - 复用方舟 content_generation.tasks 接口
+    - 使用官方 REST ``POST /contents/generations/tasks`` + ``GET .../tasks/{id}``，与 curl 示例一致
     - ``prompt_text`` 可包含类似 ``--meshquality high --fileformat obj`` 的参数片段
     """
-    client = build_ark_client()
-    mid = (model_id or "").strip()
+    mid = normalize_ark_generation_model_id((model_id or "").strip())
     if not mid:
         raise ValueError("3D 生成需要 model_id（如 doubao-seed3d-2-0-260328）。")
     text = (prompt_text or "").strip()
@@ -300,10 +344,12 @@ def ark_3d_generate_poll(
     if ref:
         content.append({"type": "image_url", "image_url": {"url": ref}})
 
-    create_result = client.content_generation.tasks.create(model=mid, content=content)
-    task_id = getattr(create_result, "id", None)
-    if task_id is None and isinstance(create_result, dict):
-        task_id = create_result.get("id")
+    create_result = _ark_contents_generations_request(
+        "POST",
+        "/contents/generations/tasks",
+        {"model": mid, "content": content},
+    )
+    task_id = str(create_result.get("id") or create_result.get("task_id") or "").strip()
     if not task_id:
         raise RuntimeError(f"创建 3D 任务失败：{create_result!r}")
     logger.info("ark 3d task created model=%s task_id=%s", mid, task_id)
@@ -311,12 +357,14 @@ def ark_3d_generate_poll(
     deadline = time.monotonic() + float(timeout_s)
     last_dump: dict[str, Any] = {}
     while time.monotonic() < deadline:
-        get_result = client.content_generation.tasks.get(task_id=task_id)
-        last_dump = _result_to_dict(get_result)
-        status = str(last_dump.get("status") or getattr(get_result, "status", "") or "")
+        last_dump = _ark_contents_generations_request(
+            "GET",
+            f"/contents/generations/tasks/{urllib.parse.quote(task_id, safe='')}",
+        )
+        status = str(last_dump.get("status") or "").strip()
         logger.info("ark 3d task poll task_id=%s status=%s", task_id, status)
         if status == "succeeded":
-            url = _find_http_3d_url(last_dump) or _find_http_3d_url(get_result)
+            url = _find_http_3d_url(last_dump)
             if not url:
                 logger.warning(
                     "ark 3d task succeeded but no model url parsed task_id=%s keys=%s",
@@ -325,7 +373,7 @@ def ark_3d_generate_poll(
                 )
             return url, last_dump
         if status == "failed":
-            err = last_dump.get("error") or getattr(get_result, "error", "")
+            err = last_dump.get("error") or last_dump.get("message") or ""
             logger.error("ark 3d task failed task_id=%s error=%s", task_id, err)
             raise RuntimeError(f"3D 生成失败：{err}")
         time.sleep(float(poll_interval_s))
