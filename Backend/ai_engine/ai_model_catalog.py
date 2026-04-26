@@ -499,7 +499,11 @@ def _finalize_doubao_model_for_ark_endpoint(route: str, model_id: str, s: Any) -
     火山方舟常见部署方式：控制台只下发 ``ep-`` 推理接入点，此时 OpenAI 兼容接口的 ``model``
     字段应填接入点 id；若仍传 ``Doubao-Seed-2.0-mini`` 等逻辑名会返回 InvalidEndpointOrModel。
 
-    当环境 ``DOUBAO_ARK_MODEL`` 为 ``ep-…`` 时，将其它非 ep 的豆包模型名映射到该接入点。
+    当环境 ``DOUBAO_ARK_MODEL`` 为 ``ep-…`` 时，历史逻辑会把其它非 ep 的豆包模型名映射到该接入点。
+
+    但在本项目的“模型目录”场景里，管理员可能希望 **显式传模型名**（如 Doubao-Seed-2.0-Code）
+    而不是被强制改写为环境默认接入点。为兼容此需求，调用方应只在「未显式指定 model_id」
+    的情况下使用该映射逻辑。
 
     注意：部分账号/地域下 **不具备** ``Doubao-Smart-Router`` 的调用权限；此时传该模型名会 404。
     为了让默认配置更稳健，这里也把 ``Doubao-Smart-Router`` 映射到接入点（如需强制用 Smart-Router，
@@ -571,7 +575,10 @@ def resolve_route_and_model_id(
             if not mid:
                 mid = _env_default_for_route(route, s)
             route, mid = _adjust_route_by_model_id(route, mid, prov)
-            mid = _finalize_doubao_model_for_ark_endpoint(route, mid, s)
+            # 关键：若目录项显式填写了 model_id（哪怕不是 ep-），就尊重管理员配置，不再强制映射到环境默认 ep。
+            # 仅当目录项留空，才回退到环境默认（可能是 ep-）。
+            if not (entry.model_id or "").strip():
+                mid = _finalize_doubao_model_for_ark_endpoint(route, mid, s)
             return route, mid, catalog_key
 
     preset: ChatModelPreset | None = _BY_KEY.get(catalog_key) if catalog_key else None

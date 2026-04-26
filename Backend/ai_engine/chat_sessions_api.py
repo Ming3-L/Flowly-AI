@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from django.db.models import Count
@@ -15,8 +16,18 @@ from ai_engine.models import ConversationMessage, ConversationSession
 from ai_engine.models import AIModelCatalogEntry, LocalMediaAsset
 from ai_engine.local_media_store import absolutize_public_url, save_local_media_bytes
 from ai_engine.integrations import get_ai_provider_settings
-from ai_engine.integrations.ark_generative import ark_images_generate_url, ark_video_generate_poll
-from ai_engine.execution_media_services import fetch_url_bytes, openspeech_tts_bytes, openspeech_v3_tts_bytes
+from ai_engine.integrations.ark_generative import (
+    ark_3d_generate_poll,
+    ark_images_generate_url,
+    ark_video_generate_poll,
+)
+from ai_engine.execution_media_services import (
+    fetch_url_bytes,
+    openspeech_auc_submit_and_poll_url,
+    openspeech_asr_transcribe_url,
+    openspeech_tts_bytes,
+    openspeech_v3_tts_bytes,
+)
 
 chat_sessions_router = Router(tags=["Chat Sessions"], auth=JWTAuth())
 
@@ -355,46 +366,198 @@ def send_chat_message(request: HttpRequest, session_id: int, payload: ChatSendIn
                 mode_hint = "图生视频" if ref_img else "文生视频"
                 assistant_text = f"已生成视频（{entry.label}，{mode_hint}）。"
             elif ak == AIModelCatalogEntry.ApiKind.ARK_3D_GEN:
-                # 3D 生成：当前仓库未集成方舟 3D SDK 调用（不同产品线返回结构也不统一），
-                # 先给出明确指导与可落库的错误消息，避免前端“看起来支持但必失败”。
-                raise ValueError(
-                    "文生 3D 当前尚未在后端接入。"
-                    "请提供方舟 3D 的具体 API/SDK 调用方式（或你控制台里可用的示例代码/文档片段），"
-                    "我可以按 ark_image_gen/ark_video_gen 同样方式补齐调用并把生成物保存为附件返回。"
+                if not mid:
+                    raise ValueError(f"目录项「{entry.label}」未配置 model_id")
+                mid = _finalize_doubao_model_for_generation(mid)
+                ref_img = ""
+                for a in payload.attachments or []:
+                    if str(a.type or "").strip().lower() == "image" and str(a.url or "").strip():
+                        ref_img = absolutize_public_url(str(a.url).strip())
+                        break
+                model_url, _raw = ark_3d_generate_poll(
+                    model_id=mid,
+                    prompt_text=user_prompt,
+                    image_url=ref_img or None,
+                    poll_interval_s=3.0,
+                    timeout_s=900.0,
                 )
-            elif ak == AIModelCatalogEntry.ApiKind.OPEN_SPEECH:
-                # 当前聊天页仅接入「文本转语音（TTS）」。
-                # 目录里也包含 ASR/同传/播客等 openspeech 项，但尚未在聊天页实现对应链路。
-                scopes = set([str(x).strip().upper() for x in (entry.scopes or []) if str(x).strip()])
-                if "TTS" not in scopes:
-                    raise ValueError(
-                        f"模型「{entry.label}」不是 TTS 语音合成模型，聊天页暂不支持。"
-                        "请在模型下拉里选择「豆包 · 语音合成」或「豆包 · 语音合成 2.0」。"
-                    )
-                vt = (payload.tts_voice_type or "").strip() or None
-                # v1（/api/v1/tts）不支持 2.0 大模型音色；2.0 走 v3。
-                if str(getattr(entry, "catalog_key", "") or "") == "speech-doubao-tts-2":
-                    audio, ct = openspeech_v3_tts_bytes(
-                        text=user_prompt,
-                        encoding="mp3",
-                        uid=str(u.pk),
-                        speaker=(vt or None),
-                        resource_id="seed-tts-2.0",
-                    )
-                else:
-                    audio, ct = openspeech_tts_bytes(
-                        text=user_prompt, encoding="mp3", uid=str(u.pk), voice_type=vt
-                    )
+                if not model_url:
+                    raise RuntimeError("3D 任务已完成但未解析到模型下载地址")
+                raw, ct = fetch_url_bytes(model_url, max_bytes=120 * 1024 * 1024)
+                guess_name = os.path.basename((model_url or "").split("?", 1)[0]).strip()
+                if not guess_name:
+                    guess_name = "generated.obj"
                 saved = save_local_media_bytes(
                     user_id=u.pk,
-                    kind=LocalMediaAsset.Kind.AUDIO,
-                    data=audio,
-                    mime=ct or "audio/mpeg",
-                    original_name="tts.mp3",
-                    source_url="",
+                    kind=LocalMediaAsset.Kind.FILE,
+                    data=raw,
+                    mime=ct or "application/octet-stream",
+                    original_name=guess_name,
+                    source_url=model_url,
                 )
-                assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="audio")]
-                assistant_text = f"已生成音频（{entry.label}）。"
+                assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="file")]
+                mode_hint = "图生3D" if ref_img else "文生3D"
+                assistant_text = f"已生成 3D 模型（{entry.label}，{mode_hint}）。"
+            elif ak == AIModelCatalogEntry.ApiKind.OPEN_SPEECH:
+                scopes = set([str(x).strip().upper() for x in (entry.scopes or []) if str(x).strip()])
+                ck = str(getattr(entry, "catalog_key", "") or "").strip()
+
+                # 1) TTS
+                if "TTS" in scopes:
+                    vt = (payload.tts_voice_type or "").strip() or None
+                    # v1（/api/v1/tts）不支持 2.0 大模型音色；2.0 走 v3。
+                    if str(getattr(entry, "catalog_key", "") or "") == "speech-doubao-tts-2":
+                        audio, ct = openspeech_v3_tts_bytes(
+                            text=user_prompt,
+                            encoding="mp3",
+                            uid=str(u.pk),
+                            speaker=(vt or None),
+                            resource_id="seed-tts-2.0",
+                        )
+                    else:
+                        audio, ct = openspeech_tts_bytes(
+                            text=user_prompt, encoding="mp3", uid=str(u.pk), voice_type=vt
+                        )
+                    saved = save_local_media_bytes(
+                        user_id=u.pk,
+                        kind=LocalMediaAsset.Kind.AUDIO,
+                        data=audio,
+                        mime=ct or "audio/mpeg",
+                        original_name="tts.mp3",
+                        source_url="",
+                    )
+                    assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="audio")]
+                    assistant_text = f"已生成音频（{entry.label}）。"
+                # 2) ASR（文件/非流式）：从附件音频 URL 转写为文本
+                elif "ASR" in scopes or ck.startswith("speech-doubao-asr-"):
+                    audio_in = ""
+                    for a in payload.attachments or []:
+                        if str(a.type or "").strip().lower() == "audio" and str(a.url or "").strip():
+                            audio_in = absolutize_public_url(str(a.url).strip())
+                            break
+                    if not audio_in:
+                        raise ValueError(
+                            f"模型「{entry.label}」为语音识别（ASR），请上传音频附件（audio/*）。"
+                        )
+                    # 录音文件识别：HTTP submit/query；流式识别：WS bigmodel_nostream
+                    if ck in ("speech-doubao-asr-file", "speech-doubao-asr-file-2"):
+                        text, raw = openspeech_auc_submit_and_poll_url(
+                            audio_url=audio_in,
+                            uid=str(u.pk),
+                            timeout_s=300.0,
+                            poll_interval_s=2.0,
+                        )
+                        assistant_text = f"【OpenSpeech 录音文件识别 转写】\n\n{text}"
+                    else:
+                        text, raw = openspeech_asr_transcribe_url(
+                            audio_url=audio_in,
+                            uid=str(u.pk),
+                            timeout_s=120.0,
+                        )
+                        assistant_text = f"【OpenSpeech 流式语音识别 转写】\n\n{text}"
+                    assistant_attachments = []
+                # 3) 同声传译 2.0（先用 ASR → 再用 LLM 翻译 → 可选 TTS）
+                elif "同传" in scopes or "翻译" in scopes or ck == "speech-doubao-simultaneous-2":
+                    audio_in = ""
+                    for a in payload.attachments or []:
+                        if str(a.type or "").strip().lower() == "audio" and str(a.url or "").strip():
+                            audio_in = absolutize_public_url(str(a.url).strip())
+                            break
+                    if not audio_in:
+                        raise ValueError("同声传译需要上传音频附件（audio/*）。")
+
+                    # 先用「录音文件识别 2.0」链路拿到更稳的文本（HTTP AUC）
+                    src_text, _raw = openspeech_auc_submit_and_poll_url(
+                        audio_url=audio_in,
+                        uid=str(u.pk),
+                        timeout_s=300.0,
+                        poll_interval_s=2.0,
+                    )
+
+                    # 再用对话模型做翻译（临时实现：不依赖 AST protobuf WS；后续可换为官方同传 2.0 WS）
+                    from ai_engine.workflow import get_chat_model
+                    from langchain_core.messages import HumanMessage, SystemMessage  # pyright: ignore[reportMissingImports]
+
+                    llm = get_chat_model("doubao", model="", streaming=False, max_tokens=1024)
+                    sys = (
+                        "你是专业同声传译助手。请把用户语音转写文本翻译为最自然的中文。"
+                        "如果原文已是中文则翻译为英文。只输出译文，不要解释。"
+                    )
+                    resp = llm.invoke([SystemMessage(content=sys), HumanMessage(content=src_text)])
+                    translated = str(getattr(resp, "content", resp) or "").strip()
+
+                    # 可选：合成译文语音（复用 TTS2.0 默认 speaker）
+                    try:
+                        audio, ct = openspeech_v3_tts_bytes(
+                            text=translated or src_text,
+                            encoding="mp3",
+                            uid=str(u.pk),
+                            speaker=(payload.tts_voice_type or "").strip() or None,
+                            resource_id="seed-tts-2.0",
+                        )
+                        saved = save_local_media_bytes(
+                            user_id=u.pk,
+                            kind=LocalMediaAsset.Kind.AUDIO,
+                            data=audio,
+                            mime=ct or "audio/mpeg",
+                            original_name="simul.mp3",
+                            source_url="",
+                        )
+                        assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="audio")]
+                    except Exception:
+                        assistant_attachments = []
+
+                    assistant_text = f"【同声传译（转写→翻译）】\n\n{translated or src_text}"
+                # 4) 端到端实时语音（先用 ASR → LLM 回复 → TTS 语音）
+                elif "端到端" in scopes or "语音对话" in scopes or ck == "speech-doubao-realtime-voice":
+                    audio_in = ""
+                    for a in payload.attachments or []:
+                        if str(a.type or "").strip().lower() == "audio" and str(a.url or "").strip():
+                            audio_in = absolutize_public_url(str(a.url).strip())
+                            break
+                    user_spoken = ""
+                    if audio_in:
+                        user_spoken, _raw = openspeech_auc_submit_and_poll_url(
+                            audio_url=audio_in,
+                            uid=str(u.pk),
+                            timeout_s=300.0,
+                            poll_interval_s=2.0,
+                        )
+                    else:
+                        user_spoken = user_prompt
+                    if not user_spoken.strip():
+                        raise ValueError("实时语音对话需要音频附件或文本输入。")
+
+                    from ai_engine.workflow import get_chat_model
+                    from langchain_core.messages import HumanMessage, SystemMessage  # pyright: ignore[reportMissingImports]
+
+                    llm = get_chat_model("doubao", model="", streaming=False, max_tokens=1024)
+                    sys = "你是一个语音对话助手，请用简洁自然的中文回答。"
+                    resp = llm.invoke([SystemMessage(content=sys), HumanMessage(content=user_spoken)])
+                    reply_text = str(getattr(resp, "content", resp) or "").strip()
+
+                    audio, ct = openspeech_v3_tts_bytes(
+                        text=reply_text or "（空回复）",
+                        encoding="mp3",
+                        uid=str(u.pk),
+                        speaker=(payload.tts_voice_type or "").strip() or None,
+                        resource_id="seed-tts-2.0",
+                    )
+                    saved = save_local_media_bytes(
+                        user_id=u.pk,
+                        kind=LocalMediaAsset.Kind.AUDIO,
+                        data=audio,
+                        mime=ct or "audio/mpeg",
+                        original_name="realtime_reply.mp3",
+                        source_url="",
+                    )
+                    assistant_attachments = [_attachment_row_from_saved(saved=saved, kind="audio")]
+                    assistant_text = f"【语音对话】\n\n用户：{user_spoken}\n\n助手：{reply_text}"
+                else:
+                    raise ValueError(
+                        f"模型「{entry.label}」为 OpenSpeech 语音能力（scopes={list(scopes)[:10]}），聊天页目前仅支持 TTS/ASR。"
+                        "如需播客/声音复刻/音色设计等能力，需要新增对应链路。"
+                    )
             else:
                 raise ValueError(f"暂不支持的 api_kind: {ak}")
         except Exception as exc:

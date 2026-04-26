@@ -9,6 +9,7 @@ import logging
 import json
 import os
 import uuid
+import asyncio
 import urllib.error
 import urllib.request
 from io import BytesIO
@@ -26,6 +27,390 @@ def fetch_url_bytes(url: str, *, max_bytes: int = _MAX_DOWNLOAD) -> tuple[bytes,
     if len(raw) > max_bytes:
         raise ValueError("资源过大，已拒绝下载。")
     return raw, ct
+
+
+def _guess_audio_format(*, url: str = "", content_type: str | None = None) -> str:
+    """
+    OpenSpeech ASR v3 支持 pcm/wav/mp3/ogg（具体以账号开通为准）。
+    这里做一个尽量保守的推断：默认 wav，其次按 content-type / 扩展名。
+    """
+    ct = (content_type or "").lower()
+    u = (url or "").lower()
+    if "audio/mpeg" in ct or u.endswith(".mp3"):
+        return "mp3"
+    if "audio/ogg" in ct or "audio/opus" in ct or u.endswith(".ogg") or u.endswith(".opus"):
+        return "ogg"
+    if "audio/wav" in ct or "audio/x-wav" in ct or u.endswith(".wav"):
+        return "wav"
+    if "audio/pcm" in ct or u.endswith(".pcm"):
+        return "pcm"
+    return "wav"
+
+
+def _require_volcengine_audio():
+    try:
+        from volcengine_audio import (  # type: ignore[import-not-found]
+            VolcengineAsrRequestV3,
+            VolcengineAsrFunctionsV3,
+            STTAudioFormatV3,
+        )
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("缺少 volcengine-audio 包，请安装：pip install volcengine-audio") from exc
+    return VolcengineAsrRequestV3, VolcengineAsrFunctionsV3, STTAudioFormatV3
+
+
+async def _openspeech_asr_v3_ws_transcribe_async(
+    *,
+    audio: bytes,
+    audio_format: str,
+    uid: str,
+    language: str,
+    rate: int,
+    appid: str,
+    access_token: str,
+    ws_url: str,
+    resource_id: str,
+    model_name: str,
+    timeout_s: float = 120.0,
+) -> dict:
+    """
+    OpenSpeech ASR v3（bigmodel_nostream）最小实现：发送 full_request + 音频数据，
+    读取服务端 full responses，尝试解析出最终文本。
+
+    说明：
+    - OpenSpeech ASR v3 为 WebSocket 二进制帧协议，不是普通 HTTP。
+    - 这里使用 volcengine-audio SDK 生成/解析帧，避免手写协议。
+    """
+    try:
+        import websockets  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("缺少 websockets 包，请安装：pip install websockets") from exc
+
+    VolcengineAsrRequestV3, VolcengineAsrFunctionsV3, STTAudioFormatV3 = _require_volcengine_audio()
+
+    fmt_map = {
+        "wav": STTAudioFormatV3.wav,
+        "pcm": STTAudioFormatV3.pcm,
+        "mp3": STTAudioFormatV3.mp3,
+        "ogg": STTAudioFormatV3.ogg,
+    }
+    stt_fmt = fmt_map.get((audio_format or "").lower())
+    if stt_fmt is None:
+        raise ValueError(f"不支持的音频格式: {audio_format}（支持 wav/pcm/mp3/ogg）")
+
+    req = VolcengineAsrRequestV3(
+        user={"uid": (uid or "flowly")},
+        audio={
+            "format": stt_fmt,
+            "rate": int(rate or 16000),
+            "bits": 16,
+            "channel": 1,
+            "language": (language or "zh-CN"),
+        },
+        request={
+            "model_name": (model_name or "bigmodel"),
+            "enable_itn": True,
+            "enable_punc": True,
+        },
+    )
+    full = VolcengineAsrFunctionsV3.generate_asr_full_client_request(
+        sequence=1,
+        request_params=req.model_dump(exclude_none=True),
+        compression=True,
+    )
+
+    headers = {
+        "X-Api-App-Key": (appid or "").strip(),
+        "X-Api-Access-Key": (access_token or "").strip(),
+        "X-Api-Resource-Id": (resource_id or "").strip(),
+        "X-Api-Connect-Id": str(uuid.uuid4()),
+        "User-Agent": "Flowly-AI/1.0",
+    }
+    if not headers["X-Api-App-Key"] or not headers["X-Api-Access-Key"]:
+        raise ValueError("未配置 OPENSPEECH_APPID / OPENSPEECH_ACCESS_TOKEN，无法调用 OpenSpeech ASR。")
+
+    # 发送策略：按较小 chunk 切分，避免单帧过大；最后一帧单独发送。
+    chunk_size = 20 * 1024
+    seq = 2
+
+    last_response: dict = {}
+    best_text = ""
+    pieces: list[str] = []
+
+    async with websockets.connect(ws_url, extra_headers=headers, open_timeout=15) as ws:
+        await ws.send(full)
+
+        for i in range(0, len(audio), chunk_size):
+            chunk = audio[i : i + chunk_size]
+            # volcengine-audio SDK 负责生成 audio-only 帧
+            audio_req = VolcengineAsrFunctionsV3.generate_asr_audio_only_request(
+                sequence=seq,
+                audio=chunk,
+                compress=True,
+            )
+            seq += 1
+            await ws.send(audio_req)
+
+        # 读取返回：直到超时，或解析到“足够像最终文本”的字段为止
+        deadline = asyncio.get_running_loop().time() + float(timeout_s)
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                break
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=min(5.0, remaining))
+            except asyncio.TimeoutError:
+                break
+
+            try:
+                parsed = VolcengineAsrFunctionsV3.parse_response(msg)
+            except Exception:
+                continue
+
+            if isinstance(parsed, dict):
+                last_response = parsed
+
+                # 常见字段兜底：不同版本可能字段名略有差异
+                cand = ""
+                for k in ("text", "result", "message", "transcript"):
+                    v = parsed.get(k)
+                    if isinstance(v, str) and v.strip():
+                        cand = v.strip()
+                        break
+                payload = parsed.get("payload")
+                if not cand and isinstance(payload, dict):
+                    for k in ("text", "result", "transcript", "utterance"):
+                        v = payload.get(k)
+                        if isinstance(v, str) and v.strip():
+                            cand = v.strip()
+                            break
+                if cand:
+                    pieces.append(cand)
+                    best_text = cand
+
+                # 若服务端明确返回结束标志，提前退出
+                ended = parsed.get("is_end") or parsed.get("end") or parsed.get("finished")
+                if isinstance(ended, bool) and ended:
+                    break
+
+    out_text = (best_text or "").strip()
+    if not out_text and pieces:
+        out_text = pieces[-1].strip()
+    return {
+        "text": out_text,
+        "raw": last_response,
+    }
+
+
+def openspeech_asr_transcribe_url(
+    *,
+    audio_url: str,
+    uid: str = "flowly",
+    language: str | None = None,
+    rate: int | None = None,
+    timeout_s: float = 120.0,
+) -> tuple[str, dict]:
+    """
+    OpenSpeech ASR（v3 WS，bigmodel_nostream）把远程音频 URL 转写为文本。
+
+    返回：(text, raw_dict)
+    """
+    from ai_engine.integrations.secrets_loader import get_openspeech_settings
+
+    url = (audio_url or "").strip()
+    if not url:
+        raise ValueError("audio_url 为空")
+
+    raw, ct = fetch_url_bytes(url, max_bytes=25 * 1024 * 1024)
+    fmt = _guess_audio_format(url=url, content_type=ct)
+
+    cfg = get_openspeech_settings()
+    lang = (language or cfg.asr_language or "zh-CN").strip()
+    r = int(rate or cfg.asr_audio_rate or 16000)
+    ws_url = (cfg.asr_ws_url or "").strip()
+    rid = (cfg.asr_resource_id or "").strip()
+    mname = (cfg.asr_model_name or "bigmodel").strip()
+
+    # 同步入口：节点/HTTP handler 均为同步函数，内部用 asyncio.run
+    try:
+        d = asyncio.run(
+            _openspeech_asr_v3_ws_transcribe_async(
+                audio=raw,
+                audio_format=fmt,
+                uid=uid,
+                language=lang,
+                rate=r,
+                appid=cfg.appid,
+                access_token=cfg.access_token,
+                ws_url=ws_url,
+                resource_id=rid,
+                model_name=mname,
+                timeout_s=timeout_s,
+            )
+        )
+    except RuntimeError:
+        # 若上层已有事件循环（极少数场景），退回到新 loop
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            d = loop.run_until_complete(
+                _openspeech_asr_v3_ws_transcribe_async(
+                    audio=raw,
+                    audio_format=fmt,
+                    uid=uid,
+                    language=lang,
+                    rate=r,
+                    appid=cfg.appid,
+                    access_token=cfg.access_token,
+                    ws_url=ws_url,
+                    resource_id=rid,
+                    model_name=mname,
+                    timeout_s=timeout_s,
+                )
+            )
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    text = str((d or {}).get("text") or "").strip()
+    if not text:
+        raise RuntimeError(
+            "OpenSpeech ASR 未解析到文本。若你的账号需要不同的 resource_id/ws_url，"
+            "请配置 OPENSPEECH_ASR_RESOURCE_ID / OPENSPEECH_ASR_WS_URL 后重试。"
+        )
+    return text, dict((d or {}).get("raw") or {})
+
+
+def openspeech_auc_submit_and_poll_url(
+    *,
+    audio_url: str,
+    uid: str = "flowly",
+    language: str | None = None,
+    timeout_s: float = 300.0,
+    poll_interval_s: float = 2.0,
+) -> tuple[str, dict]:
+    """
+    OpenSpeech 录音文件识别（AUC，大模型标准版）：HTTP submit + query 轮询。
+
+    文档要点（2026）：
+    - submit: POST https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit
+    - query : POST https://openspeech.bytedance.com/api/v3/auc/bigmodel/query
+    - ASR2.0 resource id 常见为：volc.seedasr.auc
+    - Header 使用：X-Api-App-Key / X-Api-Access-Key / X-Api-Resource-Id / X-Api-Request-Id / X-Api-Sequence
+    """
+    from ai_engine.integrations.secrets_loader import get_openspeech_settings
+
+    url = (audio_url or "").strip()
+    if not url:
+        raise ValueError("audio_url 为空")
+
+    cfg = get_openspeech_settings()
+    appid = (cfg.appid or "").strip()
+    token = (cfg.access_token or "").strip()
+    if not appid or not token:
+        raise ValueError("未配置 OPENSPEECH_APPID / OPENSPEECH_ACCESS_TOKEN")
+
+    submit_url = (cfg.auc_submit_url or "").strip()
+    query_url = (cfg.auc_query_url or "").strip()
+    rid = (cfg.auc_resource_id or "volc.seedasr.auc").strip()
+    if not submit_url or not query_url:
+        raise ValueError("未配置 OPENSPEECH_AUC_SUBMIT_URL / OPENSPEECH_AUC_QUERY_URL")
+
+    req_id = str(uuid.uuid4())
+    headers = {
+        "Content-Type": "application/json",
+        "X-Api-App-Key": appid,
+        "X-Api-Access-Key": token,
+        "X-Api-Resource-Id": rid,
+        "X-Api-Request-Id": req_id,
+        "X-Api-Sequence": "-1",
+        "User-Agent": "Flowly-AI/1.0",
+    }
+
+    payload = {
+        "user": {"uid": (uid or "flowly")},
+        "audio": {"url": url},
+        "request": {
+            "model_name": "bigmodel",
+            "enable_itn": True,
+            "enable_punc": True,
+        },
+    }
+    lang = (language or "").strip()
+    if lang:
+        payload["audio"]["language"] = lang
+
+    submit_req = urllib.request.Request(
+        submit_url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(submit_req, timeout=120) as resp:  # noqa: S310
+            raw = resp.read(_MAX_DOWNLOAD + 1)
+    except urllib.error.HTTPError as exc:
+        try:
+            body = exc.read(_MAX_DOWNLOAD + 1)  # type: ignore[attr-defined]
+        except Exception:
+            body = b""
+        raise RuntimeError(f"OpenSpeech AUC submit HTTP 错误: {exc} body={body[:300]!r}") from exc
+
+    obj = json.loads(raw.decode("utf-8", errors="replace"))
+    task_id = (
+        str(obj.get("id") or "")
+        or str((obj.get("resp") or {}).get("id") or "")
+        or str((obj.get("result") or {}).get("id") or "")
+    ).strip()
+    if not task_id:
+        raise RuntimeError(f"OpenSpeech AUC submit 未返回 task id: {obj!r}")
+
+    import time as _t
+
+    deadline = _t.monotonic() + float(timeout_s)
+    last: dict = obj
+    while True:
+        now = _t.monotonic()
+        if now >= deadline:
+            raise TimeoutError(f"OpenSpeech AUC 识别超时（{timeout_s}s）。最后响应：{last!r}")
+
+        qpayload = {"id": task_id}
+        qreq = urllib.request.Request(
+            query_url,
+            data=json.dumps(qpayload, ensure_ascii=False).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(qreq, timeout=120) as resp:  # noqa: S310
+                qraw = resp.read(_MAX_DOWNLOAD + 1)
+        except urllib.error.HTTPError as exc:
+            try:
+                body = exc.read(_MAX_DOWNLOAD + 1)  # type: ignore[attr-defined]
+            except Exception:
+                body = b""
+            raise RuntimeError(f"OpenSpeech AUC query HTTP 错误: {exc} body={body[:300]!r}") from exc
+
+        last = json.loads(qraw.decode("utf-8", errors="replace"))
+        # 兼容多种返回形态：直接 text / result.text / utterances
+        text = ""
+        for k in ("text", "transcript", "result"):
+            v = last.get(k)
+            if isinstance(v, str) and v.strip():
+                text = v.strip()
+                break
+        if not text and isinstance(last.get("result"), dict):
+            r = last["result"]
+            for k in ("text", "transcript"):
+                v = r.get(k)
+                if isinstance(v, str) and v.strip():
+                    text = v.strip()
+                    break
+        if text:
+            return text, last
+
+        # 未完成时通常只回状态码；继续轮询
+        _t.sleep(float(poll_interval_s))
 
 
 def convert_image_bytes(data: bytes, target: str) -> tuple[bytes, str]:

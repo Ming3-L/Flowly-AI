@@ -117,6 +117,25 @@
 - 用户要求"创建一个新功能" → 自动使用 `brainstorming` → `writing-plans` 工作流
 - 用户要求"审查这段代码" → 自动使用 `code-reviewer` Skill
 
+### 让其它项目也复用这套Skills（推荐）
+如果你希望“所有项目”都使用同一套 `.cursor/skills` 与 `.cursor/rules`，可以在其它项目里创建目录联接（junction）指向本仓库的配置。
+
+在本仓库根目录执行（PowerShell）：
+
+```powershell
+# 方式1：用路径文件（推荐，能更好处理中文路径/编码）
+powershell -NoProfile -ExecutionPolicy Bypass -File .\.cursor\install-shared-skills.ps1 `
+  -ProjectsFile .\.cursor\projects.example.txt -Force
+
+# 方式2：直接传参
+powershell -NoProfile -ExecutionPolicy Bypass -File .\.cursor\install-shared-skills.ps1 `
+  -Projects "E:\桌面\project\AI自动回复","E:\project\textpy" -Force
+```
+
+执行后，会在目标项目下生成：
+- `.cursor/skills` → 指向 `Flowly-AI/.cursor/skills`
+- `.cursor/rules` → 指向 `Flowly-AI/.cursor/rules`
+
 ### 添加新Skill
 如需添加新Skill：
 1. 在对应目录下创建新文件夹（如 `my-custom-skill/`）

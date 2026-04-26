@@ -10,10 +10,13 @@ from urllib.parse import urlparse
 from langchain_core.messages import HumanMessage, SystemMessage  # pyright: ignore[reportMissingImports]
 
 from ai_engine.cost_tracker import record_llm_cost_from_canvas_context
+from ai_engine.execution_media_services import openspeech_asr_transcribe_url, openspeech_auc_submit_and_poll_url
 from ai_engine.integrations import get_ai_provider_settings
 from ai_engine.workflow_nodes import cost_context as cost_ctx
 from ai_engine.workflow_nodes.base import NodeExecutor
 from ai_engine.workflow_nodes.canvas_llm import get_chat_model_for_canvas_node
+from ai_engine.workflow_nodes.catalog_resolve import catalog_entry_for_model_key
+from ai_engine.models import AIModelCatalogEntry
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +96,32 @@ class AudioNodeExecutor(NodeExecutor):
         asr_used = False
         if not transcript and audio_url:
             try:
-                transcript = _transcribe_remote_audio_openai(audio_url)
-                asr_used = True
+                entry = catalog_entry_for_model_key(config)
+                scopes = set()
+                ck = ""
+                if entry is not None and str(entry.api_kind or "") == AIModelCatalogEntry.ApiKind.OPEN_SPEECH:
+                    scopes = set([str(x).strip().upper() for x in (entry.scopes or []) if str(x).strip()])
+                    ck = str(getattr(entry, "catalog_key", "") or "").strip()
+                if entry is not None and str(entry.api_kind or "") == AIModelCatalogEntry.ApiKind.OPEN_SPEECH and (
+                    "ASR" in scopes or ck.startswith("speech-doubao-asr-")
+                ):
+                    if ck in ("speech-doubao-asr-file", "speech-doubao-asr-file-2"):
+                        transcript, _raw = openspeech_auc_submit_and_poll_url(
+                            audio_url=audio_url,
+                            uid=str(inputs.get("user_id") or "flowly"),
+                            timeout_s=float(config.get("asr_timeout_s") or 300.0),
+                            poll_interval_s=float(config.get("asr_poll_interval_s") or 2.0),
+                        )
+                    else:
+                        transcript, _raw = openspeech_asr_transcribe_url(
+                            audio_url=audio_url,
+                            uid=str(inputs.get("user_id") or "flowly"),
+                            timeout_s=float(config.get("asr_timeout_s") or 120.0),
+                        )
+                    asr_used = True
+                else:
+                    transcript = _transcribe_remote_audio_openai(audio_url)
+                    asr_used = True
             except (urllib.error.URLError, ValueError, RuntimeError) as exc:
                 logger.warning("audio ASR failed url=%s err=%s", audio_url[:80], exc)
                 return {

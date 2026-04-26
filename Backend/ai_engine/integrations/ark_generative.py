@@ -1,9 +1,10 @@
 """
-火山方舟「生图 / 生视频」能力（与 Chat Completions 独立）。
+火山方舟「生图 / 生视频 / 3D 生成」能力（与 Chat Completions 独立）。
 
 基于官方 ``volcenginesdkarkruntime.Ark``：
 - 文生图：``client.images.generate(...)``
 - 文生视频：``client.content_generation.tasks.create`` + ``tasks.get`` 轮询
+- 图生 3D：``client.content_generation.tasks.create`` + ``tasks.get`` 轮询
 
 安装：``pip install 'volcengine-python-sdk[ark]'``
 """
@@ -147,6 +148,55 @@ def _find_http_url(obj: Any, *, prefer_video: bool) -> str:
     return walk(obj)
 
 
+def _find_http_3d_url(obj: Any) -> str:
+    """在任务返回结构里尽量解析 3D 资源下载地址。"""
+    seen: set[int] = set()
+    model_exts = (".obj", ".glb", ".gltf", ".fbx", ".stl", ".usdz", ".zip", ".ply")
+
+    def walk(x: Any, parent_key: str = "") -> str:
+        i = id(x)
+        if i in seen:
+            return ""
+        seen.add(i)
+        if isinstance(x, str):
+            s = x.strip()
+            if s.startswith("http://") or s.startswith("https://"):
+                low = s.lower()
+                pk = (parent_key or "").lower()
+                if any(low.endswith(ext) for ext in model_exts):
+                    return s
+                if any(t in pk for t in ("model", "mesh", "3d", "download", "file")):
+                    return s
+                if any(t in low for t in ("/model", "/mesh", "/3d", "seed3d", "download")):
+                    return s
+            return ""
+        if isinstance(x, dict):
+            for k in (
+                "model_url",
+                "mesh_url",
+                "download_url",
+                "file_url",
+                "url",
+                "uri",
+            ):
+                if k in x:
+                    u = walk(x[k], parent_key=str(k))
+                    if u:
+                        return u
+            for v in x.values():
+                u = walk(v, parent_key=parent_key)
+                if u:
+                    return u
+        if isinstance(x, (list, tuple)):
+            for it in x:
+                u = walk(it, parent_key=parent_key)
+                if u:
+                    return u
+        return ""
+
+    return walk(obj)
+
+
 def ark_video_generate_poll(
     *,
     model_id: str,
@@ -220,3 +270,64 @@ def ark_video_generate_poll(
         time.sleep(float(poll_interval_s))
 
     raise TimeoutError(f"视频生成超时（{timeout_s}s），最后状态：{last_dump!r}")
+
+
+def ark_3d_generate_poll(
+    *,
+    model_id: str,
+    prompt_text: str,
+    image_url: str | None = None,
+    poll_interval_s: float = 3.0,
+    timeout_s: float = 900.0,
+) -> tuple[str, dict[str, Any]]:
+    """
+    图生 3D / 文生 3D（异步任务），返回 (3D 资源 URL 或空字符串, 原始结果 dict)。
+
+    说明：
+    - 复用方舟 content_generation.tasks 接口
+    - ``prompt_text`` 可包含类似 ``--meshquality high --fileformat obj`` 的参数片段
+    """
+    client = build_ark_client()
+    mid = (model_id or "").strip()
+    if not mid:
+        raise ValueError("3D 生成需要 model_id（如 doubao-seed3d-2-0-260328）。")
+    text = (prompt_text or "").strip()
+    if not text:
+        raise ValueError("3D 生成需要非空文案。")
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": text}]
+    ref = (image_url or "").strip()
+    if ref:
+        content.append({"type": "image_url", "image_url": {"url": ref}})
+
+    create_result = client.content_generation.tasks.create(model=mid, content=content)
+    task_id = getattr(create_result, "id", None)
+    if task_id is None and isinstance(create_result, dict):
+        task_id = create_result.get("id")
+    if not task_id:
+        raise RuntimeError(f"创建 3D 任务失败：{create_result!r}")
+    logger.info("ark 3d task created model=%s task_id=%s", mid, task_id)
+
+    deadline = time.monotonic() + float(timeout_s)
+    last_dump: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        get_result = client.content_generation.tasks.get(task_id=task_id)
+        last_dump = _result_to_dict(get_result)
+        status = str(last_dump.get("status") or getattr(get_result, "status", "") or "")
+        logger.info("ark 3d task poll task_id=%s status=%s", task_id, status)
+        if status == "succeeded":
+            url = _find_http_3d_url(last_dump) or _find_http_3d_url(get_result)
+            if not url:
+                logger.warning(
+                    "ark 3d task succeeded but no model url parsed task_id=%s keys=%s",
+                    task_id,
+                    list(last_dump.keys())[:40],
+                )
+            return url, last_dump
+        if status == "failed":
+            err = last_dump.get("error") or getattr(get_result, "error", "")
+            logger.error("ark 3d task failed task_id=%s error=%s", task_id, err)
+            raise RuntimeError(f"3D 生成失败：{err}")
+        time.sleep(float(poll_interval_s))
+
+    raise TimeoutError(f"3D 生成超时（{timeout_s}s），最后状态：{last_dump!r}")

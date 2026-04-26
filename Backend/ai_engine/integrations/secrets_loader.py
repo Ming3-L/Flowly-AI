@@ -87,6 +87,15 @@ _LOCAL_ENV_KEYS: Final[tuple[str, ...]] = (
     # ASR（当前仅存储，后续接入）
     "OPENSPEECH_ASR_STREAM_CLUSTER",
     "OPENSPEECH_ASR_FILE_CLUSTER",
+    # OpenSpeech ASR v3 WebSocket（bigmodel_nostream 等）
+    "OPENSPEECH_ASR_WS_URL",
+    "OPENSPEECH_ASR_RESOURCE_ID",
+    "OPENSPEECH_ASR_MODEL_NAME",
+    "OPENSPEECH_ASR_LANGUAGE",
+    "OPENSPEECH_ASR_AUDIO_RATE",
+    "OPENSPEECH_AUC_SUBMIT_URL",
+    "OPENSPEECH_AUC_QUERY_URL",
+    "OPENSPEECH_AUC_RESOURCE_ID",
 )
 
 _local_overrides_cache: dict[str, str] | None = None
@@ -266,6 +275,14 @@ class OpenSpeechSettings:
     tts2_voices_json: str
     asr_stream_cluster: str
     asr_file_cluster: str
+    asr_ws_url: str
+    asr_resource_id: str
+    asr_model_name: str
+    asr_language: str
+    asr_audio_rate: int
+    auc_submit_url: str
+    auc_query_url: str
+    auc_resource_id: str
 
 
 def get_openspeech_settings() -> OpenSpeechSettings:
@@ -281,6 +298,23 @@ def get_openspeech_settings() -> OpenSpeechSettings:
         tts2_voices_json=_resolve("OPENSPEECH_TTS2_VOICES_JSON", default=""),
         asr_stream_cluster=_resolve("OPENSPEECH_ASR_STREAM_CLUSTER", default="volc_streaming_asr"),
         asr_file_cluster=_resolve("OPENSPEECH_ASR_FILE_CLUSTER", default="volc_asr"),
+        asr_ws_url=_resolve(
+            "OPENSPEECH_ASR_WS_URL",
+            default="wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream",
+        ),
+        asr_resource_id=_resolve("OPENSPEECH_ASR_RESOURCE_ID", default="volc.seedasr.sauc.duration"),
+        asr_model_name=_resolve("OPENSPEECH_ASR_MODEL_NAME", default="bigmodel"),
+        asr_language=_resolve("OPENSPEECH_ASR_LANGUAGE", default="zh-CN"),
+        asr_audio_rate=int(_resolve("OPENSPEECH_ASR_AUDIO_RATE", default="16000") or "16000"),
+        auc_submit_url=_resolve(
+            "OPENSPEECH_AUC_SUBMIT_URL",
+            default="https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit",
+        ),
+        auc_query_url=_resolve(
+            "OPENSPEECH_AUC_QUERY_URL",
+            default="https://openspeech.bytedance.com/api/v3/auc/bigmodel/query",
+        ),
+        auc_resource_id=_resolve("OPENSPEECH_AUC_RESOURCE_ID", default="volc.seedasr.auc"),
     )
 
 
