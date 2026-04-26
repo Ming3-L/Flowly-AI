@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from .paths import BASE_DIR
 
 DATABASE_URL = (os.getenv("DATABASE_URL", "") or "").strip()
+MYSQL_URL = (os.getenv("MYSQL_URL", "") or "").strip()
 MYSQLHOST = (os.getenv("MYSQLHOST", "") or "").strip()
 MYSQLPORT = (os.getenv("MYSQLPORT", "") or "").strip()
 MYSQLUSER = (os.getenv("MYSQLUSER", "") or "").strip()
@@ -86,8 +87,10 @@ def _mysql_from_railway_vars():
     }
 
 
-if DATABASE_URL:
-    parsed = _parse_database_url(DATABASE_URL)
+_primary_db_url = DATABASE_URL or MYSQL_URL
+
+if _primary_db_url:
+    parsed = _parse_database_url(_primary_db_url)
     DATABASES = parsed or _sqlite_default()
 else:
     DATABASES = _mysql_from_railway_vars() or _sqlite_default()

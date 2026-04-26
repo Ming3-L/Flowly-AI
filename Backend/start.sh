@@ -7,8 +7,10 @@ PORT="${PORT:-8000}"
 # Quick diagnostics (no secrets): show which DB config is being used.
 if [ -n "${DATABASE_URL:-}" ]; then
   echo "[boot] DATABASE_URL is set (length=${#DATABASE_URL})"
+elif [ -n "${MYSQL_URL:-}" ]; then
+  echo "[boot] MYSQL_URL is set (length=${#MYSQL_URL})"
 else
-  echo "[boot] DATABASE_URL is NOT set; will try MYSQL* vars or fallback to sqlite"
+  echo "[boot] DATABASE_URL/MYSQL_URL is NOT set; will try MYSQL* vars or fallback to sqlite"
 fi
 echo "[boot] MYSQLHOST=${MYSQLHOST:-<empty>} MYSQLPORT=${MYSQLPORT:-<empty>} MYSQLDATABASE=${MYSQLDATABASE:-<empty>} MYSQLUSER=${MYSQLUSER:-<empty>}"
 
