@@ -21,7 +21,12 @@ def _get_oss_config() -> Optional[OssConfig]:
     access_key_id = (os.getenv("OSS_ACCESS_KEY_ID") or "").strip()
     access_key_secret = (os.getenv("OSS_ACCESS_KEY_SECRET") or "").strip()
     bucket = (os.getenv("OSS_BUCKET") or "").strip()
-    prefix = (os.getenv("OSS_PREFIX") or "").strip()
+    # 默认与当前 OSS 目录结构保持一致：Bucket 根下有一层 media/ 目录
+    # 如需关闭/自定义，可在环境变量 OSS_PREFIX 中覆盖（留空则无前缀）
+    prefix = os.getenv("OSS_PREFIX")
+    if prefix is None:
+        prefix = "media"
+    prefix = str(prefix).strip()
     if not (endpoint and access_key_id and access_key_secret and bucket):
         return None
     return OssConfig(
