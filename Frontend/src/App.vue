@@ -4,7 +4,7 @@
       <!-- Navigation Bar (hidden on landing + auth pages) -->
       <nav v-if="!isLandingPage && !isAuthPage" class="app-nav">
         <div class="nav-brand">
-          <img class="brand-logo" :src="isDarkTheme ? '/logow.png' : '/logo.png'" :alt="ui.t('app.brand.name')" />
+          <img class="brand-logo" :src="isDarkTheme ? logowUrl : logoUrl" :alt="ui.t('app.brand.name')" />
           <span class="brand-name">{{ ui.t('app.brand.name') }}</span>
         </div>
 
@@ -146,6 +146,10 @@ const auth = useAuthStore()
 const ui = useUiLabelsStore()
 
 const locale = ref(zhCn)
+
+const base = (import.meta.env.BASE_URL || '/').toString()
+const logoUrl = computed(() => `${base}logo.png`)
+const logowUrl = computed(() => `${base}logow.png`)
 
 const activeRoute = computed(() => route.path)
 const isLandingPage = computed(() => route.path === '/')

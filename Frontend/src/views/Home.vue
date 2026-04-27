@@ -3,7 +3,7 @@
     <!-- 导航栏 -->
     <header class="home-nav">
       <div class="nav-brand">
-        <img class="brand-logo" :src="isDarkTheme ? '/logow.png' : '/logo.png'" alt="Flowly" />
+        <img class="brand-logo" :src="isDarkTheme ? logowUrl : logoUrl" alt="Flowly" />
         <span class="brand-name">Flowly</span>
       </div>
       <div class="nav-actions">
@@ -315,7 +315,7 @@
     <!-- 页脚 -->
     <footer class="home-footer">
       <div class="footer-brand">
-        <img :src="isDarkTheme ? '/logow.png' : '/logo.png'" alt="Flowly" class="footer-logo" />
+        <img :src="isDarkTheme ? logowUrl : logoUrl" alt="Flowly" class="footer-logo" />
         <span>Flowly</span>
       </div>
       <div class="footer-links">
@@ -350,6 +350,9 @@ import { toggleTheme } from '@/utils/theme'
 
 const demoRef = ref<HTMLElement>()
 const currentYear = new Date().getFullYear()
+const base = (import.meta.env.BASE_URL || '/').toString()
+const logoUrl = computed(() => `${base}logo.png`)
+const logowUrl = computed(() => `${base}logow.png`)
 const isDarkTheme = computed(() => {
   void themeVersion.value
   return document.documentElement.classList.contains('theme-dark')

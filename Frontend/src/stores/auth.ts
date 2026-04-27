@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import api from '@/utils/api'
+import api, { absolutizeUrl } from '@/utils/api'
 import router from '@/router'
 
 export interface UserProfile {
@@ -99,7 +99,11 @@ export const useAuthStore = defineStore('auth', () => {
     if (!accessToken.value) return
     try {
       const res = await api.get('/auth/me')
-      user.value = res.data
+      const u = res.data as UserProfile
+      if (u?.avatar_public_url) {
+        u.avatar_public_url = absolutizeUrl(u.avatar_public_url)
+      }
+      user.value = u
     } catch {
       // token invalid
       accessToken.value = null
@@ -113,14 +117,18 @@ export const useAuthStore = defineStore('auth', () => {
   // ── Update profile ───────────────────────────────────────────────────────
   async function updateProfile(payload: Partial<Pick<UserProfile, 'ai_model' | 'language'>>) {
     const res = await api.put('/auth/profile', payload)
-    user.value = { ...user.value, ...res.data } as UserProfile
+    const merged = { ...user.value, ...res.data } as UserProfile
+    if (merged?.avatar_public_url) merged.avatar_public_url = absolutizeUrl(merged.avatar_public_url)
+    user.value = merged
     return res.data
   }
 
   // ── Set API Key ────────────────────────────────────────────────────────
   async function setApiKey(apiKey: string) {
     const res = await api.post('/auth/profile/api-key', { openai_api_key: apiKey })
-    user.value = { ...user.value, ...res.data } as UserProfile
+    const merged = { ...user.value, ...res.data } as UserProfile
+    if (merged?.avatar_public_url) merged.avatar_public_url = absolutizeUrl(merged.avatar_public_url)
+    user.value = merged
     return res.data
   }
 

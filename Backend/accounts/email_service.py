@@ -1,8 +1,8 @@
 """
 邮箱验证码：注册 / 找回密码。
 
-SMTP 参数**仅**从数据库 ``PlatformAIProviderSecrets``（管理员在后台「接入配置」维护）读取，
-不使用 .env 中的 EMAIL_*。
+SMTP 参数来自平台级密钥解析（管理员后台「接入配置」优先，其次环境变量/本地文件），
+键名为 ``FLOWLY_SMTP_*``。不使用 Django 全局 ``EMAIL_*``。
 
 正文由已配置的**文本对话模型**（方舟 ``get_chat_model("doubao")``）生成，且必须包含系统生成的 4 位验证码；
 模型失败时回退为固定模板正文。
@@ -25,15 +25,24 @@ SEND_COOLDOWN_SEC = 60
 
 
 def _smtp_entries_from_database_only() -> dict[str, str]:
-    """只读库内解密项，不合并环境变量 / project_secrets_local。"""
-    from ai_engine.integrations.db_platform_secrets import load_plain_entries
+    """兼容旧命名：目前返回“平台级密钥解析”后的有效键值。"""
+    from ai_engine.integrations.secrets_loader import resolve_managed_secret
 
-    return load_plain_entries()
+    keys = (
+        "FLOWLY_SMTP_HOST",
+        "FLOWLY_SMTP_PORT",
+        "FLOWLY_SMTP_USER",
+        "FLOWLY_SMTP_PASSWORD",
+        "FLOWLY_SMTP_FROM_EMAIL",
+        "FLOWLY_SMTP_USE_SSL",
+        "FLOWLY_SMTP_USE_TLS",
+    )
+    return {k: resolve_managed_secret(k, default="") for k in keys}
 
 
 def load_smtp_config_from_database() -> dict[str, Any] | None:
     """
-    从 ``PlatformAIProviderSecrets`` 解析 SMTP。必须同时配置 HOST、USER、PASSWORD。
+    解析 SMTP（平台密钥：数据库优先，其次环境变量/本地文件）。必须同时配置 HOST、USER、PASSWORD。
     """
     e = _smtp_entries_from_database_only()
     host = (e.get("FLOWLY_SMTP_HOST") or "").strip()
@@ -161,7 +170,7 @@ def _verification_subject(purpose: str) -> str:
 def send_verification_email(*, purpose: str, to_email: str, code: str) -> None:
     cfg = load_smtp_config_from_database()
     if not cfg:
-        raise RuntimeError("SMTP 未在数据库中配置（FLOWLY_SMTP_HOST / USER / PASSWORD）")
+        raise RuntimeError("SMTP 未配置（FLOWLY_SMTP_HOST / FLOWLY_SMTP_USER / FLOWLY_SMTP_PASSWORD）")
 
     subject = _verification_subject(purpose)
     body = _compose_body_with_ai(purpose=purpose, recipient_email=to_email.strip(), code=code)

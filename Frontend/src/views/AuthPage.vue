@@ -7,7 +7,7 @@
     <div class="auth-layout">
       <aside class="auth-brand-card">
         <div class="brand-logo">
-          <img src="/logow.png" alt="Flowly" />
+          <img :src="logowUrl" alt="Flowly" />
           <span>Flowly</span>
         </div>
 
@@ -434,6 +434,9 @@ const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
 const social = useSocialStore()
+
+const base = (import.meta.env.BASE_URL || '/').toString()
+const logowUrl = computed(() => `${base}logow.png`)
 
 // ── Tab 状态 ──────────────────────────────────────────────────────────────
 const activeTab = ref<'login' | 'register' | 'forgot'>('login')

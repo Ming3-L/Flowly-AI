@@ -1,3 +1,34 @@
+# Task Plan: 导出项目全量信息（技术栈 + 逐文件说明）
+
+## Goal
+- 生成一份可直接交付的 Markdown 导出文档，包含：
+  - 项目使用的技术栈、关键方法/架构、启动与部署方式、依赖与配置入口
+  - **逐文件**“作用 + 关键内容摘要”（忽略构建产物与缓存文件，如 `__pycache__`、`.pyc`、`node_modules` 等）
+  - 对关键目录进行分组（Backend/Frontend/infra/scripts/docs 等）
+
+## Phases
+
+### Phase 1: 盘点仓库与关键入口
+- [ ] 扫描仓库结构（目录层级、关键文件）
+- [ ] 读取依赖与配置入口（`requirements.txt`、后端 settings、前端 package 等）
+- [ ] 识别运行方式（本地启动、Docker/平台部署、CI/CD 线索）
+- **Status:** in_progress
+
+### Phase 2: 逐文件抽取与摘要
+- [ ] 以“目录分组 + 文件清单”的形式逐个读取并总结
+- [ ] 对大文件采用“模块/函数级摘要”，避免全文粘贴
+- **Status:** pending
+
+### Phase 3: 生成最终导出文档
+- [ ] 生成 `PROJECT_EXPORT.md`
+- [ ] 校验：覆盖技术栈、方法、启动部署、以及逐文件说明
+- **Status:** pending
+
+## Errors Encountered
+| Error | Attempt | Resolution |
+|-------|---------|------------|
+| | | |
+
 # Task Plan：Flowly AI（历史计划 + 当前维护项）
 
 ## 说明

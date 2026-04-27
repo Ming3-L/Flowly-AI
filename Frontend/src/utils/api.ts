@@ -17,10 +17,27 @@ declare module 'axios' {
   }
 }
 
-const BASE_URL = getRuntimeBaseUrl() || import.meta.env.VITE_API_BASE_URL || '/api'
+export const API_BASE_URL = getRuntimeBaseUrl() || import.meta.env.VITE_API_BASE_URL || '/api'
+
+export function absolutizeUrl(u: string): string {
+  const raw = (u ?? '').toString().trim()
+  if (!raw) return ''
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  try {
+    const base = API_BASE_URL
+    if (base.startsWith('http://') || base.startsWith('https://')) {
+      const origin = new URL(base).origin
+      return new URL(raw, origin).toString()
+    }
+  } catch {
+    // ignore
+  }
+  // Fallback: same-origin (dev proxy or monolith deployments)
+  return new URL(raw, window.location.origin).toString()
+}
 
 const api = axios.create({
-  baseURL: BASE_URL,
+  baseURL: API_BASE_URL,
   timeout: 30000,
 })
 
@@ -84,7 +101,7 @@ api.interceptors.response.use(
       }
 
       try {
-        const res = await axios.post(`${BASE_URL}/auth/refresh`, {
+        const res = await axios.post(`${API_BASE_URL}/auth/refresh`, {
           refresh: refreshToken,
         })
 

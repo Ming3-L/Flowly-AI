@@ -252,7 +252,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import api from '@/utils/api'
+import api, { absolutizeUrl } from '@/utils/api'
 import { applyTheme } from '@/utils/theme'
 
 const auth = useAuthStore()
@@ -445,7 +445,12 @@ async function fetchAvatarHistory() {
     const { data } = await api.get('/auth/profile/avatars')
     avatarHistory.value = {
       current_avatar_path: String(data?.current_avatar_path || ''),
-      items: Array.isArray(data?.items) ? data.items : [],
+      items: Array.isArray(data?.items)
+        ? data.items.map((it: any) => ({
+            ...it,
+            avatar_public_url: absolutizeUrl(String(it?.avatar_public_url || '')),
+          }))
+        : [],
     }
   } catch {
     avatarHistory.value = { current_avatar_path: '', items: [] }

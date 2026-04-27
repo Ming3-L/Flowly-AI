@@ -207,6 +207,15 @@ def _resolve(name: str, *, default: str = "") -> str:
     return default
 
 
+def resolve_managed_secret(name: str, *, default: str = "") -> str:
+    """
+    解析平台级密钥/配置项（与后台「接入配置 (密钥)」同名 key）。
+
+    解析优先级与 ``_resolve`` 一致：database > environment > local_file > default。
+    """
+    return _resolve(name, default=default)
+
+
 def _doubao_ark_api_key() -> str:
     """豆包/火山方舟：``DOUBAO_API_KEY`` 与 ``ARK_API_KEY`` 任一非空即可。"""
     for key in ("DOUBAO_API_KEY", "ARK_API_KEY"):

@@ -105,7 +105,8 @@ const routes: RouteRecordRaw[] = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(),
+  // Ensure correct routing on GitHub Pages sub-path deployments (base set by Vite `base`).
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 })
 

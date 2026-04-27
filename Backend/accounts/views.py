@@ -114,7 +114,16 @@ def register(request, payload: RegisterSchema):
             message="注册失败",
             detail="用户名已存在",
         )
-    if User.objects.filter(email__iexact=(payload.email or "").strip()).exists():
+    from django.core.exceptions import ValidationError
+    from django.core.validators import validate_email
+
+    email = (payload.email or "").strip()
+    try:
+        validate_email(email)
+    except ValidationError:
+        return 400, AuthErrorSchema(message="注册失败", detail="邮箱格式无效")
+
+    if User.objects.filter(email__iexact=email).exists():
         return 400, AuthErrorSchema(
             message="注册失败",
             detail="邮箱已被注册",
@@ -127,7 +136,7 @@ def register(request, payload: RegisterSchema):
                 message="注册失败",
                 detail="请先通过邮箱获取并填写 4 位数字验证码",
             )
-        if not verify_and_consume_code("register", payload.email, code):
+        if not verify_and_consume_code("register", email, code):
             return 400, AuthErrorSchema(
                 message="注册失败",
                 detail="邮箱验证码无效或已过期",
@@ -171,7 +180,7 @@ def register(request, payload: RegisterSchema):
         with transaction.atomic():
             user = User.objects.create_user(
                 username=payload.username,
-                email=payload.email,
+                email=email,
                 password=payload.password,
                 is_staff=is_staff,
             )
@@ -379,9 +388,13 @@ def send_email_code(request: HttpRequest, payload: EmailSendCodeSchema):
     code = issue_code(purpose, email)
     try:
         send_verification_email(purpose=purpose, to_email=email, code=code)
-    except Exception:
+    except Exception as exc:
         logger.exception("send_email_code: SMTP failure")
-        return 503, AuthErrorSchema(message="发送失败", detail="邮件发送失败，请稍后重试或检查 SMTP 配置")
+        # 生产环境不要向匿名调用者暴露 SMTP 细节；DEBUG 模式下返回便于定位配置/网络问题。
+        detail = "邮件发送失败，请稍后重试或检查 SMTP 配置"
+        if bool(getattr(settings, "DEBUG", False)):
+            detail = f"{detail}（DEBUG: {type(exc).__name__}: {exc}）"
+        return 503, AuthErrorSchema(message="发送失败", detail=detail)
 
     mark_send_cooldown(purpose, email)
     return 200, OkMessageSchema(detail="验证码已发送，请查收邮箱")

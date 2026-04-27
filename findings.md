@@ -1,3 +1,19 @@
+# Findings & Decisions
+
+## Research Findings
+- (待补充) 技术栈/依赖/部署方式/运行入口将在扫描后填入。
+
+## Technical Decisions
+| Decision | Rationale |
+|----------|-----------|
+| 逐文件内容采用“关键摘要”而非全文粘贴 | “每个文件的作用和内容”可读性更重要，且避免导出文档过大/泄露敏感信息 |
+| 忽略 `__pycache__/`、`.pyc` 等构建产物 | 这些不是源代码，且会造成噪音 |
+
+## Issues Encountered
+| Issue | Resolution |
+|-------|------------|
+| | |
+
 # Findings & Decisions — Flowly AI（项目现状与关键决策）
 
 ## 现状核对（以仓库当前代码为准）
