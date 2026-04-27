@@ -22,6 +22,4 @@ echo "[boot] MYSQL_HOST=${MYSQL_HOST:-<empty>} MYSQL_PORT=${MYSQL_PORT:-<empty>}
 # This prevents "no such table" 500s on fresh deploys.
 python manage.py migrate --noinput -v 2
 
-#exec daphne -b 0.0.0.0 -p "$PORT" flowly_backend.asgi:application
-
-exec daphne -b 0.0.0.0 -p 8000 flowly_backend.asgi:application
+exec daphne -b 0.0.0.0 -p "$PORT" flowly_backend.asgi:application
