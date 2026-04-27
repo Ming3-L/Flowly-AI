@@ -16,7 +16,7 @@ djangorestframework>=3.14.0
 
 # Django Ninja - Async REST API
 django-ninja>=1.0.0
-langgraph[django]>=0.1.0  # 版本根据你的项目调整
+
 # CORS Headers
 django-cors-headers>=4.3.0
 
@@ -26,6 +26,7 @@ pyjwt>=1.7.1
 
 # LangGraph and State Persistence
 langgraph>=0.3.1
+langgraph-checkpoint-django>=0.1.1
 # Local checkpoint models (see Backend/checkpoint/)
 langchain-openai>=0.2.0
 langchain-anthropic>=0.3.0

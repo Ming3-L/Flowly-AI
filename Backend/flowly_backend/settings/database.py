@@ -7,13 +7,29 @@ from urllib.parse import urlparse
 
 from .paths import BASE_DIR
 
-DATABASE_URL = (os.getenv("DATABASE_URL", "") or "").strip()
-MYSQL_URL = (os.getenv("MYSQL_URL", "") or "").strip()
-MYSQLHOST = (os.getenv("MYSQLHOST", "") or "").strip()
-MYSQLPORT = (os.getenv("MYSQLPORT", "") or "").strip()
-MYSQLUSER = (os.getenv("MYSQLUSER", "") or "").strip()
-MYSQLPASSWORD = (os.getenv("MYSQLPASSWORD", "") or "").strip()
-MYSQLDATABASE = (os.getenv("MYSQLDATABASE", "") or "").strip()
+def _env_first_nonempty(*names: str) -> str:
+    for n in names:
+        v = (os.getenv(n, "") or "").strip()
+        if v:
+            return v
+    return ""
+
+
+# ---- URL style (preferred) ----
+# Railway 常见：
+# - DATABASE_URL
+# - MYSQL_URL（内部地址 mysql.railway.internal）
+# - MYSQL_PUBLIC_URL（公网 proxy 地址）
+DATABASE_URL = _env_first_nonempty("DATABASE_URL")
+MYSQL_URL = _env_first_nonempty("MYSQL_URL", "MYSQL_PUBLIC_URL", "MYSQLPUBLICURL")
+
+# ---- Discrete vars (fallback) ----
+# Railway 插件环境变量有两套命名：无下划线（MYSQLHOST）和带下划线（MYSQL_HOST）
+MYSQLHOST = _env_first_nonempty("MYSQLHOST", "MYSQL_HOST")
+MYSQLPORT = _env_first_nonempty("MYSQLPORT", "MYSQL_PORT")
+MYSQLUSER = _env_first_nonempty("MYSQLUSER", "MYSQL_USER")
+MYSQLPASSWORD = _env_first_nonempty("MYSQLPASSWORD", "MYSQL_PASSWORD", "MYSQL_ROOT_PASSWORD")
+MYSQLDATABASE = _env_first_nonempty("MYSQLDATABASE", "MYSQL_DATABASE")
 
 
 def _sqlite_default():
@@ -67,6 +83,7 @@ def _mysql_from_railway_vars():
     """
     Railway MySQL 插件常见环境变量：
     MYSQLHOST / MYSQLPORT / MYSQLUSER / MYSQLPASSWORD / MYSQLDATABASE
+    以及带下划线的同名变量（MYSQL_HOST 等）
     """
     if not (MYSQLHOST and MYSQLUSER and MYSQLPASSWORD and MYSQLDATABASE):
         return None
