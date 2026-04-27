@@ -88,12 +88,12 @@ def upload_avatar(request):
     POST /api/auth/profile/avatar (multipart/form-data)
     字段：file
     """
-    from django.conf import settings
     from django.utils.text import get_valid_filename
     from django.core.files.uploadedfile import UploadedFile
     import os, uuid
     from ai_engine.local_media_store import build_public_url
     from ai_engine.models import LocalMediaAsset
+    from ai_engine.media_storage import oss_enabled, put_fileobj, media_root
 
     # Django Ninja 文件上传需要从 request.FILES 获取
     files = getattr(request, 'FILES', {})
@@ -116,12 +116,23 @@ def upload_avatar(request):
     orig = get_valid_filename(getattr(file, "name", "") or "avatar.png")
     ext = os.path.splitext(orig)[1][:16] or ".png"
     rel_path = f"avatars/u{int(request.user.id)}/{uuid.uuid4().hex}{ext}"
-    media_root = str(getattr(settings, "MEDIA_ROOT", "media"))
-    abs_path = os.path.join(media_root, rel_path.replace("/", os.sep))
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-    with open(abs_path, "wb") as f:
-        for chunk in file.chunks():
-            f.write(chunk)
+    if oss_enabled():
+        fp = getattr(file, "file", None)
+        if fp is not None:
+            put_fileobj(key=rel_path, fp=fp, content_type=str(getattr(file, "content_type", "") or ""))
+        else:
+            put_fileobj(
+                key=rel_path,
+                fp=__import__("io").BytesIO(b"".join(list(file.chunks()))),
+                content_type=str(getattr(file, "content_type", "") or ""),
+            )
+    else:
+        mr = media_root()
+        abs_path = os.path.join(mr, rel_path.replace("/", os.sep))
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
     profile.avatar_path = rel_path
     profile.save(update_fields=["avatar_path"])
 
