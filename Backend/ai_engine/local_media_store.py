@@ -11,6 +11,7 @@ from typing import Any
 from django.conf import settings
 
 from ai_engine.models import LocalMediaAsset
+from ai_engine.media_storage import oss_enabled, put_bytes
 
 
 def _sign_public_token(*, rel_path: str, exp: int, secret: str) -> str:
@@ -97,11 +98,14 @@ def save_local_media_bytes(
     fname = f"{uuid.uuid4().hex}{ext}"
     rel_path = f"{secret_folder}/u{uid}/{k}/{fname}"
 
-    media_root = str(getattr(settings, "MEDIA_ROOT", "media"))
-    abs_path = os.path.join(media_root, rel_path.replace("/", os.sep))
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
-    with open(abs_path, "wb") as f:
-        f.write(data)
+    if oss_enabled():
+        put_bytes(key=rel_path, data=data, content_type=mime or "")
+    else:
+        media_root = str(getattr(settings, "MEDIA_ROOT", "media"))
+        abs_path = os.path.join(media_root, rel_path.replace("/", os.sep))
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "wb") as f:
+            f.write(data)
 
     row = LocalMediaAsset.objects.create(
         user_id=uid,

@@ -24,6 +24,7 @@ from ninja.files import UploadedFile  # pyright: ignore[reportMissingImports]
 
 from .auth import JWTAuth
 from .models import LocalMediaAsset
+from .media_storage import get_stream, media_root, object_exists, oss_enabled, put_fileobj
 
 media_router = Router(tags=["Media"], auth=JWTAuth())
 
@@ -100,16 +101,29 @@ def upload_media(request: HttpRequest, file: UploadedFile):
     fname = f"{uuid.uuid4().hex}{ext}"
     rel_path = _safe_user_prefix(int(u.id)) + fname
 
-    # 直接写入 MEDIA_ROOT 下（不依赖额外模型）
-    from django.conf import settings
+    # 写入 OSS（若配置了 OSS_*），否则写入 MEDIA_ROOT
+    if oss_enabled():
+        # UploadedFile 的 chunks() 不是稳定文件对象；直接用 file.file（SpooledTemporaryFile）
+        fp = getattr(file, "file", None)
+        if fp is not None:
+            put_fileobj(key=rel_path, fp=fp, content_type=getattr(file, "content_type", "") or "")
+        else:
+            # fallback：聚合 chunks（适用于极少数实现）
+            put_fileobj(
+                key=rel_path,
+                fp=__import__("io").BytesIO(b"".join(list(file.chunks()))),
+                content_type=getattr(file, "content_type", "") or "",
+            )
+    else:
+        from django.conf import settings
 
-    media_root = str(getattr(settings, "MEDIA_ROOT", "media"))
-    abs_path = os.path.join(media_root, rel_path.replace("/", os.sep))
-    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        mr = str(getattr(settings, "MEDIA_ROOT", "media"))
+        abs_path = os.path.join(mr, rel_path.replace("/", os.sep))
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
 
-    with open(abs_path, "wb") as f:
-        for chunk in file.chunks():
-            f.write(chunk)
+        with open(abs_path, "wb") as f:
+            for chunk in file.chunks():
+                f.write(chunk)
 
     mime = getattr(file, "content_type", None) or _guess_mime(orig)
     size = int(getattr(file, "size", 0) or 0)
@@ -169,16 +183,21 @@ def proxy_media(
     if not rel.startswith(_allowed_user_prefixes(int(u.id))):
         return HttpResponse("Forbidden", status=403, content_type="text/plain; charset=utf-8")
 
-    from django.conf import settings
+    if oss_enabled():
+        if not object_exists(key=rel):
+            return HttpResponse("Not found", status=404, content_type="text/plain; charset=utf-8")
+        obj = get_stream(key=rel)
+        mime = _guess_mime(rel)
+        resp = FileResponse(obj, content_type=mime)
+    else:
+        mr = media_root()
+        abs_path = os.path.join(mr, rel.replace("/", os.sep))
+        if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+            return HttpResponse("Not found", status=404, content_type="text/plain; charset=utf-8")
 
-    media_root = str(getattr(settings, "MEDIA_ROOT", "media"))
-    abs_path = os.path.join(media_root, rel.replace("/", os.sep))
-    if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
-        return HttpResponse("Not found", status=404, content_type="text/plain; charset=utf-8")
-
-    # 尽量设置 content-type
-    mime = _guess_mime(abs_path)
-    resp = FileResponse(open(abs_path, "rb"), content_type=mime)
+        # 尽量设置 content-type
+        mime = _guess_mime(abs_path)
+        resp = FileResponse(open(abs_path, "rb"), content_type=mime)
     # 支持下载：/api/media/proxy?path=...&download=1
     try:
         download = str(getattr(request, "GET", {}).get("download") or "").strip()
@@ -218,12 +237,19 @@ def public_media(
     ):
         return HttpResponse("Forbidden", status=403, content_type="text/plain; charset=utf-8")
 
-    media_root = str(getattr(settings, "MEDIA_ROOT", "media"))
-    abs_path = os.path.join(media_root, rel.replace("/", os.sep))
-    if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
-        return HttpResponse("Not found", status=404, content_type="text/plain; charset=utf-8")
-    mime = _guess_mime(abs_path)
-    resp = FileResponse(open(abs_path, "rb"), content_type=mime)
+    if oss_enabled():
+        if not object_exists(key=rel):
+            return HttpResponse("Not found", status=404, content_type="text/plain; charset=utf-8")
+        obj = get_stream(key=rel)
+        mime = _guess_mime(rel)
+        resp = FileResponse(obj, content_type=mime)
+    else:
+        mr = media_root()
+        abs_path = os.path.join(mr, rel.replace("/", os.sep))
+        if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+            return HttpResponse("Not found", status=404, content_type="text/plain; charset=utf-8")
+        mime = _guess_mime(abs_path)
+        resp = FileResponse(open(abs_path, "rb"), content_type=mime)
     # 支持下载：/api/media/public?token=...&download=1
     try:
         download = str(getattr(request, "GET", {}).get("download") or "").strip()

@@ -60,6 +60,9 @@ python-multipart>=0.0.9
 redis>=5.0.0
 requests>=2.31.0
 
+# Alibaba Cloud OSS (media persistence for Railway)
+oss2>=2.18.0
+
 # --- Optional: Django AI Assistant ---
 # Provides pre-built Thread/Message models and built-in API views.
 # Install with: pip install django-ai-assistant[openai]

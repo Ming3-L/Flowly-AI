@@ -16,8 +16,10 @@
     "build": "npm run build:frontend",
     "build:frontend": "npm --prefix Frontend ci && npm --prefix Frontend run build",
     "build:desktop": "npm --prefix Desktop ci && npm --prefix Desktop run build",
+    "copy:frontend-dist": "node ./scripts/copy-frontend-dist.mjs",
+    "clean:desktop-release": "node ./scripts/clean-desktop-release.mjs",
     "desktop:dev": "npm --prefix Desktop run dev",
-    "desktop:dist": "npm run build:frontend && npm --prefix Desktop ci && npm --prefix Desktop run dist"
+    "desktop:dist": "npm run build:frontend && npm run copy:frontend-dist && npm run clean:desktop-release && npm --prefix Desktop ci && npm --prefix Desktop run dist"
   },
   "repository": {
     "type": "git",
