@@ -12,7 +12,12 @@
     "test": "tests"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "npm run build:frontend",
+    "build:frontend": "npm --prefix Frontend ci && npm --prefix Frontend run build",
+    "build:desktop": "npm --prefix Desktop ci && npm --prefix Desktop run build",
+    "desktop:dev": "npm --prefix Desktop run dev",
+    "desktop:dist": "npm run build:frontend && npm --prefix Desktop ci && npm --prefix Desktop run dist"
   },
   "repository": {
     "type": "git",
