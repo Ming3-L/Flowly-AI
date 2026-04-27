@@ -104,7 +104,11 @@ def _mysql_from_railway_vars():
     }
 
 
-_primary_db_url = DATABASE_URL or MYSQL_URL
+# Railway 上经常同时注入：
+# - DATABASE_URL（有时指向公网 proxy）
+# - MYSQL_URL（通常是 mysql.railway.internal 内网地址，更稳定/更快）
+# 因此这里优先使用 MYSQL_URL（含 MYSQL_PUBLIC_URL 兼容），再回退 DATABASE_URL。
+_primary_db_url = MYSQL_URL or DATABASE_URL
 
 if _primary_db_url:
     parsed = _parse_database_url(_primary_db_url)
