@@ -20,14 +20,25 @@ Usage:
 from __future__ import annotations
 
 import os
+from urllib.parse import urlparse, urlunparse
 
 from celery import Celery
 from celery.schedules import crontab
 
 # ─── Broker / Backend config ────────────────────────────────────────────────────
 
-_broker_url = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL", "redis://redis:6379/1")
-_result_backend = os.getenv("CELERY_RESULT_BACKEND") or os.getenv("REDIS_URL", "redis://redis:6379/1")
+def _with_redis_db(url: str, db: int) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    u = urlparse(raw)
+    return urlunparse(u._replace(path=f"/{int(db)}"))
+
+
+_redis_url = os.getenv("REDIS_URL") or os.getenv("CACHE_URL") or "redis://redis:6379/0"
+_celery_redis = _with_redis_db(_redis_url, 1) or "redis://redis:6379/1"
+_broker_url = os.getenv("CELERY_BROKER_URL") or _celery_redis
+_result_backend = os.getenv("CELERY_RESULT_BACKEND") or _celery_redis
 
 app = Celery("flowly_backend")
 

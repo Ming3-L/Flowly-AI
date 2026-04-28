@@ -1,12 +1,23 @@
 """Celery。"""
 
 import os
+from urllib.parse import urlparse, urlunparse
 
 from .channels_conf import REDIS_URL
 from .i18n_time_static import TIME_ZONE
 
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"{REDIS_URL.rstrip('0')}1")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", f"{REDIS_URL.rstrip('0')}1")
+def _with_redis_db(url: str, db: int) -> str:
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    u = urlparse(raw)
+    return urlunparse(u._replace(path=f"/{int(db)}"))
+
+
+# Defaults: use same Redis as Channels, but move Celery to DB 1.
+_default_celery_redis = _with_redis_db(REDIS_URL, 1) or "redis://localhost:6379/1"
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", _default_celery_redis)
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", _default_celery_redis)
 
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
