@@ -23,16 +23,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yuxiaopao/Flowly-AI.git"
+    "url": "git+https://github.com/Ming3-L/Flowly-AI.git"
   },
   "keywords": [],
-  "author": "",
+  "author": "Ming3-L",
   "license": "ISC",
   "type": "commonjs",
   "bugs": {
-    "url": "https://github.com/yuxiaopao/Flowly-AI/issues"
+    "url": "https://github.com/Ming3-L/Flowly-AI/issues"
   },
-  "homepage": "https://github.com/yuxiaopao/Flowly-AI#readme",
+  "homepage": "https://github.com/Ming3-L/Flowly-AI#readme",
   "dependencies": {
     "express": "^5.2.1"
   }

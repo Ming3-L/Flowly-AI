@@ -13,6 +13,7 @@ from .security import *
 from .features import *
 from .applications import *
 from .database import *
+from .cache_conf import *
 from .auth_passwords import *
 from .i18n_time_static import *
 from .cors import *
